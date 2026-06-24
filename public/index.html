@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agente de Conteúdo — Cursos Tecnológicos</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <div>
+    <div style="font-size:1.6rem;line-height:1">🎓</div>
+  </div>
+  <div>
+    <h1>Agente de Conteúdo Educacional</h1>
+    <div class="subtitle">Cursos de Formação Tecnológica · Powered by OpenAI</div>
+  </div>
+  <div class="token-counter" id="tokenCounter" title="Total de tokens consumidos pela API da OpenAI em todas as etapas">
+    🔢 <span id="tokenCount">0</span> tokens
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- Steps nav -->
+  <nav class="steps-nav" id="stepsNav">
+    <button class="step-pill active" data-step="0">0 · Base Pedagógica</button>
+    <button class="step-pill" data-step="1">1 · Configuração</button>
+    <button class="step-pill" data-step="2">2 · Pesquisa Web</button>
+    <button class="step-pill" data-step="3">3 · Plano de Ensino</button>
+    <button class="step-pill" data-step="4">4 · Plano de Aula</button>
+    <button class="step-pill" data-step="5">5 · Conteúdo</button>
+    <button class="step-pill" data-step="6">6 · Revisão e Melhorias</button>
+    <button class="step-pill" data-step="7">7 · Qualidade</button>
+  </nav>
+
+  <!-- ── STEP 0 ── -->
+  <section class="step-section active" id="step0">
+    <div class="card">
+      <h2>Base Pedagógica</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Configure o alinhamento pedagógico do curso. A metodologia será aplicada automaticamente
+        em todas as etapas de geração de conteúdo.
+      </p>
+
+      <!-- Pergunta BNCC -->
+      <div class="bncc-question" id="bnccQ1">
+        <h3 style="font-size:1rem;margin-bottom:12px">O conteúdo deve se alinhar à BNCC?</h3>
+        <div class="btn-row" style="justify-content:flex-start;gap:12px">
+          <button class="btn btn-primary" id="btnBnccSim">Sim</button>
+          <button class="btn btn-secondary" id="btnBnccNao">Não — Pular BNCC</button>
+        </div>
+      </div>
+
+      <!-- Pergunta público Ed. Básica -->
+      <div class="bncc-question" id="bnccQ2" style="display:none">
+        <h3 style="font-size:1rem;margin-bottom:12px">O curso é destinado a estudantes da Educação Básica?</h3>
+        <p style="font-size:.82rem;color:#777;margin-bottom:12px">
+          (Alunos de escolas municipais, estaduais, EF1, EF2 ou Ensino Médio)
+        </p>
+        <div class="btn-row" style="justify-content:flex-start;gap:12px">
+          <button class="btn btn-primary" id="btnPublicoBasica">Sim — Ed. Básica</button>
+          <button class="btn btn-secondary" id="btnPublicoAdulto">Não — Adultos / Profissionais</button>
+        </div>
+      </div>
+
+      <!-- Seletor de nível (Ed. Básica) -->
+      <div class="bncc-question" id="bnccNivel" style="display:none">
+        <h3 style="font-size:1rem;margin-bottom:12px">Selecione o nível de ensino</h3>
+        <div class="btn-row" style="justify-content:flex-start;gap:12px">
+          <button class="btn btn-secondary bncc-nivel-btn" data-nivel="ef1">Fundamental 1 (EF1)</button>
+          <button class="btn btn-secondary bncc-nivel-btn" data-nivel="ef2">Fundamental 2 (EF2)</button>
+          <button class="btn btn-secondary bncc-nivel-btn" data-nivel="em">Ensino Médio</button>
+        </div>
+      </div>
+
+      <!-- Lista de habilidades / competências -->
+      <div id="bnccItensContainer" style="display:none">
+        <h3 style="font-size:1rem;margin-bottom:8px" id="bnccItensTitle">Selecione as habilidades</h3>
+        <p style="font-size:.82rem;color:#777;margin-bottom:12px">Você pode selecionar múltiplas opções.</p>
+        <div id="bnccItensList" class="bncc-checklist"></div>
+        <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
+          <button class="btn btn-primary" id="btnConfirmarBncc">Confirmar seleção →</button>
+        </div>
+      </div>
+
+      <!-- Metodologia -->
+      <div id="metodologiaContainer" style="display:none">
+        <hr class="separator" style="margin:24px 0" />
+        <h3 style="font-size:1rem;margin-bottom:8px">Metodologia Pedagógica</h3>
+        <p style="font-size:.82rem;color:#777;margin-bottom:12px">
+          Derivada automaticamente do perfil do curso definido na Etapa 1.
+          Preencha a Etapa 1 primeiro e clique em "Derivar Metodologia".
+        </p>
+        <div class="btn-row" style="justify-content:flex-start;gap:12px">
+          <button class="btn btn-primary" id="btnDerivarMetodologia">⚙ Derivar Metodologia</button>
+        </div>
+        <div id="metodologiaResult" class="result-area" style="display:none;margin-top:16px"></div>
+        <div id="metodologiaActions" style="display:none">
+          <div class="btn-row" style="justify-content:flex-start;gap:12px;margin-top:12px">
+            <button class="btn btn-secondary btn-sm" id="btnRegenerarMetodologia">↺ Gerar novamente</button>
+            <button class="btn btn-primary" id="btnConfirmarMetodologia">Confirmar e ir para Configuração →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botão pular tudo -->
+      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb">
+        <button class="btn btn-ghost btn-sm" id="btnPularEtapa0">Pular etapa 0 e ir para Configuração →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── STEP 1 ── -->
+  <section class="step-section active" id="step1">
+    <div class="card">
+      <h2>Configuração do Curso</h2>
+      <form id="configForm">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="nome">Nome do Curso *</label>
+            <input type="text" id="nome" placeholder="Ex: Desenvolvimento Mobile com Flutter" required />
+          </div>
+          <div class="form-group">
+            <label for="publico">Público-alvo *</label>
+            <input type="text" id="publico" placeholder="Ex: Estudantes de TI, iniciantes" required />
+          </div>
+          <div class="form-group">
+            <label for="carga">Carga Horária Total (horas) *</label>
+            <input type="number" id="carga" min="1" max="999" placeholder="40" required />
+          </div>
+          <div class="form-group">
+            <label for="duracao">Duração por Aula (minutos) *</label>
+            <input type="number" id="duracao" min="15" max="480" placeholder="60" required />
+          </div>
+          <div class="form-group">
+            <label for="nivel">Nível *</label>
+            <select id="nivel" required>
+              <option value="">Selecione...</option>
+              <option value="Básico">Básico</option>
+              <option value="Intermediário">Intermediário</option>
+              <option value="Avançado">Avançado</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="modalidade">Modalidade *</label>
+            <select id="modalidade" required>
+              <option value="">Selecione...</option>
+              <option value="presencial">Presencial</option>
+              <option value="EaD">EaD</option>
+              <option value="híbrido">Híbrido</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="proporcaoTeoricoPratico">Proporção Teórico / Prático *</label>
+            <input type="text" id="proporcaoTeoricoPratico" placeholder="Ex: 70% teoria / 30% prática" required />
+          </div>
+          <div class="form-group full">
+            <label for="objetivos">Objetivos Principais (opcional)</label>
+            <textarea id="objetivos" placeholder="Descreva os principais objetivos de aprendizagem..."></textarea>
+          </div>
+          <div class="form-group full">
+            <label for="preRequisitos">Pré-requisitos (opcional)</label>
+            <textarea id="preRequisitos" placeholder="Conhecimentos ou habilidades necessários para participar do curso..."></textarea>
+          </div>
+          <div class="form-group full">
+            <label for="pastaSaida">Pasta de Saída dos Arquivos Editáveis (opcional)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="pastaSaida"
+                     placeholder="Ex: C:\Users\usuario\Documents\Cursos (cole o caminho completo da pasta)" />
+              <button type="button" id="btnSalvarPasta" class="btn btn-secondary btn-sm">💾 Definir pasta</button>
+            </div>
+            <span class="field-hint">
+              Cole o caminho completo de uma pasta já existente no seu computador
+              (no Explorador de Arquivos: clique na barra de endereço e copie, ou Shift+clique direito → "Copiar como caminho").
+              Se definida, a ementa, o plano de ensino, o plano de aula e a apostila
+              serão salvos automaticamente em formato .docx nesta pasta ao exportar.
+              Caso contrário, os arquivos serão baixados pelo navegador normalmente.
+            </span>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn btn-primary">Salvar e Continuar →</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ── STEP 2 ── -->
+  <section class="step-section" id="step2">
+    <div class="card">
+      <h2>Pesquisa Web</h2>
+      <div class="form-group">
+        <label for="topicos">Tópicos adicionais (opcional)</label>
+        <textarea id="topicos" placeholder="Tópicos específicos para pesquisar, ex: microcontroladores, IoT, MQTT..."></textarea>
+      </div>
+      <div class="form-group" style="max-width:200px;margin-top:12px">
+        <label for="limite">Limite de buscas</label>
+        <input type="number" id="limite" min="1" max="8" value="3" />
+        <span class="field-hint">Máximo: 8</span>
+      </div>
+      <div class="btn-row">
+        <button id="btnSearch" class="btn btn-primary">🔍 Pesquisar na web</button>
+      </div>
+    </div>
+
+    <div class="card" id="searchResultCard" style="display:none">
+      <h2>Resultado da Pesquisa</h2>
+      <div class="log-panel" id="logSearch"></div>
+      <div id="sitesContainer" style="display:none">
+        <h3>Sites consultados</h3>
+        <div class="sites-list" id="sitesList"></div>
+        <hr class="separator" />
+      </div>
+      <div class="result-area" id="resultSearch"></div>
+      <div class="btn-row" id="searchActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultSearch')">📋 Copiar</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportDocx('pesquisa')">⬇ Exportar .docx</button>
+        <button class="btn btn-primary" onclick="goStep(3)">Continuar →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── STEP 3 ── -->
+  <section class="step-section" id="step3">
+    <div class="card">
+      <h2>Plano de Ensino</h2>
+      <div class="form-group">
+        <label for="ajustesEnsino">Ajustes adicionais (opcional)</label>
+        <textarea id="ajustesEnsino" placeholder="Algum ajuste ou foco específico para o plano de ensino?"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="btnPlanoEnsino" class="btn btn-primary">📋 Gerar plano de ensino</button>
+      </div>
+    </div>
+
+    <div class="card" id="ensinoResultCard" style="display:none">
+      <h2>Plano de Ensino</h2>
+      <div class="log-panel" id="logEnsino"></div>
+      <div class="result-area" id="resultEnsino"></div>
+      <div class="btn-row" id="ensinoActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultEnsino')">📋 Copiar</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportDocx('plano-ensino')">⬇ Exportar .docx</button>
+        <button class="btn btn-primary" onclick="goStep(4)">Continuar →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── STEP 4 ── -->
+  <section class="step-section" id="step4">
+    <div class="card">
+      <h2>Plano de Aula</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.5">
+        O sistema irá <strong>planejar automaticamente todas as aulas do curso</strong>
+        com base no plano de ensino (carga horária, duração por aula e conteúdo
+        programático) e gerar um plano de aula detalhado para cada uma — sequência
+        didática com tempos, atividades, recursos e avaliação.
+      </p>
+      <div class="form-group">
+        <label for="observacoesAula">Observações complementares (opcional)</label>
+        <textarea id="observacoesAula" placeholder="Algum ajuste, ênfase ou observação para os planos de aula?"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="btnPlanoAula" class="btn btn-primary">📄 Gerar plano de todas as aulas</button>
+      </div>
+    </div>
+
+    <div class="card" id="aulaResultCard" style="display:none">
+      <h2>Planos de Todas as Aulas</h2>
+      <div class="log-panel" id="logAula"></div>
+      <div class="result-area" id="resultAula"></div>
+      <div class="btn-row" id="aulaActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultAula')">📋 Copiar</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportDocx('plano-aula')">⬇ Exportar .docx</button>
+        <button class="btn btn-primary" onclick="goStep(5)">Continuar →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── STEP 5 ── -->
+  <section class="step-section" id="step5">
+    <div class="card">
+      <h2>Conteúdo Detalhado de Todas as Aulas</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.5">
+        O sistema irá <strong>analisar automaticamente os objetivos de cada aula</strong>
+        (com base no plano de ensino e nos planos de aula já gerados) e produzir, para
+        cada uma, um <strong>conteúdo técnico robusto e aprofundado</strong> — material
+        de apoio e consulta para o instrutor se preparar e embasar suas explicações,
+        cobrindo cada objetivo de aprendizagem individualmente.
+      </p>
+      <p class="field-hint" style="margin-top:8px">
+        ⏱ Cursos com muitas aulas podem levar vários minutos para serem concluídos —
+        acompanhe o progresso no log abaixo.
+      </p>
+      <div class="btn-row">
+        <button id="btnConteudo" class="btn btn-primary">✏️ Gerar conteúdo de todas as aulas</button>
+      </div>
+    </div>
+
+    <div class="card" id="conteudoResultCard" style="display:none">
+      <h2>Conteúdo de Todas as Aulas</h2>
+      <div class="log-panel" id="logConteudo"></div>
+      <div class="result-area" id="resultConteudo"></div>
+      <div class="btn-row" id="conteudoActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultConteudo')">📋 Copiar</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportDocx('conteudo')">⬇ Exportar .docx</button>
+        <button class="btn btn-primary" onclick="goStep(6)">Continuar →</button>
+      </div>
+    </div>
+
+    <div class="banner-done" id="bannerDone">
+      ✅ Conteúdo gerado. Continue para a Etapa 6 para revisar e melhorar a qualidade.
+    </div>
+  </section>
+
+  <!-- ── STEP 6 ── -->
+  <section class="step-section" id="step6">
+
+    <!-- Card A: Revisão de Qualidade (Etapa 5★) -->
+    <div class="card">
+      <h2>Revisão de Qualidade</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Um revisor pedagógico especializado analisará cada aula individualmente,
+        comparando o conteúdo gerado com o plano de aula, plano de ensino e ementa.
+        O relatório inclui detecção de sobreposições Jaccard, análise BNCC (se ativa)
+        e um espaço em branco para suas próprias observações por aula.
+      </p>
+      <p class="field-hint">Requer a conclusão da Etapa 5 (Conteúdo).</p>
+      <div class="btn-row">
+        <button id="btnRevisaoQualidade" class="btn btn-primary">📋 Gerar Revisão de Qualidade</button>
+      </div>
+    </div>
+
+    <div class="card" id="revisaoQualidadeResultCard" style="display:none">
+      <h2>Relatório de Revisão de Qualidade</h2>
+      <div class="log-panel" id="logRevisaoQualidade"></div>
+      <div class="result-area" id="resultRevisaoQualidade"></div>
+      <div class="btn-row" id="revisaoQualidadeActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultRevisaoQualidade')">📋 Copiar</button>
+        <button id="btnBaixarRevisao" class="btn btn-secondary btn-sm">⬇ Baixar Revisão (.docx)</button>
+      </div>
+    </div>
+
+    <!-- Card B: Aplicar Melhorias (Etapa 6) -->
+    <div class="card" style="margin-top:24px">
+      <h2>Aplicar Melhorias</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Após revisar e anotar o documento de qualidade, faça o upload aqui.
+        O sistema aplicará as melhorias indicadas aula por aula, consultando a web
+        quando necessário. Repita o ciclo quantas vezes precisar.
+      </p>
+
+      <div class="form-group" style="margin-top:16px">
+        <label for="arquivoMelhorias">Arquivo de revisão anotado (.docx)</label>
+        <input type="file" id="arquivoMelhorias" accept=".docx" />
+        <span class="field-hint">Envie o arquivo de revisão que você baixou e anotou na seção acima.</span>
+      </div>
+
+      <div id="resumoMelhorias" style="display:none;margin-top:12px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.85rem;"></div>
+
+      <div class="btn-row" style="margin-top:16px">
+        <button id="btnUploadMelhorias" class="btn btn-secondary btn-sm">⬆ Carregar Arquivo</button>
+        <button id="btnAplicarMelhorias" class="btn btn-primary" disabled>🚀 Aplicar Melhorias</button>
+      </div>
+    </div>
+
+    <div class="card" id="melhoriaResultCard" style="display:none">
+      <h2>Conteúdo com Melhorias Aplicadas</h2>
+      <div class="log-panel" id="logMelhoria"></div>
+      <div class="result-area" id="resultMelhoria"></div>
+      <div class="btn-row" id="melhoriaActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultMelhoria')">📋 Copiar</button>
+        <button class="btn btn-secondary btn-sm" onclick="goStep(6)">↺ Gerar Nova Revisão</button>
+        <button id="btnFinalizarConteudo" class="btn btn-primary">✅ Conteúdo Concluído</button>
+      </div>
+    </div>
+
+    <div class="banner-done" id="bannerFinalizado" style="display:none;margin-top:20px">
+      ✅ Conteúdo finalizado! O arquivo <strong>conteudo_final.docx</strong> foi salvo.
+    </div>
+
+  </section>
+
+  <!-- ── STEP 7 ── -->
+  <section class="step-section" id="step7">
+    <!-- Agente de Qualidade -->
+    <div class="card">
+      <h2>Agente de Qualidade Pedagógica</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Um especialista em design instrucional irá analisar todo o material gerado e produzir
+        um <strong>Relatório Técnico-Pedagógico</strong> com parecer geral, análise de alinhamento
+        BNCC (se ativo), aderência à metodologia, coerência entre etapas e recomendações priorizadas.
+      </p>
+      <p class="field-hint">Requer a conclusão da Etapa 5 (Conteúdo).</p>
+      <div class="btn-row">
+        <button id="btnQualidade" class="btn btn-primary" disabled>📊 Gerar Relatório de Qualidade</button>
+      </div>
+    </div>
+
+    <div class="card" id="qualidadeResultCard" style="display:none">
+      <h2>Relatório Técnico-Pedagógico</h2>
+      <div class="log-panel" id="logQualidade"></div>
+      <div class="result-area" id="resultQualidade"></div>
+      <div class="btn-row" id="qualidadeActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultQualidade')">📋 Copiar</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportDocx('qualidade')">⬇ Exportar .docx</button>
+      </div>
+    </div>
+
+    <!-- PPC -->
+    <div class="card" style="margin-top:24px">
+      <h2>Projeto Pedagógico de Curso (PPC)</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Monta o <strong>PPC completo para curso livre</strong> a partir de todo o material
+        gerado no pipeline, complementando com perfil do egresso, competências, perfil docente
+        e infraestrutura necessária.
+      </p>
+      <p class="field-hint">Requer a conclusão da Etapa 5 (Conteúdo).</p>
+      <div class="btn-row">
+        <button id="btnPpc" class="btn btn-primary" disabled>📄 Gerar PPC Completo</button>
+      </div>
+    </div>
+
+    <div class="card" id="ppcResultCard" style="display:none">
+      <h2>Projeto Pedagógico de Curso</h2>
+      <div class="log-panel" id="logPpc"></div>
+      <div class="result-area" id="resultPpc"></div>
+      <div class="btn-row" id="ppcActions" style="display:none">
+        <button class="btn btn-ghost btn-sm" onclick="copyResult('resultPpc')">📋 Copiar</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportDocx('ppc')">⬇ Exportar .docx</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

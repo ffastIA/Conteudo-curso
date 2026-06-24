@@ -1,0 +1,26 @@
+{
+  "name": "curso-content-agent",
+  "version": "1.0.0",
+  "description": "Agente para elaboração de conteúdo de cursos de formação tecnológica",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "docx": "^9.0.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0",
+    "mammoth": "^1.12.0",
+    "multer": "^2.2.0",
+    "openai": "^4.0.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
+  }
+}

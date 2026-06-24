@@ -1,0 +1,29 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente (contém chave da OpenAI)
+.env
+
+# Saídas geradas
+saídas/
+
+# Ambiente virtual Python
+.venv/
+
+# Cobertura de testes
+coverage/
+
+# IDEs
+.idea/
+.vscode/
+
+# Claude Code
+.claude/
+
+# Artefatos de build
+*.docx
+scripts/revisao_anotada_teste.docx
+
+# OS
+.DS_Store
+Thumbs.db

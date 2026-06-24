@@ -1,0 +1,44 @@
+schema: spec-driven
+
+context: |
+  Guia geral do projeto: PROJECT.md (raiz do repositório) — leia antes de criar artifacts.
+
+  Projeto: curso-content-agent — Gerador de Conteúdo para Cursos Técnicos
+  Stack: Node.js + Express 4.x | Vanilla JS + SSE | OpenAI SDK v4 | docx v9
+  Entry point: server.js (porta 3000)
+  Skills (prompts): skills.js
+  Frontend: public/index.html + public/app.js + public/style.css
+  Specs canônicas: specs.yaml (raiz) + openspec/specs/*.yaml
+
+  Modelos OpenAI em uso:
+    - gpt-4o-mini: ementa, plano de ensino, plano de aula, conteúdo, revisão de qualidade
+    - gpt-4o-search-preview: pesquisa web (Etapa 2) e aplicar melhorias (Etapa 6)
+
+  Padrões do projeto:
+    - Streaming via SSE com eventos: progress | site | token | done | error
+    - Sessões in-memory identificadas por cookie HttpOnly (sid)
+    - Arquivos persistidos em saídas/{course-slug}/
+    - Jaccard ≥ 55% usado APENAS como reporte informativo (sem regeneração automática)
+    - Convenção de commits em português
+
+  Gaps conhecidos (priorizados):
+    G01 (crítico): .env possivelmente versionado
+    G02 (alto): sem autenticação
+    G03 (médio): paths sem sanitização
+    G04 (alto): sessão in-memory perdida ao reiniciar
+    G05 (médio): sem retry em falhas OpenAI
+    G06 (médio): sem logging estruturado
+    G07 (médio): sem testes automatizados
+
+rules:
+  proposal:
+    - Incluir seção "Non-goals" em toda proposta
+    - Referenciar o Gap ID correspondente quando a feature resolver um gap conhecido
+    - Manter consistência com os modelos de dados definidos em specs.yaml
+  tasks:
+    - Cada tarefa deve ser completável em até 2 horas
+    - Indicar o arquivo exato a modificar (server.js, skills.js, public/app.js, etc.)
+    - Tarefas de teste devem ser a última etapa de cada change
+  design:
+    - Evitar introduzir novas dependências npm sem justificativa explícita
+    - Preservar o padrão SSE existente para qualquer nova operação assíncrona
