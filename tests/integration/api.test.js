@@ -3,6 +3,8 @@
 jest.mock('openai');
 
 const request = require('supertest');
+const os = require('os');
+const path = require('path');
 const app = require('../../server');
 
 const VALID_CONFIG = {
@@ -14,7 +16,8 @@ const VALID_CONFIG = {
   objetivos: 'Aprender Node.js',
   modalidade: 'online',
   proporcaoTeoricoPratico: '40% teórico / 60% prático',
-  preRequisitos: ''
+  preRequisitos: '',
+  pastaProjeto: path.join(os.tmpdir(), 'gerador-conteudo-tests', 'curso-de-node-js')
 };
 
 beforeAll(() => {
@@ -48,6 +51,15 @@ describe('POST /api/config', () => {
 
   test('sem proporcaoTeoricoPratico retorna 400', async () => {
     const { proporcaoTeoricoPratico, ...payload } = VALID_CONFIG;
+    const res = await request(app)
+      .post('/api/config')
+      .send(payload);
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+
+  test('sem pastaProjeto retorna 400', async () => {
+    const { pastaProjeto, ...payload } = VALID_CONFIG;
     const res = await request(app)
       .post('/api/config')
       .send(payload);

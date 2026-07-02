@@ -33,15 +33,31 @@
     <button class="step-pill" data-step="5">5 · Conteúdo</button>
     <button class="step-pill" data-step="6">6 · Revisão e Melhorias</button>
     <button class="step-pill" data-step="7">7 · Qualidade</button>
+    <button class="step-pill" data-step="8">8 · Slides</button>
   </nav>
 
   <!-- ── STEP 0 ── -->
   <section class="step-section active" id="step0">
+
+    <!-- Card: Abrir projeto existente -->
+    <div class="card card-projetos" id="cardProjetos">
+      <h2>Abrir Projeto Existente</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Selecione a pasta principal de um projeto gerado anteriormente — todas as etapas encontradas serão restauradas sem nenhuma chamada à IA.
+      </p>
+      <div class="btn-row" style="justify-content:flex-start">
+        <button type="button" class="btn btn-secondary" id="btnSelecionarPastaProjeto">📁 Selecionar pasta do projeto</button>
+      </div>
+      <div id="arquivosProjetoCarregado" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
+      <div id="bannerProjetoCarregado" class="banner-projeto-carregado" style="display:none"></div>
+      <hr class="separator" style="margin-top:20px">
+      <p style="font-size:.8rem;color:#888;margin-top:8px">— ou crie um novo projeto abaixo —</p>
+    </div>
+
     <div class="card">
       <h2>Base Pedagógica</h2>
       <p style="font-size:.85rem;color:#555;line-height:1.6">
-        Configure o alinhamento pedagógico do curso. A metodologia será aplicada automaticamente
-        em todas as etapas de geração de conteúdo.
+        Defina se o curso deve se alinhar à BNCC e, se sim, quais habilidades/competências se aplicam.
       </p>
 
       <!-- Pergunta BNCC -->
@@ -82,26 +98,6 @@
         <div id="bnccItensList" class="bncc-checklist"></div>
         <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
           <button class="btn btn-primary" id="btnConfirmarBncc">Confirmar seleção →</button>
-        </div>
-      </div>
-
-      <!-- Metodologia -->
-      <div id="metodologiaContainer" style="display:none">
-        <hr class="separator" style="margin:24px 0" />
-        <h3 style="font-size:1rem;margin-bottom:8px">Metodologia Pedagógica</h3>
-        <p style="font-size:.82rem;color:#777;margin-bottom:12px">
-          Derivada automaticamente do perfil do curso definido na Etapa 1.
-          Preencha a Etapa 1 primeiro e clique em "Derivar Metodologia".
-        </p>
-        <div class="btn-row" style="justify-content:flex-start;gap:12px">
-          <button class="btn btn-primary" id="btnDerivarMetodologia">⚙ Derivar Metodologia</button>
-        </div>
-        <div id="metodologiaResult" class="result-area" style="display:none;margin-top:16px"></div>
-        <div id="metodologiaActions" style="display:none">
-          <div class="btn-row" style="justify-content:flex-start;gap:12px;margin-top:12px">
-            <button class="btn btn-secondary btn-sm" id="btnRegenerarMetodologia">↺ Gerar novamente</button>
-            <button class="btn btn-primary" id="btnConfirmarMetodologia">Confirmar e ir para Configuração →</button>
-          </div>
         </div>
       </div>
 
@@ -165,25 +161,34 @@
             <textarea id="preRequisitos" placeholder="Conhecimentos ou habilidades necessários para participar do curso..."></textarea>
           </div>
           <div class="form-group full">
-            <label for="pastaSaida">Pasta de Saída dos Arquivos Editáveis (opcional)</label>
-            <div style="display:flex;gap:8px;align-items:center">
-              <input type="text" id="pastaSaida"
-                     placeholder="Ex: C:\Users\usuario\Documents\Cursos (cole o caminho completo da pasta)" />
-              <button type="button" id="btnSalvarPasta" class="btn btn-secondary btn-sm">💾 Definir pasta</button>
+            <label for="pastaProjeto">Pasta do projeto *</label>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="pastaProjeto" style="flex:1"
+                     placeholder="Ex: C:\MeusCursos\Python (caminho completo da pasta do projeto)" required />
+              <button type="button" class="btn btn-secondary btn-sm" id="btnProcurarPastaProjeto">📁 Procurar...</button>
             </div>
             <span class="field-hint">
-              Cole o caminho completo de uma pasta já existente no seu computador
-              (no Explorador de Arquivos: clique na barra de endereço e copie, ou Shift+clique direito → "Copiar como caminho").
-              Se definida, a ementa, o plano de ensino, o plano de aula e a apostila
-              serão salvos automaticamente em formato .docx nesta pasta ao exportar.
-              Caso contrário, os arquivos serão baixados pelo navegador normalmente.
+              Pasta raiz do projeto: os arquivos .docx exportados ficam aqui, e os arquivos internos em /scr.
             </span>
           </div>
         </div>
         <div class="btn-row">
-          <button type="submit" class="btn btn-primary">Salvar e Continuar →</button>
+          <button type="submit" class="btn btn-primary" id="btnGerarMetodologia">Gerar Metodologia</button>
         </div>
       </form>
+    </div>
+
+    <!-- Card: Metodologia Pedagógica (aparece após "Gerar Metodologia") -->
+    <div class="card" id="metodologiaResultCard" style="display:none">
+      <h2>Metodologia Pedagógica</h2>
+      <div id="metodologiaResult" class="result-area"></div>
+      <div class="btn-row" id="metodologiaActions" style="margin-top:12px">
+        <span class="badge-origem" id="origemMetodologia"></span>
+        <button class="btn btn-ghost btn-sm" id="btnRegenerarMetodologia">↺ Gerar novamente</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportDocx('metodologia')">⬇ Exportar .docx</button>
+        <button class="btn btn-ghost btn-sm" onclick="abrirImportar('metodologia')">⬆ Importar versão editada</button>
+        <button class="btn btn-primary" id="btnSalvarMetodologia">💾 Salvar e ir para Etapa 2 →</button>
+      </div>
     </div>
   </section>
 
@@ -215,8 +220,10 @@
       </div>
       <div class="result-area" id="resultSearch"></div>
       <div class="btn-row" id="searchActions" style="display:none">
+        <span class="badge-origem" id="origemEtapa2"></span>
         <button class="btn btn-ghost btn-sm" onclick="copyResult('resultSearch')">📋 Copiar</button>
         <button class="btn btn-secondary btn-sm" onclick="exportDocx('pesquisa')">⬇ Exportar .docx</button>
+        <button class="btn btn-ghost btn-sm" onclick="abrirImportar('pesquisa')">⬆ Importar versão editada</button>
         <button class="btn btn-primary" onclick="goStep(3)">Continuar →</button>
       </div>
     </div>
@@ -240,8 +247,10 @@
       <div class="log-panel" id="logEnsino"></div>
       <div class="result-area" id="resultEnsino"></div>
       <div class="btn-row" id="ensinoActions" style="display:none">
+        <span class="badge-origem" id="origemEtapa3"></span>
         <button class="btn btn-ghost btn-sm" onclick="copyResult('resultEnsino')">📋 Copiar</button>
         <button class="btn btn-secondary btn-sm" onclick="exportDocx('plano-ensino')">⬇ Exportar .docx</button>
+        <button class="btn btn-ghost btn-sm" onclick="abrirImportar('plano_de_ensino')">⬆ Importar versão editada</button>
         <button class="btn btn-primary" onclick="goStep(4)">Continuar →</button>
       </div>
     </div>
@@ -271,8 +280,10 @@
       <div class="log-panel" id="logAula"></div>
       <div class="result-area" id="resultAula"></div>
       <div class="btn-row" id="aulaActions" style="display:none">
+        <span class="badge-origem" id="origemEtapa4"></span>
         <button class="btn btn-ghost btn-sm" onclick="copyResult('resultAula')">📋 Copiar</button>
         <button class="btn btn-secondary btn-sm" onclick="exportDocx('plano-aula')">⬇ Exportar .docx</button>
+        <button class="btn btn-ghost btn-sm" onclick="abrirImportar('plano_de_aula')">⬆ Importar versão editada</button>
         <button class="btn btn-primary" onclick="goStep(5)">Continuar →</button>
       </div>
     </div>
@@ -303,8 +314,10 @@
       <div class="log-panel" id="logConteudo"></div>
       <div class="result-area" id="resultConteudo"></div>
       <div class="btn-row" id="conteudoActions" style="display:none">
+        <span class="badge-origem" id="origemEtapa5"></span>
         <button class="btn btn-ghost btn-sm" onclick="copyResult('resultConteudo')">📋 Copiar</button>
         <button class="btn btn-secondary btn-sm" onclick="exportDocx('conteudo')">⬇ Exportar .docx</button>
+        <button class="btn btn-ghost btn-sm" onclick="abrirImportar('conteudo')">⬆ Importar versão editada</button>
         <button class="btn btn-primary" onclick="goStep(6)">Continuar →</button>
       </div>
     </div>
@@ -358,6 +371,7 @@
       </div>
 
       <div id="resumoMelhorias" style="display:none;margin-top:12px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.85rem;"></div>
+      <div id="bannerDuplicata" style="display:none;margin-top:12px;padding:12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;font-size:.85rem;"></div>
 
       <div class="btn-row" style="margin-top:16px">
         <button id="btnUploadMelhorias" class="btn btn-secondary btn-sm">⬆ Carregar Arquivo</button>
@@ -433,8 +447,48 @@
     </div>
   </section>
 
+  <!-- ── STEP 8 ── -->
+  <section class="step-section" id="step8">
+    <div class="card">
+      <h2>Geração de Slides (PowerPoint)</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Gera automaticamente um arquivo <strong>.pptx por aula</strong>, a partir do conteúdo
+        já produzido na Etapa 5 — a IA extrai os tópicos principais de cada aula e organiza
+        em 6 a 10 slides autoexplicativos, sem notas do apresentador, prontos para
+        projeção ou edição posterior no PowerPoint/Canva.
+      </p>
+      <p class="field-hint">Requer a conclusão da Etapa 5 (Conteúdo). Etapa opcional e independente.</p>
+      <div class="btn-row">
+        <button id="btnSlides" class="btn btn-primary" disabled>🖥️ Gerar Slides</button>
+      </div>
+    </div>
+
+    <div class="card" id="slidesResultCard" style="display:none">
+      <h2>Slides Gerados</h2>
+      <div class="log-panel" id="logSlides"></div>
+      <div id="slidesArquivos" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
+    </div>
+  </section>
+
 </main>
 
 <script src="app.js"></script>
+
+<!-- Modal de importação de .docx -->
+<div id="modalImportar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:28px;max-width:520px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+    <h3 style="margin:0 0 12px;font-size:1.05rem">Importar versão editada</h3>
+    <input type="file" id="importarFileInput" accept=".docx" style="margin-bottom:12px" />
+    <div id="importarDeteccao" style="display:none;margin-bottom:12px;padding:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.85rem"></div>
+    <div id="importarSeletor" style="display:none;margin-bottom:12px">
+      <label style="font-size:.85rem;font-weight:600">Selecione o artefato a substituir:</label>
+      <select id="importarStageSeletor" style="display:block;width:100%;margin-top:6px;padding:7px;border:1.5px solid #c4b5fd;border-radius:6px;font-size:.85rem"></select>
+    </div>
+    <div class="btn-row" style="justify-content:flex-end;gap:8px;margin-top:4px">
+      <button class="btn btn-secondary btn-sm" onclick="fecharModalImportar()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="btnConfirmarImportar" disabled>Confirmar importação</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

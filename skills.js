@@ -41,6 +41,25 @@ const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, 
     pedagCtxBlock(metodologia, bnccContext)
 });
 
+const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext }) => ({
+  model: MODEL_ECONOMY,
+  system:
+    'Você é especialista em educação tecnológica. Com base no seu conhecimento, ' +
+    'sintetize referências, tópicos de mercado e tendências relevantes para cursos ' +
+    'técnicos. Responda em português. (Nota: a pesquisa web não está disponível — ' +
+    'utilize exclusivamente seu conhecimento para gerar o conteúdo.)',
+  user:
+    `Sintetize conteúdos relevantes para um curso de formação tecnológica, ' +
+    'com base no seu conhecimento sobre o tema:\n` +
+    `Curso: ${nome}\nNível: ${nivel}\nPúblico: ${publico}\n` +
+    (ementa ? `Ementa do curso (referência): ${ementa}\n` : '') +
+    `Tópicos extras: ${topicos || 'nenhum'}\n\n` +
+    `Forneça: principais tópicos do mercado, referências bibliográficas recomendadas, ` +
+    `ferramentas, tendências atuais e certificações relevantes. ` +
+    `Indique claramente que este conteúdo foi gerado sem pesquisa web em tempo real.` +
+    pedagCtxBlock(metodologia, bnccContext)
+});
+
 const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodologia, bnccContext }) => ({
   model: MODEL_ECONOMY,
   system:
@@ -80,12 +99,17 @@ const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, eme
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas }) => ({
+const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas, correcao }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional para cursos de formação ' +
     'tecnológica. Responda apenas com JSON válido, sem texto adicional.',
   user:
+    (correcao
+      ? `IMPORTANTE: sua resposta anterior continha ${correcao} aula(s), mas o número ` +
+        `exigido é exatamente ${numAulas}. Ajuste cuidadosamente a divisão do conteúdo ` +
+        `para atingir exatamente ${numAulas} aulas desta vez.\n\n`
+      : '') +
     `Com base EXCLUSIVAMENTE no plano de ensino abaixo, divida o curso em ` +
     `exatamente ${numAulas} aulas que, juntas, cubram toda a carga horária e ` +
     `sigam a ordem dos módulos definidos no plano de ensino.\n\n` +
@@ -101,6 +125,31 @@ const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, n
     `progressão pedagógica e alinhados, em sequência, aos módulos do plano de ensino. ` +
     `O campo "modulo" é obrigatório e deve corresponder a um módulo realmente ` +
     `existente no plano de ensino (permite auditar a aderência ao currículo).`
+});
+
+// Estrutura o conteúdo já gerado de uma aula em slides — usada pela Etapa 8
+// (Geração de Slides), que só reorganiza/resume o que já existe, sem gerar
+// conteúdo pedagógico novo.
+const slidesSkill = ({ nomeCurso, aula }) => ({
+  model: MODEL_ECONOMY,
+  system:
+    'Você é especialista em design instrucional e comunicação visual. Extraia ' +
+    'os tópicos principais de um conteúdo de aula e organize-os em slides ' +
+    'autoexplicativos, sem depender de um apresentador. Responda apenas com ' +
+    'JSON válido, sem texto adicional.',
+  user:
+    `Analise o conteúdo da aula abaixo e organize-o em uma sequência de 6 a 10 ` +
+    `slides, conforme a densidade do conteúdo (menos slides para conteúdo mais ` +
+    `enxuto, mais slides para conteúdo mais denso). Cada slide deve ter um ` +
+    `título curto e de 2 a 5 bullets concisos e autoexplicativos (sem precisar ` +
+    `de um professor explicando ao lado). NÃO misture tópicos de módulos ou ` +
+    `disciplinas distintos no mesmo slide — mantenha cada slide coeso em torno ` +
+    `de um só assunto. NÃO inclua notas do apresentador.\n\n` +
+    `Curso: ${nomeCurso}\nAula: ${aula.titulo}\nMódulo: ${aula.modulo || 'não especificado'}\n` +
+    `Objetivos: ${aula.objetivos || 'não especificados'}\n\n` +
+    `Conteúdo completo da aula:\n${aula.texto}\n\n` +
+    `Responda SOMENTE com um JSON no formato exato:\n` +
+    `{"slides": [{"titulo": "string", "bullets": ["string", ...]}]}`
 });
 
 const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico }) => ({
@@ -194,6 +243,11 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `### Compatibilidade com Plano de Ensino e Ementa\n` +
       `Avalie se o conteúdo está alinhado ao módulo e aos objetivos gerais do curso ` +
       `definidos no plano de ensino e na ementa.\n\n` +
+      `### Adequação à Faixa Etária e Perfil de Público\n` +
+      `Avalie se linguagem, vocabulário, complexidade dos conceitos, exemplos e abordagem didática ` +
+      `são adequados ao público "${config?.publico || 'não informado'}". ` +
+      `Justifique pedagogicamente e proponha ajustes concretos quando houver inadequação. ` +
+      `Se o público não estiver informado, indique que a avaliação não pode ser realizada.\n\n` +
       `### Sobreposições Detectadas\n` +
       `Liste as sobreposições informadas acima e avalie se representam um problema pedagógico ` +
       `ou se são legítimas dado o contexto das aulas.\n\n` +
@@ -203,6 +257,12 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
         : '') +
       `### Deficiências e Melhorias Sugeridas\n` +
       `Liste as principais deficiências identificadas e proponha melhorias concretas e objetivas.\n\n` +
+      `### Nota de Qualidade\n` +
+      `Com base na aderência desta aula ao plano de aula, ao plano de ensino, à ementa, e na ` +
+      `gravidade das deficiências identificadas acima, atribua uma nota de qualidade de 0 a 1 ` +
+      `(0 = qualidade baixíssima, 1 = qualidade total). Responda com uma frase curta de ` +
+      `justificativa seguida OBRIGATORIAMENTE de uma linha isolada no formato exato: ` +
+      `"Nota: X.XX" (ex.: "Nota: 0.85").\n\n` +
       `### Observações do Revisor\n`
   };
 };
@@ -227,7 +287,12 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
     `Produza a versão melhorada do conteúdo, mantendo a estrutura original onde ` +
     `estiver boa e aplicando as melhorias indicadas. Use a busca na web para ` +
     `complementar com exemplos, referências e informações atualizadas quando pertinente.` +
-    pedagCtxBlock(metodologia, bnccContext)
+    pedagCtxBlock(metodologia, bnccContext) +
+    `\n\nAo final do conteúdo revisado, adicione obrigatoriamente a seguinte seção:\n\n` +
+    `### Melhorias Aplicadas\n` +
+    `Liste em bullets curtos cada melhoria aplicada. Um bullet por melhoria. ` +
+    `Não inclua texto explicativo — apenas a melhoria em si. ` +
+    `Se uma observação não foi aplicada, inclua um bullet indicando "Não aplicado: <motivo em uma frase>".`
 });
 
 // ── Skills novas — Base Pedagógica e PPC ──────────────────────────────────────
@@ -420,11 +485,13 @@ module.exports = {
   summarizeLessons,
   // Pipeline principal
   pesquisaWebSkill,
+  pesquisaFallbackSkill,
   ementaSkill,
   planoEnsinoSkill,
   planLessonsSkill,
   planoAulaSkill,
   conteudoSkill,
+  slidesSkill,
   // Ciclo de revisão e melhoria (Etapas 5★ e 6)
   revisaoQualidadeSkill,
   aplicarMelhoriasSkill,

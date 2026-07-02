@@ -19,35 +19,19 @@ async function refreshTokenCounter() {
 }
 refreshTokenCounter();
 
-// ── Pasta de saída dos arquivos editáveis ───────────────────────────────────
-document.getElementById('btnSalvarPasta').addEventListener('click', async () => {
-  const btn = document.getElementById('btnSalvarPasta');
-  const original = btn.textContent;
-  const pasta = document.getElementById('pastaSaida').value.trim();
-  btn.disabled = true;
-  btn.textContent = 'Verificando...';
-  try {
-    const r = await fetch('/api/pasta-saida', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pasta })
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Erro ao definir a pasta');
-    if (data.path) {
-      alert('Pasta de saída definida:\n' + data.path);
-    } else {
-      alert('Pasta de saída removida. As exportações voltarão a ser baixadas pelo navegador.');
-    }
-  } catch (err) {
-    alert('Não foi possível definir a pasta: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = original;
-  }
-});
-
 // ── Navegação entre etapas ───────────────────────────────────────────────────
+// Habilita botões de qualidade/PPC/slides/imagens assim que a Etapa 5 estiver
+// concluída — chamada tanto de goStep() (navegação manual) quanto diretamente
+// de markDone(5), para não depender do usuário navegar entre pills para que os
+// botões reflitam o estado real da sessão (ex.: geração ao vivo concluída ou
+// projeto recém-carregado).
+function atualizarBotoesDependentesDaEtapa5() {
+  if (!state.doneSteps.has(5)) return;
+  document.getElementById('btnQualidade').disabled = false;
+  document.getElementById('btnPpc').disabled = false;
+  document.getElementById('btnSlides').disabled = false;
+}
+
 function goStep(n) {
   state.currentStep = n;
   document.querySelectorAll('.step-section').forEach(s => s.classList.remove('active'));
@@ -59,11 +43,7 @@ function goStep(n) {
     if (step === n) pill.classList.add('active');
   });
 
-  // Habilita botões de qualidade/PPC quando etapa 5 estiver concluída
-  if (state.doneSteps.has(5)) {
-    document.getElementById('btnQualidade').disabled = false;
-    document.getElementById('btnPpc').disabled = false;
-  }
+  atualizarBotoesDependentesDaEtapa5();
 }
 
 document.getElementById('stepsNav').addEventListener('click', e => {
@@ -75,6 +55,7 @@ function markDone(step) {
   state.doneSteps.add(step);
   const pill = document.querySelector(`.step-pill[data-step="${step}"]`);
   if (pill) pill.classList.add('done');
+  if (step === 5) atualizarBotoesDependentesDaEtapa5();
 }
 
 // ── Log panel helpers ────────────────────────────────────────────────────────
@@ -127,16 +108,25 @@ function errLog(panel, msg) {
   panel.appendChild(div);
 }
 
+function warnLog(panel, msg) {
+  const div = document.createElement('div');
+  div.className = 'log-line warn';
+  div.textContent = `⚠ ${msg}`;
+  panel.appendChild(div);
+  panel.scrollTop = panel.scrollHeight;
+}
+
 // ── Renderiza markdown básico ────────────────────────────────────────────────
 function renderMarkdown(text) {
   return text
+    .replace(/^<!--PAGEBREAK-->\n?/gm, '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/(?:<li>[^<]*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
     .replace(/\n{2,}/g, '\n\n')
     .replace(/\n/g, '<br>');
 }
@@ -152,6 +142,26 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
   resultArea.classList.add('active');
 
   let fullText = '';
+  let rafHandle = null;
+
+  // Agrupa (coalesce) qualquer quantidade de eventos 'token' chegados entre
+  // frames em uma única atualização de DOM, evitando custo O(n²) ao
+  // re-renderizar o texto acumulado inteiro a cada delta recebido do servidor.
+  function scheduleRender() {
+    if (rafHandle !== null) return;
+    rafHandle = requestAnimationFrame(() => {
+      rafHandle = null;
+      resultArea.innerHTML = renderMarkdown(fullText);
+      resultArea.scrollTop = resultArea.scrollHeight;
+    });
+  }
+
+  function cancelScheduledRender() {
+    if (rafHandle !== null) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = null;
+    }
+  }
 
   const es = new EventSource(url);
 
@@ -168,15 +178,19 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
       onSite(msg);
     } else if (msg.type === 'token') {
       fullText += msg.text;
-      resultArea.innerHTML = renderMarkdown(fullText);
-      resultArea.scrollTop = resultArea.scrollHeight;
+      scheduleRender();
     } else if (msg.type === 'done') {
+      cancelScheduledRender();
       fullText = msg.fullText;
       resultArea.innerHTML = renderMarkdown(fullText);
+      resultArea.scrollTop = resultArea.scrollHeight;
       es.close();
       refreshTokenCounter();
       if (onDone) onDone(fullText);
+    } else if (msg.type === 'warning') {
+      warnLog(logPanel, msg.text);
     } else if (msg.type === 'error') {
+      cancelScheduledRender();
       errLog(logPanel, msg.message);
       es.close();
       refreshTokenCounter();
@@ -185,6 +199,7 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
   };
 
   es.onerror = () => {
+    cancelScheduledRender();
     errLog(logPanel, 'Erro de conexão com o servidor.');
     es.close();
     refreshTokenCounter();
@@ -212,7 +227,8 @@ document.getElementById('btnBnccNao').addEventListener('click', async () => {
   await fetch('/api/bncc/pular', { method: 'POST' });
   state.bncc = { ativo: false, publico: null, nivel: null, itens: [] };
   showBnccSection(null);
-  document.getElementById('metodologiaContainer').style.display = 'block';
+  markDone(0);
+  goStep(1);
 });
 
 // Pergunta 2: Ed. Básica ou adultos?
@@ -279,45 +295,11 @@ document.getElementById('btnConfirmarBncc').addEventListener('click', async () =
       body: JSON.stringify({ publico: state.bncc.publico, nivel: state.bncc.nivel, itens })
     });
     showBnccSection(null);
-    document.getElementById('metodologiaContainer').style.display = 'block';
+    markDone(0);
+    goStep(1);
   } catch (err) {
     alert('Erro ao salvar seleção BNCC: ' + err.message);
   }
-});
-
-// Derivar metodologia
-async function derivarMetodologia() {
-  const btn = document.getElementById('btnDerivarMetodologia');
-  btn.disabled = true;
-  btn.textContent = 'Gerando...';
-  document.getElementById('metodologiaResult').style.display = 'none';
-  document.getElementById('metodologiaActions').style.display = 'none';
-  try {
-    const r = await fetch('/api/metodologia');
-    if (!r.ok) {
-      const err = await r.json();
-      throw new Error(err.error || 'Erro ao gerar metodologia');
-    }
-    const data = await r.json();
-    const el = document.getElementById('metodologiaResult');
-    el.innerHTML = renderMarkdown(data.metodologia || '');
-    el.style.display = 'block';
-    document.getElementById('metodologiaActions').style.display = 'block';
-    refreshTokenCounter();
-  } catch (err) {
-    alert('Erro: ' + err.message + '\n\nCertifique-se de preencher a Etapa 1 antes de derivar a metodologia.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '⚙ Derivar Metodologia';
-  }
-}
-
-document.getElementById('btnDerivarMetodologia').addEventListener('click', derivarMetodologia);
-document.getElementById('btnRegenerarMetodologia').addEventListener('click', derivarMetodologia);
-
-document.getElementById('btnConfirmarMetodologia').addEventListener('click', () => {
-  markDone(0);
-  goStep(1);
 });
 
 document.getElementById('btnPularEtapa0').addEventListener('click', async () => {
@@ -326,8 +308,9 @@ document.getElementById('btnPularEtapa0').addEventListener('click', async () => 
 });
 
 // ── STEP 1 — Config ──────────────────────────────────────────────────────────
-document.getElementById('configForm').addEventListener('submit', async e => {
-  e.preventDefault();
+// Salva a configuração e encadeia a geração da metodologia — não navega para a
+// Etapa 2 ainda; isso só acontece na confirmação (btnSalvarMetodologia).
+async function salvarConfigEGerarMetodologia(triggerBtn) {
   const config = {
     nome: document.getElementById('nome').value.trim(),
     publico: document.getElementById('publico').value.trim(),
@@ -337,8 +320,13 @@ document.getElementById('configForm').addEventListener('submit', async e => {
     objetivos: document.getElementById('objetivos').value.trim(),
     modalidade: document.getElementById('modalidade').value,
     proporcaoTeoricoPratico: document.getElementById('proporcaoTeoricoPratico').value.trim(),
-    preRequisitos: document.getElementById('preRequisitos').value.trim()
+    preRequisitos: document.getElementById('preRequisitos').value.trim(),
+    pastaProjeto: document.getElementById('pastaProjeto').value.trim()
   };
+
+  const originalLabel = triggerBtn.textContent;
+  triggerBtn.disabled = true;
+  triggerBtn.textContent = 'Gerando...';
 
   try {
     const r = await fetch('/api/config', {
@@ -350,10 +338,50 @@ document.getElementById('configForm').addEventListener('submit', async e => {
       const data = await r.json().catch(() => ({}));
       throw new Error(data.error || 'Erro ao salvar configuração');
     }
+
+    const rMet = await fetch('/api/metodologia');
+    if (!rMet.ok) {
+      const err = await rMet.json().catch(() => ({}));
+      throw new Error(err.error || 'Erro ao gerar metodologia');
+    }
+    const data = await rMet.json();
+    document.getElementById('metodologiaResult').innerHTML = renderMarkdown(data.metodologia || '');
+    document.getElementById('metodologiaResultCard').style.display = 'block';
+    refreshTokenCounter();
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  } finally {
+    triggerBtn.disabled = false;
+    triggerBtn.textContent = originalLabel;
+  }
+}
+
+document.getElementById('configForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  await salvarConfigEGerarMetodologia(document.getElementById('btnGerarMetodologia'));
+});
+
+document.getElementById('btnRegenerarMetodologia').addEventListener('click', async () => {
+  await salvarConfigEGerarMetodologia(document.getElementById('btnRegenerarMetodologia'));
+});
+
+document.getElementById('btnSalvarMetodologia').addEventListener('click', async () => {
+  const btn = document.getElementById('btnSalvarMetodologia');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+  try {
+    const r = await fetch('/api/metodologia/confirmar', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Erro ao confirmar metodologia');
+    refreshTokenCounter();
     markDone(1);
     goStep(2);
   } catch (err) {
-    alert('Erro ao salvar: ' + err.message);
+    alert('Erro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
   }
 });
 
@@ -537,7 +565,35 @@ document.getElementById('btnUploadMelhorias').addEventListener('click', async ()
       `<strong>${comObs}</strong> com observações do revisor.<br>` +
       `<span style="color:#555">Clique em "Aplicar Melhorias" para iniciar o processamento.</span>`;
     resumoEl.style.display = 'block';
-    aplicarBtn.disabled = false;
+
+    const bannerDup = document.getElementById('bannerDuplicata');
+    bannerDup.style.display = 'none';
+
+    if (data.aviso === 'possivel_duplicata') {
+      const pct = Math.round((data.similaridadeObservacoes || 0) * 100);
+      const dtUpload = data.dataUltimoUpload
+        ? new Date(data.dataUltimoUpload).toLocaleString('pt-BR')
+        : 'data desconhecida';
+      bannerDup.innerHTML =
+        `⚠️ <strong>Possível duplicata detectada.</strong> Este documento é ` +
+        `<strong>${pct}% similar</strong> ao último carregado (${escHtml(dtUpload)}). ` +
+        `Você pode estar aplicando as mesmas melhorias duas vezes.<br>` +
+        `<div style="margin-top:8px;display:flex;gap:8px">` +
+          `<button class="btn btn-ghost btn-sm" id="btnCancelarDuplicata">Cancelar</button>` +
+          `<button class="btn btn-primary btn-sm" id="btnConfirmarDuplicata">Aplicar mesmo assim</button>` +
+        `</div>`;
+      bannerDup.style.display = 'block';
+      document.getElementById('btnCancelarDuplicata').onclick = () => {
+        bannerDup.style.display = 'none';
+        resumoEl.style.display = 'none';
+      };
+      document.getElementById('btnConfirmarDuplicata').onclick = () => {
+        bannerDup.style.display = 'none';
+        aplicarBtn.disabled = false;
+      };
+    } else {
+      aplicarBtn.disabled = false;
+    }
   } catch (err) {
     alert('Erro ao carregar arquivo: ' + err.message);
   } finally {
@@ -575,28 +631,10 @@ document.getElementById('btnFinalizarConteudo').addEventListener('click', async 
 
   try {
     const r = await fetch('/api/finalizar-conteudo', { method: 'POST' });
-
-    const contentType = r.headers.get('Content-Type') || '';
-    if (contentType.includes('application/json')) {
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Erro ao finalizar conteúdo');
-      if (data.saved) {
-        document.getElementById('bannerFinalizado').innerHTML =
-          `✅ Conteúdo finalizado! Arquivo salvo em: <strong>${escHtml(data.path)}</strong>`;
-        document.getElementById('bannerFinalizado').style.display = 'block';
-        return;
-      }
-    }
-    if (!r.ok) throw new Error('Erro ao finalizar conteúdo');
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const cd = r.headers.get('Content-Disposition') || '';
-    const match = cd.match(/filename="([^"]+)"/);
-    a.download = match ? match[1] : 'conteudo_final.docx';
-    a.click();
-    URL.revokeObjectURL(url);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Erro ao finalizar conteúdo');
+    document.getElementById('bannerFinalizado').innerHTML =
+      `✅ Conteúdo finalizado! Arquivo salvo em: <strong>${escHtml(data.path)}</strong>`;
     document.getElementById('bannerFinalizado').style.display = 'block';
   } catch (err) {
     alert('Erro ao finalizar: ' + err.message);
@@ -660,6 +698,57 @@ document.getElementById('btnPpc').addEventListener('click', () => {
   });
 });
 
+// ── STEP 8 — Slides (PowerPoint) ─────────────────────────────────────────────
+// Não usa streamSSE(): o evento "done" aqui carrega uma lista de arquivos
+// .pptx gerados (binários, um por aula), não um texto para renderizar como
+// markdown — por isso um handler de EventSource dedicado, mais enxuto.
+document.getElementById('btnSlides').addEventListener('click', () => {
+  if (!state.doneSteps.has(5)) {
+    alert('Conclua as Etapas 1–5 antes de gerar os slides.');
+    return;
+  }
+
+  const resultCard = document.getElementById('slidesResultCard');
+  const arquivosEl = document.getElementById('slidesArquivos');
+  const btn = document.getElementById('btnSlides');
+  resultCard.style.display = 'block';
+  arquivosEl.innerHTML = '';
+  btn.disabled = true;
+
+  const logPanel = initLog('logSlides');
+  addLog(logPanel, 'Iniciando geração dos slides...');
+
+  const es = new EventSource('/api/slides');
+
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'progress') {
+      if (msg.message === 'Concluído') finishLog(logPanel, msg.message);
+      else addLog(logPanel, msg.message);
+    } else if (msg.type === 'done') {
+      arquivosEl.innerHTML = (msg.arquivos || []).map(a =>
+        `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem" title="${escHtml(a.path)}">🖥️ ${escHtml(a.titulo)}</span>`
+      ).join('');
+      es.close();
+      refreshTokenCounter();
+      btn.disabled = false;
+    } else if (msg.type === 'error') {
+      errLog(logPanel, msg.message);
+      es.close();
+      refreshTokenCounter();
+      btn.disabled = false;
+    }
+  };
+
+  es.onerror = () => {
+    errLog(logPanel, 'Erro de conexão com o servidor.');
+    es.close();
+    refreshTokenCounter();
+    btn.disabled = false;
+  };
+});
+
 // ── Copiar ───────────────────────────────────────────────────────────────────
 function copyResult(elId) {
   const el = document.getElementById(elId);
@@ -686,25 +775,217 @@ async function exportDocx(step) {
       return;
     }
 
-    const contentType = r.headers.get('Content-Type') || '';
-    if (contentType.includes('application/json')) {
-      const data = await r.json();
-      if (data.saved) {
-        alert(`Arquivo salvo em:\n${data.path}`);
-        return;
-      }
+    const data = await r.json();
+    if (data.saved) {
+      alert(`Arquivo salvo em:\n${data.path}`);
     }
-
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const cd = r.headers.get('Content-Disposition') || '';
-    const match = cd.match(/filename="([^"]+)"/);
-    a.download = match ? match[1] : `${step}.docx`;
-    a.click();
-    URL.revokeObjectURL(url);
   } catch (err) {
     alert('Erro ao exportar: ' + err.message);
   }
 }
+
+// ── Abrir projeto existente por pasta ──────────────────────────────────────────
+const STAGE_TO_STEP = {
+  ementa: 1, pesquisa: 2, plano_de_ensino: 3, plano_de_aula: 4, conteudo: 5
+};
+
+// Abre o seletor nativo de pasta do Windows (via servidor) e devolve o caminho
+// escolhido, ou null se o usuário cancelou ou o seletor falhou.
+async function escolherPasta() {
+  try {
+    const r = await fetch('/api/escolher-pasta');
+    const data = await r.json();
+    if (!r.ok) {
+      alert(data.error || 'Não foi possível abrir o seletor de pasta. Digite o caminho manualmente.');
+      return null;
+    }
+    return data.pasta || null;
+  } catch (err) {
+    alert('Não foi possível abrir o seletor de pasta. Digite o caminho manualmente.');
+    return null;
+  }
+}
+
+document.getElementById('btnSelecionarPastaProjeto').addEventListener('click', async () => {
+  const pasta = await escolherPasta();
+  if (pasta) await carregarProjetoPorPasta(pasta);
+});
+
+document.getElementById('btnProcurarPastaProjeto').addEventListener('click', async () => {
+  const pasta = await escolherPasta();
+  if (pasta) document.getElementById('pastaProjeto').value = pasta;
+});
+
+async function carregarProjetoPorPasta(pasta) {
+  try {
+    const r = await fetch('/api/carregar-projeto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pasta })
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao carregar projeto'); return; }
+
+    // Cards com os arquivos reais encontrados na pasta selecionada
+    const container = document.getElementById('arquivosProjetoCarregado');
+    if (data.arquivos?.length) {
+      container.innerHTML = data.arquivos.map(a =>
+        `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">${escHtml(a.rotulo)}</span>`
+      ).join('');
+    } else {
+      container.innerHTML = '';
+    }
+
+    // Marca etapas concluídas com base nos stages carregados
+    const stageStepMap = { ementa: 1, pesquisa: 2, plano_de_ensino: 3, plano_de_aula: 4, conteudo: 5 };
+    let maxStep = 0;
+    for (const stage of data.etapasCarregadas) {
+      const step = stageStepMap[stage];
+      if (step) { markDone(step); if (step > maxStep) maxStep = step; }
+      if (stage.startsWith('aula') && stage.endsWith('_conteudo')) { markDone(5); maxStep = Math.max(maxStep, 5); }
+    }
+    if (data.stages) {
+      Object.entries(data.stages).forEach(([stage, info]) => atualizarBadgeOrigem(stage, info.fonte, info.geradoEm));
+    }
+
+    // Repopula campos do formulário da Etapa 1
+    if (data.config) {
+      const c = data.config;
+      ['nome','publico','carga','duracao','nivel','objetivos','modalidade','proporcaoTeoricoPratico','preRequisitos','pastaProjeto'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && c[id] != null) el.value = c[id];
+      });
+    }
+
+    // Restaura metodologia no painel da Etapa 0
+    if (data.metodologia) {
+      const el = document.getElementById('metodologiaResult');
+      el.innerHTML = renderMarkdown(data.metodologia);
+      el.style.display = 'block';
+      document.getElementById('metodologiaActions').style.display = 'block';
+    }
+
+    // Repopula campos de texto livre das Etapas 2–4
+    if (data.inputs) {
+      const inp = data.inputs;
+      if (inp.topicos != null) document.getElementById('topicos').value = inp.topicos;
+      if (inp.limite != null) document.getElementById('limite').value = inp.limite;
+      if (inp.ajustesEnsino != null) document.getElementById('ajustesEnsino').value = inp.ajustesEnsino;
+      if (inp.observacoesAula != null) document.getElementById('observacoesAula').value = inp.observacoesAula;
+    }
+
+    const banner = document.getElementById('bannerProjetoCarregado');
+    banner.style.display = 'block';
+    banner.textContent = `✅ Projeto "${data.nome}" carregado — ${data.etapasCarregadas.length} etapas restauradas.`;
+    if (data.camposFaltantes?.length)
+      banner.textContent += ` Campos a reinserir: ${data.camposFaltantes.join(', ')}.`;
+
+    if (maxStep > 0) setTimeout(() => goStep(maxStep), 800);
+  } catch (err) {
+    alert('Erro ao carregar projeto: ' + err.message);
+  }
+}
+
+// ── Badge de origem ───────────────────────────────────────────────────────────
+const STAGE_BADGE_MAP = {
+  metodologia: 'origemMetodologia',
+  pesquisa: 'origemEtapa2',
+  plano_de_ensino: 'origemEtapa3',
+  plano_de_aula: 'origemEtapa4',
+  conteudo: 'origemEtapa5',
+};
+
+function atualizarBadgeOrigem(stage, fonte, data) {
+  const badgeId = STAGE_BADGE_MAP[stage];
+  if (!badgeId) return;
+  const el = document.getElementById(badgeId);
+  if (!el) return;
+  if (fonte === 'usuario') {
+    const d = data ? new Date(data).toLocaleDateString('pt-BR') : '';
+    el.className = 'badge-origem badge-usuario';
+    el.textContent = `✏️ Versão do usuário${d ? ' · ' + d : ''}`;
+  } else {
+    el.className = 'badge-origem badge-ia';
+    el.textContent = '🤖 Gerado pela IA';
+  }
+}
+
+// ── Importar .docx editado ────────────────────────────────────────────────────
+let _importarTextoBuffer = '';
+let _importarStageBuffer = '';
+
+function abrirImportar(stageHint) {
+  _importarTextoBuffer = '';
+  _importarStageBuffer = stageHint || '';
+  document.getElementById('importarDeteccao').style.display = 'none';
+  document.getElementById('importarSeletor').style.display = 'none';
+  document.getElementById('btnConfirmarImportar').disabled = true;
+  document.getElementById('importarFileInput').value = '';
+  const modal = document.getElementById('modalImportar');
+  modal.style.display = 'flex';
+}
+
+function fecharModalImportar() {
+  document.getElementById('modalImportar').style.display = 'none';
+}
+
+document.getElementById('importarFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('arquivo', file);
+  const detDiv = document.getElementById('importarDeteccao');
+  const selDiv = document.getElementById('importarSeletor');
+  const btnConf = document.getElementById('btnConfirmarImportar');
+  detDiv.style.display = 'none';
+  selDiv.style.display = 'none';
+  btnConf.disabled = true;
+  try {
+    const r = await fetch('/api/importar', { method: 'POST', body: form });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao processar arquivo'); return; }
+    _importarTextoBuffer = data.texto || '';
+    if (data.detectadoPor === 'ambiguo') {
+      selDiv.style.display = 'block';
+      const sel = document.getElementById('importarStageSeletor');
+      sel.innerHTML = (data.candidatos || []).map(c => `<option value="${c.stage}">${c.titulo}</option>`).join('');
+      _importarStageBuffer = '';
+      sel.onchange = () => { _importarStageBuffer = sel.value; btnConf.disabled = !_importarStageBuffer; };
+    } else {
+      _importarStageBuffer = data.stagioDetectado;
+      detDiv.style.display = 'block';
+      detDiv.textContent = `Detectado: ${data.titulo} (${data.chars} caracteres) — via ${data.detectadoPor}`;
+      btnConf.disabled = false;
+    }
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  }
+});
+
+document.getElementById('btnConfirmarImportar').addEventListener('click', async () => {
+  if (!_importarStageBuffer || !_importarTextoBuffer) return;
+
+  // Aviso se stage já tem versão do usuário (regressão consciente)
+  const badgeId = STAGE_BADGE_MAP[_importarStageBuffer];
+  if (badgeId) {
+    const el = document.getElementById(badgeId);
+    if (el?.classList.contains('badge-usuario')) {
+      if (!confirm('Este artefato já tem uma versão importada por você. Substituir pela nova versão?')) return;
+    }
+  }
+
+  try {
+    const r = await fetch('/api/importar/confirmar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage: _importarStageBuffer, texto: _importarTextoBuffer })
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao confirmar'); return; }
+    atualizarBadgeOrigem(_importarStageBuffer, 'usuario', new Date().toISOString());
+    fecharModalImportar();
+    alert(`Artefato "${_importarStageBuffer}" atualizado com sua versão.`);
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  }
+});

@@ -6,6 +6,7 @@ const OpenAI = require('openai');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const { execFile } = require('child_process');
 const multer = require('multer');
 const mammoth = require('mammoth');
 const skills = require('./skills');
@@ -18,10 +19,44 @@ const {
   AlignmentType, PageNumber, Header, Footer, Table,
   TableRow, TableCell, WidthType, BorderStyle, NumberFormat
 } = require('docx');
+const PptxGenJS = require('pptxgenjs');
 
 const app = express();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 6 });
 const upload = multer({ storage: multer.memoryStorage() });
+
+const SEARCH_TIMEOUT_MS = 45_000;
+const SEARCH_RETRY_TIMEOUT_MS = 30_000;
+const STALL_TIMEOUT_MS = 45_000;
+const CONTEUDO_SEARCH_TIMEOUT_MS = 90_000;
+
+function isRetriable(err) {
+  if (err instanceof OpenAI.AuthenticationError) return false;
+  if (err instanceof OpenAI.BadRequestError) return false;
+  return true;
+}
+
+function makeAbortSignal(ms) {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), ms);
+  return ac.signal;
+}
+
+async function tentarPesquisaWeb(skill, timeoutMs) {
+  return openai.chat.completions.create(
+    {
+      model: skill.model,
+      web_search_options: skill.web_search_options,
+      max_tokens: 2000,
+      messages: [
+        { role: 'system', content: skill.system },
+        { role: 'user', content: skill.user }
+      ]
+    },
+    { signal: makeAbortSignal(timeoutMs) }
+  );
+}
 
 app.use(express.json());
 app.use(cookieParser());
@@ -54,8 +89,8 @@ function getSession(req, res) {
       conteudoFinal: '',
       // Agente de qualidade e PPC
       relatorioQualidade: '',
-      // Pastas
-      pastaSaida: null
+      // Inputs do usuário por etapa (Etapas 2–4)
+      inputs: {}
     };
     res.cookie('sessionId', id, { httpOnly: true });
   }
@@ -127,33 +162,193 @@ function slugify(s) {
     .slice(0, 80) || 'curso';
 }
 
-function courseDir(sess) {
-  const dir = path.join(SAIDAS_ROOT, slugify(sess.config?.nome));
+function courseRootDir(sess) {
+  const dir = sess.config?.pastaProjeto?.trim() || path.join(SAIDAS_ROOT, slugify(sess.config?.nome));
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function courseScrDir(sess) {
+  const dir = path.join(courseRootDir(sess), 'scr');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Abre o diálogo nativo de seleção de pasta do Windows a partir do processo do
+// servidor (necessário porque navegadores não expõem caminhos absolutos de
+// pastas ao JavaScript da página). Só faz sentido para uso local, com servidor
+// e navegador na mesma máquina — ver capability native-folder-picker.
+function escolherPastaWindows() {
+  return new Promise((resolve, reject) => {
+    // Usa um Form invisível TopMost como dono do diálogo em vez de tentar
+    // reaproveitar o HWND do navegador via GetForegroundWindow/P-Invoke: mais
+    // simples (sem compilação de C# via Add-Type) e mais confiável, porque
+    // TopMost força o diálogo acima de qualquer janela independentemente de
+    // qual processo está com foco no instante em que o script roda.
+    const script = `
+      Add-Type -AssemblyName System.Windows.Forms
+
+      $owner = New-Object System.Windows.Forms.Form
+      $owner.TopMost = $true
+      $owner.StartPosition = 'CenterScreen'
+      $owner.Width = 0
+      $owner.Height = 0
+      $owner.ShowInTaskbar = $false
+      [void]$owner.Show()
+      [void]$owner.Focus()
+
+      $f = New-Object System.Windows.Forms.FolderBrowserDialog
+      $f.Description = 'Selecione a pasta do projeto'
+
+      $result = $f.ShowDialog($owner)
+      $owner.Close()
+
+      if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+        Write-Output $f.SelectedPath
+      }
+    `;
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-STA', '-Command', script],
+      { timeout: 120_000 },
+      (err, stdout, stderr) => {
+        if (err) {
+          if (stderr) err.message += `\n${stderr}`;
+          return reject(err);
+        }
+        const pasta = stdout.trim();
+        resolve(pasta || null);
+      }
+    );
+  });
 }
 
 // Lê a "memória" (texto puro) de uma etapa já persistida, se existir.
 function readMemory(sess, baseName) {
   try {
-    return fs.readFileSync(path.join(courseDir(sess), `${baseName}.txt`), 'utf-8');
+    return fs.readFileSync(path.join(courseScrDir(sess), `${baseName}.txt`), 'utf-8');
   } catch {
     return '';
   }
 }
 
-// Persiste o resultado de uma etapa em disco: um .txt (memória, lido pelas
-// próximas etapas) e um .docx (entregável formatado, igual ao da exportação).
-async function persistStage(sess, baseName, label, content, sites = []) {
-  const dir = courseDir(sess);
+// Reconstrói sess.aulas a partir dos arquivos aula{NN}_conteudo.txt em disco,
+// para projetos cujo projeto.json ficou com "aulas": [] (ex.: sessão perdida
+// em memória antes de sess.aulas ser persistida), mas cujo conteúdo de cada
+// aula já foi gerado e gravado normalmente. Extrai o título da primeira linha
+// de cada arquivo (formato "# Aula N - Título" / "# Aula N: Título").
+function reconstruirAulasApartirDosArquivos(sess) {
+  let arquivos;
   try {
-    fs.writeFileSync(path.join(dir, `${baseName}.txt`), content, 'utf-8');
+    arquivos = fs.readdirSync(courseScrDir(sess));
+  } catch {
+    return [];
+  }
+  const indices = arquivos
+    .map(f => f.match(/^aula(\d+)_conteudo\.txt$/))
+    .filter(Boolean)
+    .map(m => Number(m[1]))
+    .sort((a, b) => a - b);
+
+  return indices.map(n => {
+    const idx = String(n).padStart(2, '0');
+    const primeiraLinha = readMemory(sess, `aula${idx}_conteudo`).split('\n')[0] || '';
+    const tituloMatch = primeiraLinha.match(/Aula\s*\d+\s*[-:–]\s*(.+)$/i);
+    return { titulo: tituloMatch ? tituloMatch[1].trim() : `Aula ${n}`, modulo: '', objetivos: '' };
+  });
+}
+
+// Restaura sess.conteudoPorAula a partir do disco quando a sessão in-memory
+// está vazia (ex.: restart do servidor, refresh de página sem carregar projeto).
+// Opera em cascata: sess.aulas → projeto.json → arquivos em disco → erro 400
+// (responsabilidade do caller).
+function restoreConteudoPorAula(sess) {
+  if (sess.conteudoPorAula?.length) return;
+
+  if (!sess.aulas?.length && sess.config?.nome) {
+    try {
+      const p = JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'projeto.json'), 'utf-8'));
+      if (p.aulas?.length) {
+        sess.aulas = p.aulas;
+        if (p.config) Object.assign(sess.config, p.config);
+      }
+    } catch { /* projeto.json ausente ou corrompido — caller verifica resultado */ }
+  }
+
+  if (!sess.aulas?.length && sess.config?.nome) {
+    const reconstruidas = reconstruirAulasApartirDosArquivos(sess);
+    if (reconstruidas.length) {
+      console.warn(`[restoreConteudoPorAula] projeto.json com "aulas" vazio para "${sess.config.nome}" — reconstruído a partir de ${reconstruidas.length} arquivo(s) aula*_conteudo.txt em disco.`);
+      sess.aulas = reconstruidas;
+      saveProject(sess);
+    }
+  }
+
+  if (sess.aulas?.length) {
+    sess.conteudoPorAula = sess.aulas.map((aula, i) => {
+      const idx = String(i + 1).padStart(2, '0');
+      return { ...aula, texto: readMemory(sess, `aula${idx}_conteudo`) };
+    });
+  }
+}
+
+// Serializa os campos não-textuais da sessão em projeto.json para recuperação futura.
+function saveProject(sess, stageInfo = null) {
+  if (!sess.config?.nome) return;
+  const scrDir = courseScrDir(sess);
+  const projetoPath = path.join(scrDir, 'projeto.json');
+  let projeto = {};
+  try {
+    projeto = JSON.parse(fs.readFileSync(projetoPath, 'utf-8'));
+  } catch { /* arquivo novo ou corrompido */ }
+
+  projeto.config = sess.config;
+  projeto.bncc = sess.bncc || { ativo: false, publico: null, nivel: null, itens: [] };
+  projeto.metodologia = sess.metodologia || '';
+  projeto.aulas = sess.aulas || [];
+  projeto.inputs = sess.inputs || {};
+  projeto.ultimaModificacao = new Date().toISOString();
+  if (!projeto.stages) projeto.stages = {};
+  if (stageInfo?.baseName) {
+    projeto.stages[stageInfo.baseName] = {
+      fonte: stageInfo.fonte || 'ia',
+      geradoEm: new Date().toISOString()
+    };
+  }
+  try {
+    fs.writeFileSync(projetoPath, JSON.stringify(projeto, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[saveProject] Erro ao gravar projeto.json:', err.message);
+  }
+}
+
+// Persiste o resultado de uma etapa em disco: um .txt em /scr (memória, lido pelas
+// próximas etapas) e um .docx na raiz (entregável formatado, igual ao da exportação).
+async function persistStage(sess, baseName, label, content, sites = []) {
+  try {
+    const scrDir = courseScrDir(sess);
+    const rootDir = courseRootDir(sess);
+    fs.writeFileSync(path.join(scrDir, `${baseName}.txt`), content, 'utf-8');
     const doc = buildDocx(sess.config, label, content, sites);
     const buffer = await Packer.toBuffer(doc);
-    fs.writeFileSync(path.join(dir, `${baseName}.docx`), buffer);
+    fs.writeFileSync(path.join(rootDir, `${baseName}.docx`), buffer);
+    saveProject(sess, { baseName, fonte: 'ia' });
   } catch (err) {
-    console.error(`Erro ao persistir "${baseName}" em saídas:`, err.message);
+    console.error(`Erro ao persistir "${baseName}":`, err.message);
   }
+}
+
+// Persiste um plano de slides como .pptx na raiz do projeto (Etapa 8). Ao
+// contrário de persistStage, não grava nenhum .txt em /scr — slides não são
+// lidos de volta como "memória" por nenhuma etapa posterior.
+async function persistPptxStage(sess, baseName, aula, slidePlan) {
+  const rootDir = courseRootDir(sess);
+  const pptx = buildPptx(sess.config, aula, slidePlan, new Date());
+  const buffer = await pptx.write({ outputType: 'nodebuffer' });
+  const fullPath = path.join(rootDir, `${baseName}.pptx`);
+  fs.writeFileSync(fullPath, buffer);
+  saveProject(sess, { baseName, fonte: 'ia' });
+  return fullPath;
 }
 
 // ── SSE helper ──────────────────────────────────────────────────────────────
@@ -228,6 +423,44 @@ app.get('/api/metodologia', async (req, res) => {
     res.json({ ok: true, metodologia: sess.metodologia });
   } catch (err) {
     console.error('Erro ao gerar metodologia:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/metodologia/confirmar — torna a metodologia definitiva ───────
+// Ponto de confirmação explícito: gera a ementa pendente (se houver) usando a
+// metodologia final (gerada por IA ou reimportada editada) e persiste a
+// metodologia em disco, seguindo o mesmo padrão das demais etapas.
+app.post('/api/metodologia/confirmar', async (req, res) => {
+  const sess = getSession(req, res);
+  if (!sess.metodologia) return res.status(400).json({ error: 'Gere a metodologia antes de confirmar.' });
+
+  try {
+    if (sess._precisaGerarEmenta) {
+      const { nome, publico, carga, duracao, nivel, objetivos } = sess.config;
+      const skill = skills.ementaSkill({
+        nome, publico, carga, duracao, nivel, objetivos,
+        metodologia: sess.metodologia,
+        bnccContext: sess.bncc?.ativo ? sess.bncc.itens.map(i => `${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('; ') : ''
+      });
+      const completion = await openai.chat.completions.create({
+        model: skill.model,
+        messages: [
+          { role: 'system', content: skill.system },
+          { role: 'user', content: skill.user }
+        ]
+      });
+      addUsage(completion.usage);
+      sess.ementa = completion.choices[0]?.message?.content?.trim() || '';
+      sess._precisaGerarEmenta = false;
+    }
+
+    if (sess.ementa) await persistStage(sess, 'ementa', 'Ementa do Curso', sess.ementa);
+    await persistStage(sess, 'metodologia', 'Metodologia Pedagógica', sess.metodologia);
+
+    res.json({ ok: true, ementa: sess.ementa });
+  } catch (err) {
+    console.error('Erro ao confirmar metodologia:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -355,34 +588,117 @@ app.get('/api/ppc', async (req, res) => {
   }
 });
 
+// ── GET /api/slides (SSE) — Etapa 8, opcional e independente ───────────────
+// Reorganiza o conteúdo JÁ gerado de cada aula em slides — não gera conteúdo
+// pedagógico novo, apenas estrutura/resume o que já existe.
+app.get('/api/slides', async (req, res) => {
+  const sess = getSession(req, res);
+  restoreConteudoPorAula(sess);
+  if (!sess.conteudo && !sess.conteudoPorAula?.length) {
+    return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar os slides.' });
+  }
+  sseHeaders(res);
+
+  try {
+    const aulas = sess.conteudoPorAula;
+    const arquivos = [];
+
+    for (let i = 0; i < aulas.length; i++) {
+      const aula = aulas[i];
+      const numero = String(i + 1).padStart(2, '0');
+      send(res, {
+        type: 'progress',
+        message: `Gerando slides da aula ${i + 1} de ${aulas.length}: ${aula.titulo}`
+      });
+
+      const skill = skills.slidesSkill({ nomeCurso: sess.config.nome, aula });
+      const completion = await openai.chat.completions.create({
+        model: skill.model,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: skill.system },
+          { role: 'user', content: skill.user }
+        ]
+      });
+      addUsage(completion.usage);
+
+      let slidePlan = { slides: [] };
+      try {
+        slidePlan = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      } catch {
+        slidePlan = { slides: [] };
+      }
+
+      const baseName = `aula${numero}_slides`;
+      const fullPath = await persistPptxStage(sess, baseName, aula, slidePlan);
+      arquivos.push({ baseName, titulo: aula.titulo, path: fullPath });
+    }
+
+    send(res, { type: 'progress', message: 'Concluído' });
+    send(res, { type: 'done', arquivos });
+  } catch (err) {
+    console.error(err);
+    send(res, { type: 'error', message: err.message || 'Erro ao gerar slides' });
+  } finally {
+    res.end();
+  }
+});
+
+// ── GET /api/escolher-pasta — abre o seletor nativo de pasta do Windows ─────
+app.get('/api/escolher-pasta', async (req, res) => {
+  try {
+    const pasta = await escolherPastaWindows();
+    res.json({ pasta });
+  } catch (err) {
+    console.error('[escolher-pasta] Erro ao abrir seletor nativo:', err.message);
+    res.status(500).json({ error: 'Não foi possível abrir o seletor de pasta. Digite o caminho manualmente.' });
+  }
+});
+
 // ── POST /api/config ────────────────────────────────────────────────────────
 app.post('/api/config', async (req, res) => {
   const sess = getSession(req, res);
-  const { nome, publico, carga, duracao, nivel, objetivos, modalidade, preRequisitos, proporcaoTeoricoPratico } = req.body;
+  const { nome, publico, carga, duracao, nivel, objetivos, modalidade, preRequisitos, proporcaoTeoricoPratico, pastaProjeto } = req.body;
+  const pastaProjetoAnterior = (sess.config.pastaProjeto || '').trim();
   if (!modalidade) return res.status(400).json({ error: 'O campo modalidade é obrigatório.' });
   if (!proporcaoTeoricoPratico) return res.status(400).json({ error: 'O campo proporção teórico/prático é obrigatório.' });
-  sess.config = req.body;
+  if (!pastaProjeto?.trim()) return res.status(400).json({ error: 'O campo pasta do projeto é obrigatório.' });
 
-  // Gera automaticamente a "ementa" — primeiro arquivo da memória persistente
-  // em saídas/, usado como âncora de coerência por todas as etapas seguintes.
-  try {
-    const pedagCtx = buildPedagogicalContext(sess);
-    const skill = skills.ementaSkill({ nome, publico, carga, duracao, nivel, objetivos, metodologia: sess.metodologia, bnccContext: sess.bncc?.ativo ? sess.bncc.itens.map(i => `${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('; ') : '' });
-    const completion = await openai.chat.completions.create({
-      model: skill.model,
-      messages: [
-        { role: 'system', content: skill.system },
-        { role: 'user', content: skill.user }
-      ]
-    });
-    addUsage(completion.usage);
-    sess.ementa = completion.choices[0]?.message?.content?.trim() || '';
-    if (sess.ementa) await persistStage(sess, 'ementa', 'Ementa do Curso', sess.ementa);
-  } catch (err) {
-    console.error('Erro ao gerar ementa automática:', err.message);
+  {
+    const pasta = path.resolve(pastaProjeto.trim());
+    if (pastaProjeto.includes('..')) return res.status(400).json({ error: 'Caminho inválido: não pode conter "..".' });
+    if (pasta === path.resolve(__dirname) || pasta.startsWith(path.resolve(__dirname) + path.sep)) {
+      return res.status(400).json({ error: 'Caminho inválido: não pode apontar para o diretório da aplicação.' });
+    }
+    try {
+      fs.mkdirSync(pasta, { recursive: true });
+      fs.accessSync(pasta, fs.constants.W_OK);
+    } catch {
+      return res.status(400).json({ error: `Pasta não acessível ou sem permissão de escrita: ${pasta}` });
+    }
   }
 
-  res.json({ ok: true, ementa: sess.ementa });
+  // Campos de conteúdo pedagógico que determinam se a ementa deve ser regerada.
+  const camposConteudo = ['nome', 'publico', 'carga', 'duracao', 'nivel', 'objetivos'];
+  const conteudoMudou = camposConteudo.some(k => (req.body[k] || '') !== (sess.config[k] || ''));
+
+  sess.config = req.body;
+
+  // pastaProjeto não entra em conteudoMudou (não deve reprocessar o pipeline),
+  // mas precisa ser persistida imediatamente, sem depender da regeneração da
+  // ementa abaixo — senão projeto.json fica desatualizado se a sessão for
+  // perdida antes de qualquer outra etapa ser gerada.
+  if ((pastaProjeto || '').trim() !== pastaProjetoAnterior) {
+    saveProject(sess);
+  }
+
+  // A ementa deixa de ser gerada aqui — a Etapa 1 agora é preenchida ANTES da
+  // metodologia existir (ver POST /api/metodologia/confirmar), então gerar a
+  // ementa neste ponto produziria um texto sem alinhamento metodológico.
+  // Apenas registra se será necessário gerá-la na confirmação da metodologia.
+  sess._precisaGerarEmenta = !sess.ementa || conteudoMudou;
+
+  res.json({ ok: true });
 });
 
 // ── GET /api/search (SSE) ───────────────────────────────────────────────────
@@ -390,6 +706,8 @@ app.get('/api/search', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
   const { topicos = '', limite = 3 } = req.query;
+  sess.inputs.topicos = topicos;
+  sess.inputs.limite = Number(limite);
   const { nome, nivel, publico } = sess.config;
 
   send(res, { type: 'progress', message: 'Iniciando pesquisa...' });
@@ -401,39 +719,59 @@ app.get('/api/search', async (req, res) => {
   try {
     send(res, { type: 'progress', message: 'Buscando na web...' });
 
-    const completion = await openai.chat.completions.create({
-      model: skill.model,
-      web_search_options: skill.web_search_options,
-      max_tokens: 2000,
-      messages: [
-        { role: 'system', content: skill.system },
-        { role: 'user', content: skill.user }
-      ]
-    });
+    let completion = null;
+    let usedFallback = false;
+
+    // Tentativa 1 com timeout completo
+    try {
+      completion = await tentarPesquisaWeb(skill, SEARCH_TIMEOUT_MS);
+    } catch (err1) {
+      if (!isRetriable(err1)) throw err1;
+      // Retry com timeout reduzido
+      send(res, { type: 'progress', message: 'Reconectando...' });
+      try {
+        completion = await tentarPesquisaWeb(skill, SEARCH_RETRY_TIMEOUT_MS);
+      } catch (err2) {
+        if (!isRetriable(err2)) throw err2;
+        // Fallback sem web search
+        usedFallback = true;
+        send(res, { type: 'progress', message: '⚠️ Pesquisa web indisponível — gerando a partir do conhecimento do modelo...' });
+        const fbSkill = skills.pesquisaFallbackSkill({ nome, nivel, publico, topicos, ementa: sess.ementa, metodologia: sess.metodologia, bnccContext: buildPedagogicalContext(sess) });
+        completion = await openai.chat.completions.create({
+          model: fbSkill.model,
+          max_tokens: 2000,
+          messages: [
+            { role: 'system', content: fbSkill.system },
+            { role: 'user', content: fbSkill.user }
+          ]
+        });
+      }
+    }
 
     addUsage(completion.usage);
 
     const message = completion.choices[0]?.message || {};
     const fullText = message.content || '';
 
-    const seenUrls = new Set();
     const sitesCollected = [];
-    for (const ann of message.annotations || []) {
-      if (ann.type === 'url_citation' && ann.url_citation?.url && !seenUrls.has(ann.url_citation.url)) {
-        seenUrls.add(ann.url_citation.url);
-      }
-    }
-
-    if (seenUrls.size) {
-      send(res, { type: 'progress', message: 'Lendo fontes...' });
+    if (!usedFallback) {
+      const seenUrls = new Set();
       for (const ann of message.annotations || []) {
-        if (ann.type === 'url_citation' && ann.url_citation?.url) {
-          const { url, title } = ann.url_citation;
-          if (seenUrls.has(url)) {
-            seenUrls.delete(url);
-            const site = { url, title: title || url };
-            sitesCollected.push(site);
-            send(res, { type: 'site', ...site });
+        if (ann.type === 'url_citation' && ann.url_citation?.url && !seenUrls.has(ann.url_citation.url)) {
+          seenUrls.add(ann.url_citation.url);
+        }
+      }
+      if (seenUrls.size) {
+        send(res, { type: 'progress', message: 'Lendo fontes...' });
+        for (const ann of message.annotations || []) {
+          if (ann.type === 'url_citation' && ann.url_citation?.url) {
+            const { url, title } = ann.url_citation;
+            if (seenUrls.has(url)) {
+              seenUrls.delete(url);
+              const site = { url, title: title || url };
+              sitesCollected.push(site);
+              send(res, { type: 'site', ...site });
+            }
           }
         }
       }
@@ -464,6 +802,7 @@ app.get('/api/plano-ensino', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
   const { ajustes = '' } = req.query;
+  sess.inputs.ajustesEnsino = ajustes;
   const { nome, publico, carga, duracao, nivel, objetivos } = sess.config;
 
   send(res, { type: 'progress', message: 'Preparando plano de ensino...' });
@@ -522,6 +861,7 @@ app.get('/api/plano-aula', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
   const { observacoes = '' } = req.query;
+  sess.inputs.observacoesAula = observacoes;
   const { nome, duracao, nivel, publico } = sess.config;
 
   send(res, { type: 'progress', message: 'Planejando as aulas do curso...' });
@@ -531,7 +871,7 @@ app.get('/api/plano-aula', async (req, res) => {
   const planoEnsino = sess.planoEnsino || readMemory(sess, 'plano_de_ensino');
 
   try {
-    const aulas = await planLessons(sess, planoEnsino);
+    const aulas = await planLessons(sess, planoEnsino, msg => send(res, { type: 'progress', message: msg }));
     sess.aulas = aulas;
     send(res, {
       type: 'progress',
@@ -601,33 +941,50 @@ app.get('/api/plano-aula', async (req, res) => {
 // Ajuste 2: usa EXCLUSIVAMENTE o plano de ensino como referência curricular
 // (nunca truncado) e exige um campo "modulo" rastreável a um módulo real do
 // plano de ensino, permitindo auditar a aderência da grade ao currículo.
-async function planLessons(sess, planoEnsinoOverride) {
+async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
   const { nome, carga, duracao, nivel, publico } = sess.config;
   const totalMinutos = Number(carga) * 60;
   const numAulas = Math.max(1, Math.round(totalMinutos / Number(duracao)));
 
   const planoEnsino = planoEnsinoOverride || sess.planoEnsino || readMemory(sess, 'plano_de_ensino');
 
-  const skill = skills.planLessonsSkill({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas });
+  const chamarSkill = async (correcao) => {
+    const skill = skills.planLessonsSkill({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas, correcao });
+    const completion = await openai.chat.completions.create({
+      model: skill.model,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: skill.system },
+        { role: 'user', content: skill.user }
+      ]
+    });
+    addUsage(completion.usage);
+    let parsed = {};
+    try {
+      parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
+    } catch {
+      parsed = {};
+    }
+    return Array.isArray(parsed.aulas) ? parsed.aulas : [];
+  };
 
-  const completion = await openai.chat.completions.create({
-    model: skill.model,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: skill.system },
-      { role: 'user', content: skill.user }
-    ]
-  });
+  let aulas = await chamarSkill();
 
-  addUsage(completion.usage);
+  if (aulas.length !== numAulas && aulas.length > 0) {
+    onProgress(`A IA retornou ${aulas.length} aula(s) em vez de ${numAulas}; tentando novamente...`);
+    console.warn(`[planLessons] Esperado ${numAulas} aulas, recebido ${aulas.length}. Tentando novamente com prompt de correção.`);
 
-  let parsed = {};
-  try {
-    parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
-  } catch {
-    parsed = {};
+    const retryAulas = await chamarSkill(aulas.length);
+    if (retryAulas.length > 0) {
+      const acertouRetry = retryAulas.length === numAulas;
+      const retryMaisProximo = Math.abs(retryAulas.length - numAulas) < Math.abs(aulas.length - numAulas);
+      if (acertouRetry || retryMaisProximo) aulas = retryAulas;
+      if (!acertouRetry) {
+        console.warn(`[planLessons] Segunda tentativa retornou ${retryAulas.length} aulas (esperado ${numAulas}). Prosseguindo com ${aulas.length} aula(s), o resultado mais próximo do esperado.`);
+      }
+    }
   }
-  const aulas = Array.isArray(parsed.aulas) ? parsed.aulas : [];
+
   return aulas.length ? aulas : [{ titulo: nome, objetivos: 'Cobrir o conteúdo geral do curso' }];
 }
 
@@ -636,16 +993,25 @@ async function planLessons(sess, planoEnsinoOverride) {
 // Se a skill usa web_search_options, simula streaming por chunks (sem SSE nativo).
 async function streamSkillToClient(res, skill) {
   if (skill.web_search_options) {
-    const completion = await openai.chat.completions.create({
-      model: skill.model,
-      web_search_options: skill.web_search_options,
-      messages: [
-        { role: 'system', content: skill.system },
-        { role: 'user', content: skill.user }
-      ]
-    });
+    const completion = await openai.chat.completions.create(
+      {
+        model: skill.model,
+        web_search_options: skill.web_search_options,
+        max_tokens: 16000,
+        messages: [
+          { role: 'system', content: skill.system },
+          { role: 'user', content: skill.user }
+        ]
+      },
+      { signal: makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS) }
+    );
     addUsage(completion.usage);
+    const finishReason = completion.choices[0]?.finish_reason;
     const text = completion.choices[0]?.message?.content?.trim() || '';
+    if (finishReason === 'length') {
+      console.warn(`[web-search] resposta truncada (${text.length} chars, finish_reason=length)`);
+      send(res, { type: 'warning', text: 'Resposta truncada pelo limite de tokens. O conteúdo gerado pode estar incompleto — revise o arquivo gerado.' });
+    }
     const CHUNK = 60;
     for (let c = 0; c < text.length; c += CHUNK) {
       send(res, { type: 'token', text: text.slice(c, c + CHUNK) });
@@ -653,6 +1019,16 @@ async function streamSkillToClient(res, skill) {
     }
     return text;
   }
+  // Timeout de inatividade: aborta a chamada se nenhum delta chegar por
+  // STALL_TIMEOUT_MS, sem limitar a duração total de uma geração legítima
+  // que continua recebendo dados normalmente.
+  const controller = new AbortController();
+  let stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
+  const resetStallTimer = () => {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
+  };
+
   const stream = await openai.chat.completions.create({
     model: skill.model,
     stream: true,
@@ -661,15 +1037,20 @@ async function streamSkillToClient(res, skill) {
       { role: 'system', content: skill.system },
       { role: 'user', content: skill.user }
     ]
-  });
+  }, { signal: controller.signal });
   let text = '';
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content;
-    if (delta) {
-      text += delta;
-      send(res, { type: 'token', text: delta });
+  try {
+    for await (const chunk of stream) {
+      resetStallTimer();
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        text += delta;
+        send(res, { type: 'token', text: delta });
+      }
+      if (chunk.usage) addUsage(chunk.usage);
     }
-    if (chunk.usage) addUsage(chunk.usage);
+  } finally {
+    clearTimeout(stallTimer);
   }
   return text;
 }
@@ -690,7 +1071,7 @@ app.get('/api/conteudo', async (req, res) => {
   const planoAula = sess.planoAula || readMemory(sess, 'plano_de_aula');
 
   try {
-    const aulas = (sess.aulas && sess.aulas.length) ? sess.aulas : await planLessons(sess, planoEnsino);
+    const aulas = (sess.aulas && sess.aulas.length) ? sess.aulas : await planLessons(sess, planoEnsino, msg => send(res, { type: 'progress', message: msg }));
     sess.aulas = aulas;
     send(res, {
       type: 'progress',
@@ -704,6 +1085,8 @@ app.get('/api/conteudo', async (req, res) => {
       const aula = aulas[i];
       const titulo = aula.titulo || `Aula ${i + 1}`;
       const numero = String(i + 1).padStart(2, '0');
+
+      if (i > 0) await new Promise(r => setTimeout(r, 4000));
 
       send(res, {
         type: 'progress',
@@ -726,7 +1109,16 @@ app.get('/api/conteudo', async (req, res) => {
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
       });
 
-      const texto = await streamSkillToClient(res, baseSkill);
+      let texto;
+      try {
+        texto = await streamSkillToClient(res, baseSkill);
+      } catch (err) {
+        if (err instanceof OpenAI.APIUserAbortError) {
+          send(res, { type: 'error', message: `Tempo limite excedido ao gerar a aula ${i + 1}: ${titulo}. Tente novamente.` });
+          err.alreadyReported = true;
+        }
+        throw err;
+      }
 
       fullText += heading + texto;
       conteudoPorAula.push({ titulo, modulo: aula.modulo || '', objetivos: aula.objetivos || '', texto });
@@ -737,13 +1129,14 @@ app.get('/api/conteudo', async (req, res) => {
 
     sess.conteudo = fullText;
     sess.conteudoPorAula = conteudoPorAula;
-    await persistStage(sess, 'conteudo', 'Conteúdo de Todas as Aulas (consolidado)', fullText);
 
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
     console.error(err);
-    send(res, { type: 'error', message: err.message || 'Erro ao gerar conteúdo' });
+    if (!err.alreadyReported) {
+      send(res, { type: 'error', message: err.message || 'Erro ao gerar conteúdo' });
+    }
   } finally {
     res.end();
   }
@@ -754,28 +1147,256 @@ app.get('/api/tokens', (req, res) => {
   res.json(tokenUsage);
 });
 
-// ── POST /api/pasta-saida — define a pasta de saída dos arquivos editáveis ──
-app.post('/api/pasta-saida', (req, res) => {
-  const sess = getSession(req, res);
-  const pasta = (req.body?.pasta || '').trim();
-
-  if (!pasta) {
-    sess.pastaSaida = null;
-    return res.json({ ok: true, path: null });
-  }
-
-  let stat;
+// Migra projetos legados (arquivos planos em saídas/{slug}/) para saídas/{slug}/scr/
+function migrarSeNecessario(slug) {
+  const legacyDir = path.join(SAIDAS_ROOT, slug);
+  const scrDir = path.join(SAIDAS_ROOT, slug, 'scr');
+  const legacyProjetoPath = path.join(legacyDir, 'projeto.json');
+  if (!fs.existsSync(legacyProjetoPath)) return;
+  if (fs.existsSync(path.join(scrDir, 'projeto.json'))) return; // já migrado
   try {
-    stat = fs.statSync(pasta);
-  } catch {
-    return res.status(400).json({ error: 'Pasta não encontrada. Verifique se o caminho está correto.' });
+    fs.mkdirSync(scrDir, { recursive: true });
+    const files = fs.readdirSync(legacyDir);
+    for (const file of files) {
+      if (file.endsWith('.txt') || file === 'projeto.json') {
+        fs.renameSync(path.join(legacyDir, file), path.join(scrDir, file));
+      }
+    }
+    console.log(`[migração] Projeto "${slug}" migrado para estrutura /scr`);
+  } catch (err) {
+    console.error(`[migração] Erro ao migrar "${slug}":`, err.message);
   }
-  if (!stat.isDirectory()) {
-    return res.status(400).json({ error: 'O caminho informado não é uma pasta.' });
+}
+
+// Rótulos conhecidos para os arquivos gerados pelo pipeline (ver persistStage).
+const ARQUIVO_LABELS = {
+  ementa: 'Ementa',
+  pesquisa: 'Pesquisa Web',
+  plano_de_ensino: 'Plano de Ensino',
+  plano_de_aula: 'Plano de Aula',
+  revisao_qualidade: 'Revisão de Qualidade',
+  relatorio_qualidade: 'Relatório Técnico-Pedagógico',
+  ppc_completo: 'Projeto Pedagógico de Curso',
+  conteudo_final: 'Conteúdo Final',
+};
+
+// Escaneia de verdade os arquivos presentes na pasta do projeto (raiz + /scr),
+// em vez de confiar no campo "stages" do projeto.json, que pode estar
+// desatualizado em relação ao que realmente existe em disco.
+function listarArquivosDoProjeto(baseDir) {
+  const vistos = new Set();
+  const arquivos = [];
+
+  const addFromDir = (dir) => {
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (ext !== '.docx' && ext !== '.txt') continue;
+      const baseName = path.basename(entry.name, ext);
+      if (vistos.has(baseName)) continue;
+
+      const aulaMatch = baseName.match(/^aula(\d{2})_conteudo$/);
+      const rotulo = aulaMatch ? `Aula ${Number(aulaMatch[1])}` : ARQUIVO_LABELS[baseName];
+      if (!rotulo) continue; // ignora arquivos não reconhecidos (ex.: exports avulsos)
+
+      vistos.add(baseName);
+      arquivos.push({ baseName, rotulo });
+    }
+  };
+
+  addFromDir(baseDir);
+  addFromDir(path.join(baseDir, 'scr'));
+  arquivos.sort((a, b) => a.baseName.localeCompare(b.baseName));
+  return arquivos;
+}
+
+// ── POST /api/carregar-projeto — reconstrói sessão a partir do disco ─────────
+app.post('/api/carregar-projeto', (req, res) => {
+  const sess = getSession(req, res);
+  const { pasta } = req.body || {};
+  if (!pasta?.trim()) return res.status(400).json({ error: 'pasta obrigatória' });
+
+  const baseDir = path.resolve(pasta.trim());
+  if (!fs.existsSync(baseDir)) return res.status(404).json({ error: 'Pasta não encontrada' });
+
+  // Migração legada apenas para projetos dentro de saídas/ (estrutura antiga
+  // sem /scr, anterior à introdução de pastaProjeto).
+  const slugLegado = path.basename(baseDir);
+  if (path.dirname(baseDir) === SAIDAS_ROOT) migrarSeNecessario(slugLegado);
+
+  const camposFaltantes = [];
+  const etapasCarregadas = [];
+  let stages = {};
+
+  const projetoPath = path.join(baseDir, 'scr', 'projeto.json');
+  if (fs.existsSync(projetoPath)) {
+    try {
+      const p = JSON.parse(fs.readFileSync(projetoPath, 'utf-8'));
+      sess.config = p.config || {};
+      sess.bncc = p.bncc || { ativo: false, publico: null, nivel: null, itens: [] };
+      sess.metodologia = p.metodologia || '';
+      sess.aulas = p.aulas || [];
+      sess.inputs = p.inputs || {};
+      stages = p.stages || {};
+    } catch {
+      sess.config = {};
+      return res.json({ ok: true, etapasCarregadas: [], camposFaltantes: ['config','bncc','metodologia','aulas'], aviso: 'projeto.json corrompido — campos estruturados não carregados' });
+    }
+  } else {
+    // legado: sem projeto.json — infere config pelo nome da pasta
+    sess.config = { nome: slugLegado.replace(/_/g, ' ') };
+    camposFaltantes.push('bncc', 'metodologia', 'aulas');
   }
 
-  sess.pastaSaida = pasta;
-  res.json({ ok: true, path: pasta });
+  // A pasta que o usuário acabou de selecionar É a pastaProjeto a partir de
+  // agora, independentemente do que estava (ou não) gravado no projeto.json —
+  // torna o carregamento autocurativo para projetos afetados por pastaProjeto
+  // vazia (ver fix-pastaprojeto-persist-on-config).
+  sess.config.pastaProjeto = baseDir;
+
+  // Carrega campos textuais via readMemory
+  const textuais = [
+    ['ementa', 'ementa'],
+    ['pesquisa', 'pesquisa'],
+    ['planoEnsino', 'plano_de_ensino'],
+    ['planoAula', 'plano_de_aula'],
+    ['revisaoQualidade', 'revisao_qualidade'],
+    ['relatorioQualidade', 'relatorio_qualidade'],
+  ];
+  for (const [sessField, baseName] of textuais) {
+    const txt = readMemory(sess, baseName);
+    if (txt) { sess[sessField] = txt; etapasCarregadas.push(baseName); }
+  }
+
+  // Autocura: projeto.json com "aulas": [] mas conteúdo já gerado em disco —
+  // reconstrói sess.aulas a partir dos próprios arquivos aula{NN}_conteudo.txt.
+  if (!sess.aulas?.length) {
+    const reconstruidas = reconstruirAulasApartirDosArquivos(sess);
+    if (reconstruidas.length) {
+      console.warn(`[carregar-projeto] "aulas" vazio em projeto.json para "${sess.config?.nome}" — reconstruído a partir de ${reconstruidas.length} arquivo(s) em disco.`);
+      sess.aulas = reconstruidas;
+      saveProject(sess);
+    }
+  }
+
+  // Carrega conteudo por aula
+  if (sess.aulas?.length) {
+    sess.conteudoPorAula = sess.aulas.map((aula, i) => {
+      const idx = String(i + 1).padStart(2, '0');
+      const texto = readMemory(sess, `aula${idx}_conteudo`);
+      if (texto) etapasCarregadas.push(`aula${idx}_conteudo`);
+      return { ...aula, texto };
+    });
+  }
+
+  // Reconstrói sess.conteudo a partir dos arquivos individuais de aula (conteudo.txt não é mais gerado)
+  if (!sess.conteudo && sess.conteudoPorAula?.length) {
+    sess.conteudo = sess.conteudoPorAula.map((a, i) =>
+      `${i === 0 ? '' : '\n\n'}# Aula ${i + 1}: ${a.titulo}\n\n${a.texto || ''}`
+    ).join('');
+  }
+
+  const arquivos = listarArquivosDoProjeto(baseDir);
+
+  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: sess.metodologia, inputs: sess.inputs || {} });
+});
+
+// ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────
+const STAGES_FIXOS = {
+  'metodologia': { sessField: 'metodologia', label: 'Metodologia Pedagógica' },
+  'ementa': { sessField: 'ementa', label: 'Ementa do Curso' },
+  'pesquisa': { sessField: 'pesquisa', label: 'Pesquisa Web' },
+  'plano_de_ensino': { sessField: 'planoEnsino', label: 'Plano de Ensino' },
+  'plano_de_aula': { sessField: 'planoAula', label: 'Plano de Aula' },
+  'revisao_qualidade': { sessField: 'revisaoQualidade', label: 'Revisão de Qualidade' },
+};
+
+function detectStage(filename, firstH1, sess) {
+  // 1. Pelo nome do arquivo
+  const base = path.basename(filename, '.docx');
+  if (STAGES_FIXOS[base]) return { stage: base, detectadoPor: 'nome' };
+  // aula03_conteudo → aula03_conteudo
+  if (/^aula\d{2}_conteudo$/.test(base)) return { stage: base, detectadoPor: 'nome' };
+
+  // 2. Pelo título H1
+  if (firstH1 && sess.aulas?.length) {
+    const titulo = firstH1.replace(/^#+\s*/, '').replace(/^Aula\s+\d+\s*[—\-:]\s*/i, '').trim().toLowerCase();
+    const match = sess.aulas.findIndex(a => a.titulo.toLowerCase().includes(titulo) || titulo.includes(a.titulo.toLowerCase()));
+    if (match !== -1) {
+      const idx = String(match + 1).padStart(2, '0');
+      return { stage: `aula${idx}_conteudo`, titulo: sess.aulas[match].titulo, detectadoPor: 'titulo' };
+    }
+  }
+  return null;
+}
+
+app.post('/api/importar', upload.single('arquivo'), async (req, res) => {
+  const sess = getSession(req, res);
+  if (!req.file) return res.status(400).json({ error: 'Arquivo ausente' });
+  if (!req.file.originalname.toLowerCase().endsWith('.docx'))
+    return res.status(400).json({ error: 'Apenas arquivos .docx são aceitos' });
+
+  let texto = '';
+  try {
+    const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+    texto = result.value.trim();
+  } catch (err) {
+    return res.status(500).json({ error: 'Erro ao processar .docx: ' + err.message });
+  }
+
+  const firstH1 = texto.split('\n').find(l => l.trim());
+  const detected = detectStage(req.file.originalname, firstH1, sess);
+
+  if (!detected) {
+    // Retorna candidatos para seleção manual
+    const candidatos = Object.entries(STAGES_FIXOS).map(([s, v]) => ({ stage: s, titulo: v.label }));
+    if (sess.aulas?.length) {
+      sess.aulas.forEach((a, i) => {
+        const idx = String(i + 1).padStart(2, '0');
+        candidatos.push({ stage: `aula${idx}_conteudo`, titulo: `Aula ${i + 1}: ${a.titulo}` });
+      });
+    }
+    return res.json({ ok: true, stagioDetectado: null, detectadoPor: 'ambiguo', candidatos, texto, chars: texto.length, requerConfirmacao: true });
+  }
+
+  res.json({ ok: true, stagioDetectado: detected.stage, titulo: detected.titulo || detected.stage, chars: texto.length, detectadoPor: detected.detectadoPor, texto, requerConfirmacao: true });
+});
+
+// ── POST /api/importar/confirmar — sobrescreve .txt com versão do usuário ────
+app.post('/api/importar/confirmar', async (req, res) => {
+  const sess = getSession(req, res);
+  const { stage, texto } = req.body || {};
+  if (!stage || !texto) return res.status(400).json({ error: 'stage e texto são obrigatórios' });
+
+  const allStages = { ...STAGES_FIXOS };
+  if (sess.aulas?.length) {
+    sess.aulas.forEach((_, i) => {
+      const idx = String(i + 1).padStart(2, '0');
+      allStages[`aula${idx}_conteudo`] = { sessField: null, label: `Aula ${i + 1}` };
+    });
+  }
+  if (!allStages[stage]) return res.status(400).json({ error: 'Stage desconhecido' });
+
+  try {
+    const scrDir = courseScrDir(sess);
+    fs.writeFileSync(path.join(scrDir, `${stage}.txt`), texto, 'utf-8');
+
+    // Atualiza sessão
+    const { sessField } = allStages[stage];
+    if (sessField) {
+      sess[sessField] = texto;
+    } else if (/^aula(\d{2})_conteudo$/.test(stage)) {
+      const idx = parseInt(stage.match(/^aula(\d{2})/)[1], 10) - 1;
+      if (sess.conteudoPorAula?.[idx]) sess.conteudoPorAula[idx].texto = texto;
+    }
+
+    saveProject(sess, { baseName: stage, fonte: 'usuario' });
+    res.json({ ok: true, stage });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao salvar: ' + err.message });
+  }
 });
 
 // ── POST /api/export/:step ──────────────────────────────────────────────────
@@ -785,6 +1406,7 @@ app.post('/api/export/:step', async (req, res) => {
   const { sites = [] } = req.body;
 
   const stepLabels = {
+    metodologia: 'Metodologia Pedagógica',
     pesquisa: 'Pesquisa Web',
     'plano-ensino': 'Plano de Ensino',
     'plano-aula': 'Plano de Aula',
@@ -795,6 +1417,7 @@ app.post('/api/export/:step', async (req, res) => {
   };
 
   const textMap = {
+    metodologia: sess.metodologia,
     pesquisa: sess.pesquisa,
     'plano-ensino': sess.planoEnsino,
     'plano-aula': sess.planoAula,
@@ -814,15 +1437,9 @@ app.post('/api/export/:step', async (req, res) => {
     const buffer = await Packer.toBuffer(doc);
     const filename = `${(sess.config.nome || 'curso').replace(/\s+/g, '_')}_${step}.docx`;
 
-    if (sess.pastaSaida) {
-      const fullPath = path.join(sess.pastaSaida, filename);
-      fs.writeFileSync(fullPath, buffer);
-      return res.json({ ok: true, saved: true, path: fullPath });
-    }
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(buffer);
+    const fullPath = path.join(courseRootDir(sess), filename);
+    fs.writeFileSync(fullPath, buffer);
+    res.json({ ok: true, saved: true, path: fullPath });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -831,9 +1448,9 @@ app.post('/api/export/:step', async (req, res) => {
 
 // ── DOCX builder ────────────────────────────────────────────────────────────
 function buildDocx(config, stepLabel, content, sites = []) {
-  const now = new Date().toLocaleDateString('pt-BR', {
-    day: '2-digit', month: 'long', year: 'numeric'
-  });
+  const now = new Date();
+  const datePart = now.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const timePart = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const children = [];
 
@@ -851,7 +1468,7 @@ function buildDocx(config, stepLabel, content, sites = []) {
       spacing: { after: 400 }
     }),
     new Paragraph({
-      children: [new TextRun({ text: `Gerado em: ${now}`, color: '666666', size: 22 })],
+      children: [new TextRun({ text: `Gerado em: ${datePart} às ${timePart}`, color: '666666', size: 22 })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 800 }
     }),
@@ -861,6 +1478,11 @@ function buildDocx(config, stepLabel, content, sites = []) {
   // Converte markdown simples em parágrafos docx
   const lines = content.split('\n');
   for (const line of lines) {
+    if (line.trim() === '<!--PAGEBREAK-->') {
+      children.push(new Paragraph({ text: '', pageBreakBefore: true }));
+      continue;
+    }
+
     if (!line.trim()) {
       children.push(new Paragraph({ text: '' }));
       continue;
@@ -940,11 +1562,52 @@ function buildDocx(config, stepLabel, content, sites = []) {
   });
 }
 
+// ── PPTX builder (Etapa 8 — Slides) ─────────────────────────────────────────
+// Diferente de buildDocx, consome um slidePlan já estruturado em slides (não
+// texto corrido), já que uma apresentação é organizada por slide desde o início.
+function buildPptx(config, aula, slidePlan, geradoEm) {
+  const pptx = new PptxGenJS();
+  pptx.defineLayout({ name: 'WIDESCREEN', width: 13.33, height: 7.5 });
+  pptx.layout = 'WIDESCREEN';
+
+  const FONT = 'Calibri';
+  const rodape = `${aula.titulo} · ${config.nome || 'Curso'} · ` +
+    `${geradoEm.toLocaleDateString('pt-BR')} ${geradoEm.toLocaleTimeString('pt-BR')}`;
+
+  // Slide de capa — identificação simples, não conta na faixa de 6-10 slides de conteúdo.
+  const capa = pptx.addSlide();
+  capa.addText(aula.titulo, {
+    x: 0.6, y: 2.6, w: 12, h: 1.2, fontFace: FONT, fontSize: 36, bold: true, color: '4A3B8C'
+  });
+  capa.addText(config.nome || 'Curso', {
+    x: 0.6, y: 3.8, w: 12, h: 0.6, fontFace: FONT, fontSize: 20, color: '555555'
+  });
+
+  const slides = Array.isArray(slidePlan?.slides) ? slidePlan.slides : [];
+  for (const slide of slides) {
+    const s = pptx.addSlide();
+    s.addText(slide.titulo || '', {
+      x: 0.6, y: 0.4, w: 12, h: 0.9, fontFace: FONT, fontSize: 32, bold: true, color: '4A3B8C'
+    });
+    const bullets = Array.isArray(slide.bullets) ? slide.bullets : [];
+    s.addText(
+      bullets.map(b => ({ text: b, options: { bullet: true, breakLine: true } })),
+      { x: 0.8, y: 1.6, w: 11.5, h: 5, fontFace: FONT, fontSize: 24, color: '222222', valign: 'top' }
+    );
+    s.addText(rodape, {
+      x: 0.4, y: 7.05, w: 8, h: 0.35, fontFace: FONT, fontSize: 11, color: '888888', align: 'left'
+    });
+  }
+
+  return pptx;
+}
+
 // ── GET /api/revisao-qualidade (SSE) — Etapa 5★ ─────────────────────────────
 // Analisa cada aula contra os documentos de referência, Jaccard como reporte
 // informativo e gera relatório com espaço para observações do revisor humano.
 app.get('/api/revisao-qualidade', async (req, res) => {
   const sess = getSession(req, res);
+  restoreConteudoPorAula(sess);
   if (!sess.conteudoPorAula?.length) {
     return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar a revisão de qualidade.' });
   }
@@ -969,6 +1632,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
   const planoAula = sess.planoAula || readMemory(sess, 'plano_de_aula');
   const bnccContext = buildPedagogicalContext(sess);
   let fullText = '';
+  const notasPorAula = [];
 
   try {
     for (let i = 0; i < aulas.length; i++) {
@@ -998,7 +1662,19 @@ app.get('/api/revisao-qualidade', async (req, res) => {
 
       const texto = await streamSkillToClient(res, skill);
       fullText += texto;
+
+      const notaMatch = texto.match(/Nota:\s*([01](?:\.\d+)?)/i);
+      const nota = notaMatch ? Math.max(0, Math.min(1, parseFloat(notaMatch[1]))) : null;
+      notasPorAula.push({ numero: i + 1, titulo: aula.titulo, nota });
     }
+
+    notasPorAula.sort((a, b) => a.numero - b.numero);
+    let resumoNotas = '\n\n<!--PAGEBREAK-->\n\n# Notas de Qualidade por Aula\n\n';
+    for (const n of notasPorAula) {
+      resumoNotas += `- Aula ${n.numero}: ${n.titulo} — Nota: ${n.nota !== null ? n.nota.toFixed(2) : 'N/A'}\n`;
+    }
+    send(res, { type: 'token', text: resumoNotas });
+    fullText += resumoNotas;
 
     sess.revisaoQualidade = fullText;
     await persistStage(sess, 'revisao_qualidade', 'Revisão de Qualidade', fullText);
@@ -1015,6 +1691,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
 // ── POST /api/aplicar-melhorias — Etapa 6 (upload do .docx anotado) ──────────
 // Extrai texto do .docx, identifica "Observações do Revisor" por aula e retorna
 // resumo para confirmação antes de aplicar qualquer alteração.
+const DUPLICATE_OBS_THRESHOLD = 0.85;
 app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) => {
   const sess = getSession(req, res);
 
@@ -1023,6 +1700,11 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
   }
   if (!req.file.originalname.toLowerCase().endsWith('.docx')) {
     return res.status(400).json({ error: 'O arquivo deve ter extensão .docx.' });
+  }
+
+  restoreConteudoPorAula(sess);
+  if (!sess.conteudoPorAula?.length) {
+    return res.status(400).json({ error: 'Carregue o projeto antes de aplicar melhorias.' });
   }
 
   try {
@@ -1055,19 +1737,71 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
     });
 
     sess.observacoesMelhorias = observacoesPorAula;
+
+    // ── Check de duplicata: comparar observações novas com o último upload ────
+    let avisoResposta = null;
+    const juntarObs = lista => lista.map(o => o.observacoes || '').join(' ');
+    const novasObsText = juntarObs(observacoesPorAula);
+    if (novasObsText.length > 50) {
+      try {
+        const obsAnteriorPath = path.join(courseScrDir(sess), 'observacoes_pendentes.json');
+        if (fs.existsSync(obsAnteriorPath)) {
+          const obsAnteriores = JSON.parse(fs.readFileSync(obsAnteriorPath, 'utf-8'));
+          const obsAntText = juntarObs(obsAnteriores.aulas || []);
+          if (obsAntText.length > 50) {
+            const simObs = textSimilarity(novasObsText, obsAntText);
+            if (simObs > DUPLICATE_OBS_THRESHOLD) {
+              avisoResposta = {
+                aviso: 'possivel_duplicata',
+                similaridadeObservacoes: Math.round(simObs * 100) / 100,
+                dataUltimoUpload: obsAnteriores.dataUpload || null
+              };
+            }
+          }
+        }
+      } catch (e) { console.error('Erro ao verificar duplicata de upload:', e.message); }
+    }
+
+    try {
+      fs.writeFileSync(
+        path.join(courseScrDir(sess), 'observacoes_pendentes.json'),
+        JSON.stringify({ dataUpload: new Date().toISOString(), aulas: observacoesPorAula }, null, 2),
+        'utf-8'
+      );
+    } catch (e) { console.error('Erro ao gravar observacoes_pendentes.json:', e.message); }
     const comObservacoes = observacoesPorAula.filter(o => o.observacoes.length > 0);
-    res.json({ ok: true, aulas: observacoesPorAula, totalComObservacoes: comObservacoes.length });
+    res.json({ ok: true, aulas: observacoesPorAula, totalComObservacoes: comObservacoes.length, ...avisoResposta });
   } catch (err) {
     console.error('Erro ao processar .docx:', err.message);
     res.status(500).json({ error: 'Erro ao processar o arquivo .docx: ' + err.message });
   }
 });
 
+function buildAuditSection(metricasPorAula) {
+  const afetadas = metricasPorAula.filter(m => m.similaridade > 0.90);
+  if (afetadas.length === 0) return '';
+  const todasAfetadas = afetadas.length === metricasPorAula.length;
+  const simMedia = Math.round(
+    metricasPorAula.reduce((s, m) => s + m.similaridade, 0) / metricasPorAula.length * 100
+  );
+  let txt = '\n\n---\n\n## Auditoria do Ciclo\n\n';
+  if (todasAfetadas) {
+    txt += `**Nenhuma nova implementação detectada neste ciclo** (similaridade média: ${simMedia}%).\n\n`;
+  } else {
+    txt += `As seguintes aulas tiveram pouca alteração (similaridade > 90%):\n\n`;
+  }
+  afetadas.forEach(a => {
+    txt += `- **Aula ${a.aulaIndex} — ${a.titulo}**: ${Math.round(a.similaridade * 100)}% similar ao ciclo anterior\n`;
+  });
+  return txt;
+}
+
 // ── GET /api/aplicar-melhorias/confirmar (SSE) — Etapa 6 ─────────────────────
 // Aplica as melhorias por aula usando gpt-4o-search-preview com acesso à web.
 app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
   const sess = getSession(req, res);
 
+  restoreConteudoPorAula(sess);
   if (!sess.conteudoPorAula?.length) {
     return res.status(400).json({ error: 'Sem conteúdo para melhorar. Conclua a Etapa 5.' });
   }
@@ -1082,10 +1816,35 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
   let fullText = '';
   const bnccContext = buildPedagogicalContext(sess);
 
+  // ── Snapshot do ciclo: preserva estado anterior antes de sobrescrever ────────
+  const scrDir = courseScrDir(sess);
+  let cicloDir = null;
+  let numeroCiclo = '001';
+  try {
+    const existentes = fs.readdirSync(scrDir).filter(n => /^ciclo_\d{3}$/.test(n)).length;
+    numeroCiclo = String(existentes + 1).padStart(3, '0');
+    cicloDir = path.join(scrDir, `ciclo_${numeroCiclo}`);
+    fs.mkdirSync(cicloDir, { recursive: true });
+    aulas.forEach((_, i) => {
+      const num = String(i + 1).padStart(2, '0');
+      const src = path.join(scrDir, `aula${num}_conteudo.txt`);
+      if (fs.existsSync(src)) fs.copyFileSync(src, path.join(cicloDir, `aula${num}_conteudo.txt`));
+    });
+    fs.writeFileSync(
+      path.join(cicloDir, 'observacoes.json'),
+      JSON.stringify({ aulas: observacoes }, null, 2), 'utf-8'
+    );
+  } catch (e) { console.error(`Erro ao criar snapshot ciclo_${numeroCiclo}:`, e.message); }
+
+  const metricasPorAula = [];
+  const reportSections = [];
+
   try {
     for (let i = 0; i < aulas.length; i++) {
       const aula = aulas[i];
       const obs = observacoes[i]?.observacoes || '';
+
+      if (i > 0) await new Promise(r => setTimeout(r, 4000));
 
       send(res, {
         type: 'progress',
@@ -1107,7 +1866,19 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         bnccContext
       });
 
+      const textoAntigo = aula.texto;
       const texto = await streamSkillToClient(res, skill);
+      const similaridade = textSimilarity(textoAntigo || '', texto);
+      metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade });
+
+      if (similaridade > 0.90) {
+        send(res, { type: 'progress', message: `Aula ${i + 1}: conteúdo pouco alterado (${Math.round(similaridade * 100)}% similar ao original) — verifique se as observações foram aplicadas` });
+      }
+
+      const melhoriasMatch = texto.match(/###\s*Melhorias Aplicadas[\s\S]*/i);
+      const melhoriasSection = melhoriasMatch ? melhoriasMatch[0].trim() : '_(seção não gerada)_';
+      reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n${melhoriasSection}`);
+
       fullText += texto;
       novasPorAula.push({ ...aula, texto });
 
@@ -1117,7 +1888,39 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
 
     sess.conteudoPorAula = novasPorAula;
     sess.conteudo = fullText;
-    await persistStage(sess, 'conteudo', 'Conteúdo de Todas as Aulas (consolidado)', fullText);
+
+    // Gravar meta.json com métricas do ciclo
+    if (cicloDir && metricasPorAula.length > 0) {
+      try {
+        const simMedia = metricasPorAula.reduce((s, m) => s + m.similaridade, 0) / metricasPorAula.length;
+        fs.writeFileSync(path.join(cicloDir, 'meta.json'), JSON.stringify({
+          ciclo: Number(numeroCiclo),
+          dataHora: new Date().toISOString(),
+          totalAulas: aulas.length,
+          totalComObservacoes: observacoes.filter(o => o.observacoes?.length > 0).length,
+          similaridadeMedia: Math.round(simMedia * 100) / 100,
+          similaridadePorAula: metricasPorAula
+        }, null, 2), 'utf-8');
+      } catch (e) { console.error('Erro ao gravar meta.json:', e.message); }
+    }
+
+    try {
+      const now = new Date();
+      const ts = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0')
+      ].join('') + '_' + [
+        String(now.getHours()).padStart(2, '0'),
+        String(now.getMinutes()).padStart(2, '0'),
+        String(now.getSeconds()).padStart(2, '0')
+      ].join('');
+      const auditSection = buildAuditSection(metricasPorAula);
+      const reportText = reportSections.join('\n\n---\n\n') + auditSection;
+      const reportDoc = buildDocx(sess.config, 'Relatório de Melhorias Aplicadas', reportText, []);
+      const reportBuffer = await Packer.toBuffer(reportDoc);
+      fs.writeFileSync(path.join(courseRootDir(sess), `melhorias_aplicadas_${ts}.docx`), reportBuffer);
+    } catch (e) { console.error('Erro ao gerar relatório timestampado:', e.message); }
 
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
@@ -1142,22 +1945,18 @@ app.post('/api/finalizar-conteudo', async (req, res) => {
     sess.conteudoFinal = conteudo;
     const nomeSlug = (sess.config.nome || 'curso').replace(/\s+/g, '_');
     const filename = `${nomeSlug}_conteudo_final.docx`;
-    const dir = courseDir(sess);
+    const scrDir = courseScrDir(sess);
+    const rootDir = courseRootDir(sess);
 
-    fs.writeFileSync(path.join(dir, 'conteudo_final.txt'), conteudo, 'utf-8');
+    fs.writeFileSync(path.join(scrDir, 'conteudo_final.txt'), conteudo, 'utf-8');
     const doc = buildDocx(sess.config, 'Conteúdo Final do Curso', conteudo, []);
     const buffer = await Packer.toBuffer(doc);
-    fs.writeFileSync(path.join(dir, 'conteudo_final.docx'), buffer);
+    fs.writeFileSync(path.join(rootDir, 'conteudo_final.docx'), buffer);
+    saveProject(sess, { baseName: 'conteudo_final', fonte: 'ia' });
 
-    if (sess.pastaSaida) {
-      const fullPath = path.join(sess.pastaSaida, filename);
-      fs.writeFileSync(fullPath, buffer);
-      return res.json({ ok: true, saved: true, path: fullPath });
-    }
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(buffer);
+    // Sempre retorna JSON com o caminho salvo — o arquivo já está em disco
+    // (em pastaProjeto se configurado, ou em saídas/{slug}/).
+    res.json({ ok: true, saved: true, path: path.join(rootDir, 'conteudo_final.docx') });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -1169,14 +1968,51 @@ if (process.env.NODE_ENV !== 'production') {
   app.get('/api/dev/seed', (req, res) => {
     const sess = getSession(req, res);
 
+    const comBncc = req.query.bncc === 'true';
+    const publico = req.query.publico || 'adultos'; // 'adultos' | 'basica'
+
     sess.config = {
       nome: 'Python para Iniciantes',
       publico: 'Estudantes sem experiência em programação',
       carga: 4,
       duracao: 60,
       nivel: 'básico',
-      objetivos: 'Compreender lógica de programação, variáveis, funções e manipulação de listas em Python.'
+      objetivos: 'Compreender lógica de programação, variáveis, funções e manipulação de listas em Python.',
+      modalidade: 'presencial',
+      preRequisitos: 'Nenhum pré-requisito técnico necessário.',
+      proporcaoTeoricoPratico: '40% teoria / 60% prática'
     };
+
+    sess.metodologia = comBncc
+      ? 'Aprendizagem Baseada em Projetos (ABP) com integração de competências digitais da BNCC. Cada módulo culmina em um mini-projeto aplicado, estimulando pensamento computacional e resolução de problemas reais.'
+      : 'Metodologia ativa com demonstração ao vivo e coding junto (live coding). O instrutor programa ao vivo enquanto os alunos reproduzem, favorecendo aprendizado por imitação e correção imediata de erros.';
+
+    if (comBncc) {
+      if (publico === 'basica') {
+        sess.bncc = {
+          ativo: true,
+          publico: 'basica',
+          nivel: 'ef2',
+          itens: [
+            { id: 'ef2-co5a06', codigo: 'EF06CO05', descricao: 'Identificar as etapas para a resolução de um problema, fazendo analogia ao princípio de funcionamento de um algoritmo.' },
+            { id: 'ef2-co5a07', codigo: 'EF07CO04', descricao: 'Criar e testar algoritmos para resolução de problemas com estruturas de repetição e decisão.' },
+            { id: 'ef2-co5a09', codigo: 'EF09CO03', descricao: 'Produzir soluções computacionais para problemas do cotidiano, usando linguagem de programação em bloco ou textual.' }
+          ]
+        };
+      } else {
+        sess.bncc = {
+          ativo: true,
+          publico: 'adultos',
+          nivel: 'competencias',
+          itens: [
+            { id: 'cg2', titulo: 'Competência 2 — Pensamento Científico, Crítico e Criativo', descricao: 'Exercitar a curiosidade intelectual e recorrer à ciência, à tecnologia para investigar causas, elaborar e testar hipóteses.' },
+            { id: 'cg5', titulo: 'Competência 5 — Cultura Digital', descricao: 'Compreender, utilizar e criar tecnologias digitais de informação e comunicação de forma crítica, significativa e ética.' }
+          ]
+        };
+      }
+    } else {
+      sess.bncc = { ativo: false, publico: null, nivel: null, itens: [] };
+    }
 
     sess.ementa = `**Python para Iniciantes** é um curso introdutório de 4 horas voltado a estudantes sem experiência em programação.
 O curso aborda desde a instalação do ambiente até a criação de pequenos scripts com funções e listas, desenvolvendo raciocínio lógico e familiaridade com a sintaxe Python de forma gradual e prática.`;
@@ -1361,9 +2197,22 @@ else:
 
     sess.conteudo = aulaTextos.join('\n\n---\n\n');
 
+    // Persiste projeto.json para que o seed seja detectável por GET /api/projetos
+    ['ementa','pesquisa','plano_de_ensino','plano_de_aula'].forEach((baseName, i) => {
+      const conteudos = [sess.ementa, sess.pesquisa, sess.planoEnsino, sess.planoAula];
+      try {
+        const scrDir = courseScrDir(sess);
+        fs.writeFileSync(path.join(scrDir, `${baseName}.txt`), conteudos[i] || '', 'utf-8');
+      } catch {}
+      saveProject(sess, { baseName, fonte: 'ia' });
+    });
+
     res.json({
       ok: true,
-      message: 'Sessão populada com curso "Python para Iniciantes" (4 aulas). Acesse http://localhost:3000 e vá para a Etapa 5★.',
+      message: `Sessão populada com curso "Python para Iniciantes" (4 aulas). BNCC: ${comBncc ? `ativo (${sess.bncc.nivel})` : 'desativado'}. Acesse http://localhost:3000 e vá para a Etapa 5★, Agente de Qualidade ou PPC.`,
+      config: { nome: sess.config.nome },
+      bncc: sess.bncc.ativo ? { nivel: sess.bncc.nivel, itens: sess.bncc.itens.length } : 'desativado',
+      metodologia: sess.metodologia.substring(0, 60) + '...',
       aulas: sess.aulas.map(a => a.titulo)
     });
   });

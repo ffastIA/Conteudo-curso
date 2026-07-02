@@ -4,6 +4,8 @@ jest.mock('openai');
 
 const request = require('supertest');
 const OpenAI = require('openai');
+const os = require('os');
+const path = require('path');
 const app = require('../../server');
 
 const VALID_CONFIG = {
@@ -15,7 +17,8 @@ const VALID_CONFIG = {
   objetivos: 'Aprender Node.js',
   modalidade: 'online',
   proporcaoTeoricoPratico: '40% teórico / 60% prático',
-  preRequisitos: ''
+  preRequisitos: '',
+  pastaProjeto: path.join(os.tmpdir(), 'gerador-conteudo-tests', 'curso-de-node-js')
 };
 
 beforeAll(() => {
