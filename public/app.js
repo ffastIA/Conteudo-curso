@@ -3,7 +3,8 @@ const state = {
   currentStep: 0,
   doneSteps: new Set(),
   sites: [],
-  bncc: { ativo: false, publico: null, nivel: null, itens: [] }
+  bncc: { ativo: false, publico: null, nivel: null, itens: [] },
+  estiloVisual: null
 };
 
 // ── Contador global de tokens ────────────────────────────────────────────────
@@ -702,12 +703,72 @@ document.getElementById('btnPpc').addEventListener('click', () => {
 // Não usa streamSSE(): o evento "done" aqui carrega uma lista de arquivos
 // .pptx gerados (binários, um por aula), não um texto para renderizar como
 // markdown — por isso um handler de EventSource dedicado, mais enxuto.
-document.getElementById('btnSlides').addEventListener('click', () => {
+document.getElementById('btnSlides').addEventListener('click', async () => {
   if (!state.doneSteps.has(5)) {
     alert('Conclua as Etapas 1–5 antes de gerar os slides.');
     return;
   }
 
+  // Estilo visual já escolhido nesta sessão (ou restaurado de um projeto
+  // carregado) — pula direto para a geração, sem pedir de novo.
+  if (state.estiloVisual) {
+    iniciarGeracaoSlides();
+    return;
+  }
+
+  await carregarEstilosVisuais();
+});
+
+async function carregarEstilosVisuais() {
+  const btn = document.getElementById('btnSlides');
+  const container = document.getElementById('estiloVisualContainer');
+  const lista = document.getElementById('estilosVisuaisList');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/estilos-visuais');
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao gerar opções de estilo visual.'); return; }
+    if (!data.estilos?.length) { alert('Não foi possível gerar opções de estilo visual.'); return; }
+
+    lista.innerHTML = data.estilos.map((estilo, i) =>
+      `<label class="bncc-item">` +
+      `<input type="radio" name="estiloVisualOpcao" value="${escHtml(estilo.id || String(i))}" ` +
+      `data-titulo="${escHtml(estilo.titulo || '')}" data-house-prompt="${escHtml(estilo.housePrompt || '')}" ${i === 0 ? 'checked' : ''}>` +
+      `<span><strong>${escHtml(estilo.titulo || '')}</strong> — ${escHtml(estilo.descricao || '')}</span>` +
+      `</label>`
+    ).join('');
+    container.style.display = 'block';
+  } catch (err) {
+    alert('Erro ao carregar estilos visuais: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnConfirmarEstiloVisual').addEventListener('click', async () => {
+  const opcao = document.querySelector('#estilosVisuaisList input[name=estiloVisualOpcao]:checked');
+  if (!opcao) {
+    alert('Selecione um estilo antes de confirmar.');
+    return;
+  }
+  const escolha = { id: opcao.value, titulo: opcao.dataset.titulo, housePrompt: opcao.dataset.housePrompt };
+  try {
+    const r = await fetch('/api/estilos-visuais/selecionar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(escolha)
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao salvar o estilo escolhido.'); return; }
+    state.estiloVisual = escolha;
+    document.getElementById('estiloVisualContainer').style.display = 'none';
+    iniciarGeracaoSlides();
+  } catch (err) {
+    alert('Erro ao salvar o estilo escolhido: ' + err.message);
+  }
+});
+
+function iniciarGeracaoSlides() {
   const resultCard = document.getElementById('slidesResultCard');
   const arquivosEl = document.getElementById('slidesArquivos');
   const btn = document.getElementById('btnSlides');
@@ -747,7 +808,7 @@ document.getElementById('btnSlides').addEventListener('click', () => {
     refreshTokenCounter();
     btn.disabled = false;
   };
-});
+}
 
 // ── Copiar ───────────────────────────────────────────────────────────────────
 function copyResult(elId) {
@@ -856,6 +917,10 @@ async function carregarProjetoPorPasta(pasta) {
         if (el && c[id] != null) el.value = c[id];
       });
     }
+
+    // Restaura o estilo visual escolhido (Etapa 8) — evita pedir de novo se já
+    // salvo no projeto.json de uma sessão anterior.
+    if (data.estiloVisual) state.estiloVisual = data.estiloVisual;
 
     // Restaura metodologia no painel da Etapa 0
     if (data.metodologia) {

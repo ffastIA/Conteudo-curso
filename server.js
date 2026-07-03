@@ -307,6 +307,7 @@ function saveProject(sess, stageInfo = null) {
   projeto.metodologia = sess.metodologia || '';
   projeto.aulas = sess.aulas || [];
   projeto.inputs = sess.inputs || {};
+  projeto.estiloVisual = sess.estiloVisual || null;
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -364,7 +365,10 @@ function send(res, obj) {
 }
 
 // ── Contador global de tokens utilizados (todas as etapas/sessões) ─────────
-const tokenUsage = { prompt: 0, completion: 0, total: 0 };
+// "images" conta chamadas à API de imagens (Etapa 8) à parte — essa API não
+// expõe prompt/completion tokens no mesmo formato da chat completions, então
+// não faz sentido forçar esse mapeamento; só a contagem de chamadas bem-sucedidas.
+const tokenUsage = { prompt: 0, completion: 0, total: 0, images: 0 };
 
 function addUsage(usage) {
   if (!usage) return;
@@ -588,6 +592,48 @@ app.get('/api/ppc', async (req, res) => {
   }
 });
 
+// ── GET /api/estilos-visuais — menu de estilos para a Etapa 8 ───────────────
+// Mesmo padrão de GET /api/bncc: gera opções para o usuário escolher antes de
+// prosseguir. Não-streaming — resposta rápida, SSE seria over-engineering aqui.
+app.get('/api/estilos-visuais', async (req, res) => {
+  const sess = getSession(req, res);
+  const { nome, publico, nivel, objetivos, modalidade } = sess.config;
+  try {
+    const skill = skills.estiloVisualSkill({ nome, publico, nivel, objetivos, modalidade });
+    const completion = await openai.chat.completions.create({
+      model: skill.model,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: skill.system },
+        { role: 'user', content: skill.user }
+      ]
+    });
+    addUsage(completion.usage);
+    let estilos = [];
+    try {
+      estilos = JSON.parse(completion.choices[0]?.message?.content || '{}').estilos || [];
+    } catch {
+      estilos = [];
+    }
+    res.json({ estilos });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Erro ao gerar estilos visuais.' });
+  }
+});
+
+// ── POST /api/estilos-visuais/selecionar ────────────────────────────────────
+app.post('/api/estilos-visuais/selecionar', (req, res) => {
+  const sess = getSession(req, res);
+  const { id, titulo, housePrompt } = req.body || {};
+  if (!housePrompt) {
+    return res.status(400).json({ error: 'Selecione um estilo antes de continuar.' });
+  }
+  sess.estiloVisual = { id, titulo, housePrompt };
+  saveProject(sess);
+  res.json({ ok: true });
+});
+
 // ── GET /api/slides (SSE) — Etapa 8, opcional e independente ───────────────
 // Reorganiza o conteúdo JÁ gerado de cada aula em slides — não gera conteúdo
 // pedagógico novo, apenas estrutura/resume o que já existe.
@@ -596,6 +642,9 @@ app.get('/api/slides', async (req, res) => {
   restoreConteudoPorAula(sess);
   if (!sess.conteudo && !sess.conteudoPorAula?.length) {
     return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar os slides.' });
+  }
+  if (!sess.estiloVisual) {
+    return res.status(400).json({ error: 'Escolha um estilo visual antes de gerar os slides.' });
   }
   sseHeaders(res);
 
@@ -629,9 +678,33 @@ app.get('/api/slides', async (req, res) => {
         slidePlan = { slides: [] };
       }
 
+      // Falha isolada por imagem não interrompe a aula nem o curso — o slide
+      // correspondente cai no layout sem imagem (buildPptx).
+      const slidesComImagem = (slidePlan.slides || []).filter(s => s?.imagem?.promptCena);
+      for (let j = 0; j < slidesComImagem.length; j++) {
+        const slide = slidesComImagem[j];
+        send(res, {
+          type: 'progress',
+          message: `Gerando imagem ${j + 1} de ${slidesComImagem.length} da aula ${i + 1}...`
+        });
+        try {
+          if (j > 0) await new Promise(r => setTimeout(r, 2000));
+          slide._imageData = await gerarImagemSlide(slide.imagem.promptCena, sess.estiloVisual.housePrompt);
+          if (slide._imageData) tokenUsage.images += 1;
+        } catch (imgErr) {
+          console.error(`[slides] Falha ao gerar imagem da aula ${i + 1}:`, imgErr.message);
+          send(res, {
+            type: 'progress',
+            message: `Aviso: não foi possível gerar uma imagem da aula ${i + 1}, o slide seguirá sem ilustração.`
+          });
+        }
+      }
+
       const baseName = `aula${numero}_slides`;
       const fullPath = await persistPptxStage(sess, baseName, aula, slidePlan);
       arquivos.push({ baseName, titulo: aula.titulo, path: fullPath });
+
+      if (i < aulas.length - 1) await new Promise(r => setTimeout(r, 4000));
     }
 
     send(res, { type: 'progress', message: 'Concluído' });
@@ -1239,6 +1312,7 @@ app.post('/api/carregar-projeto', (req, res) => {
       sess.metodologia = p.metodologia || '';
       sess.aulas = p.aulas || [];
       sess.inputs = p.inputs || {};
+      sess.estiloVisual = p.estiloVisual || null;
       stages = p.stages || {};
     } catch {
       sess.config = {};
@@ -1300,7 +1374,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: sess.metodologia, inputs: sess.inputs || {} });
+  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: sess.metodologia, inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────
@@ -1590,16 +1664,54 @@ function buildPptx(config, aula, slidePlan, geradoEm) {
       x: 0.6, y: 0.4, w: 12, h: 0.9, fontFace: FONT, fontSize: 32, bold: true, color: '4A3B8C'
     });
     const bullets = Array.isArray(slide.bullets) ? slide.bullets : [];
-    s.addText(
-      bullets.map(b => ({ text: b, options: { bullet: true, breakLine: true } })),
-      { x: 0.8, y: 1.6, w: 11.5, h: 5, fontFace: FONT, fontSize: 24, color: '222222', valign: 'top' }
-    );
+    const bulletsFormatted = bullets.map(b => ({ text: b, options: { bullet: true, breakLine: true } }));
+
+    // Slide com imagem gerada com sucesso: bullets ficam numa coluna mais
+    // estreita à esquerda, imagem numa caixa quadrada à direita. Slide sem
+    // imagem (IA não indicou, ou a geração falhou) mantém o layout original
+    // em largura total — nenhuma mudança visual para quem não ganha ilustração.
+    if (slide.imagem && slide._imageData) {
+      s.addText(bulletsFormatted, {
+        x: 0.8, y: 1.6, w: 6.6, h: 5, fontFace: FONT, fontSize: 22, color: '222222', valign: 'top'
+      });
+      s.addImage({
+        data: slide._imageData,
+        x: 7.7, y: 1.6, w: 4.9, h: 4.9,
+        sizing: { type: 'contain', w: 4.9, h: 4.9 },
+        altText: slide.titulo || 'Ilustração'
+      });
+    } else {
+      s.addText(bulletsFormatted, {
+        x: 0.8, y: 1.6, w: 11.5, h: 5, fontFace: FONT, fontSize: 24, color: '222222', valign: 'top'
+      });
+    }
+
     s.addText(rodape, {
       x: 0.4, y: 7.05, w: 8, h: 0.35, fontFace: FONT, fontSize: 11, color: '888888', align: 'left'
     });
   }
 
   return pptx;
+}
+
+// Gera uma imagem para um slide via API de imagens da OpenAI, combinando a
+// cena decidida pela IA (promptCena), o estilo escolhido pelo usuário
+// (housePrompt) e as restrições técnicas de layout sempre aplicadas
+// (IMAGE_LAYOUT_CONSTRAINTS). Retorna null em caso de falha — o slide cai no
+// layout sem imagem em buildPptx, sem interromper a geração da aula/curso.
+async function gerarImagemSlide(promptCena, housePrompt) {
+  const response = await openai.images.generate(
+    {
+      model: skills.MODEL_IMAGE,
+      prompt: `${promptCena}. ${housePrompt}. ${skills.IMAGE_LAYOUT_CONSTRAINTS}`,
+      size: '1024x1024',
+      quality: skills.IMAGE_QUALITY,
+      n: 1
+    },
+    { signal: makeAbortSignal(90000) }
+  );
+  const b64 = response.data[0]?.b64_json;
+  return b64 ? `image/png;base64,${b64}` : null;
 }
 
 // ── GET /api/revisao-qualidade (SSE) — Etapa 5★ ─────────────────────────────

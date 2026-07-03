@@ -129,7 +129,8 @@ const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, n
 
 // Estrutura o conteúdo já gerado de uma aula em slides — usada pela Etapa 8
 // (Geração de Slides), que só reorganiza/resume o que já existe, sem gerar
-// conteúdo pedagógico novo.
+// conteúdo pedagógico novo. Também decide, por slide, se uma imagem ajuda —
+// no mesmo call, para não divergir da segmentação e não gastar uma chamada extra.
 const slidesSkill = ({ nomeCurso, aula }) => ({
   model: MODEL_ECONOMY,
   system:
@@ -145,12 +146,69 @@ const slidesSkill = ({ nomeCurso, aula }) => ({
     `de um professor explicando ao lado). NÃO misture tópicos de módulos ou ` +
     `disciplinas distintos no mesmo slide — mantenha cada slide coeso em torno ` +
     `de um só assunto. NÃO inclua notas do apresentador.\n\n` +
+    `Para cada slide, decida também se uma imagem de apoio ajudaria a compreensão: ` +
+    `conceitos concretos, processos, ferramentas ou comparações se beneficiam de ` +
+    `ilustração; definições abstratas ou listas de termos geralmente não. Como ` +
+    `orientação (não regra fixa), a maioria das aulas deve ter entre 3 e 6 slides ` +
+    `ilustrados — nem toda aula precisa do máximo, a quantidade deve refletir quais ` +
+    `tópicos realmente se beneficiam de imagem. Quando decidir por uma imagem, ` +
+    `descreva SOMENTE a cena em inglês, sem palavras de estilo (nada de "cartoon", ` +
+    `"flat illustration", cores, etc. — isso é definido à parte); quando não, use null.\n\n` +
     `Curso: ${nomeCurso}\nAula: ${aula.titulo}\nMódulo: ${aula.modulo || 'não especificado'}\n` +
     `Objetivos: ${aula.objetivos || 'não especificados'}\n\n` +
     `Conteúdo completo da aula:\n${aula.texto}\n\n` +
     `Responda SOMENTE com um JSON no formato exato:\n` +
-    `{"slides": [{"titulo": "string", "bullets": ["string", ...]}]}`
+    `{"slides": [{"titulo": "string", "bullets": ["string", ...], ` +
+    `"imagem": {"promptCena": "string em inglês, só a cena"} | null}]}`
 });
+
+// Propõe um menu de estilos visuais coerentes com o perfil do curso, para o
+// usuário escolher antes da geração de imagens da Etapa 8. Cada opção traz
+// título/descrição em português (para o usuário) e um prompt de estilo em
+// inglês (para o gerador de imagens) — não inclui restrições técnicas de
+// composição/ausência de texto, isso é sempre aplicado à parte (IMAGE_LAYOUT_CONSTRAINTS).
+const ARQUETIPOS_ESTILO_VISUAL =
+  'playful/cartoon, dynamic/modern, Pixar-style 3D animated, minimalist/geometric, ' +
+  'corporate/muted, watercolor/handcrafted';
+
+const estiloVisualSkill = ({ nome, publico, nivel, objetivos, modalidade }) => ({
+  model: MODEL_ECONOMY,
+  system:
+    'Você é diretor de arte especializado em material didático. Proponha um menu ' +
+    'de estilos visuais para ilustrações de um curso, coerentes com o público-alvo, ' +
+    'faixa etária e tipo de curso informados. Use como banco de inspiração (não uma ' +
+    `lista fechada) arquétipos de estilo nomeados e reconhecíveis como: ${ARQUETIPOS_ESTILO_VISUAL}, ` +
+    'ou outros equivalentes. Escolha e adapte de 3 a 5 desses arquétipos (ou combinações ' +
+    'coerentes entre dois deles) ao perfil específico deste curso, variando de mais ' +
+    'lúdico/colorido a mais sóbrio/corporativo conforme fizer sentido — o título de cada ' +
+    'opção deve refletir um arquétipo reconhecível, nunca uma categoria genérica inventada ' +
+    'sem referência conhecida. Responda apenas com JSON válido, sem texto adicional.',
+  user:
+    `Curso: ${nome}\nPúblico-alvo: ${publico}\nNível: ${nivel}\nModalidade: ${modalidade}\n` +
+    `Objetivos: ${objetivos}\n\n` +
+    `Proponha de 3 a 5 estilos visuais distintos, ancorados em arquétipos nomeados e ` +
+    `coerentes com este perfil de curso. Para cada um, dê:\n` +
+    `- um título curto em português que nomeie o arquétipo (ex.: "Lúdico e Colorido", ` +
+    `"Estilo Pixar 3D", "Minimalista Geométrico")\n` +
+    `- uma descrição de 1-2 frases em português explicando o estilo e por que ` +
+    `combina com este curso\n` +
+    `- um prompt de estilo em inglês pronto para um gerador de imagens (técnica ` +
+    `de ilustração, paleta de cores, tom geral) — sem mencionar composição ou ` +
+    `ausência de texto, isso é tratado à parte\n\n` +
+    `Responda SOMENTE com um JSON no formato exato:\n` +
+    `{"estilos": [{"id": "string-slug", "titulo": "string", "descricao": "string", ` +
+    `"housePrompt": "string em inglês"}]}`
+});
+
+// Restrições técnicas de layout sempre aplicadas a toda imagem gerada,
+// independente do estilo estético escolhido pelo usuário — a caixa de imagem
+// no pptx é quadrada (buildPptx) e não pode ter texto embutido pela própria imagem.
+const IMAGE_LAYOUT_CONSTRAINTS =
+  'Centered composition within a square frame, subject fully visible with generous margin on ' +
+  'all sides (the image will sit in a square box beside text, not full-bleed). No text, letters, ' +
+  'numbers, or logos anywhere in the image. No watermarks, no borders.';
+const MODEL_IMAGE = 'gpt-image-1.5';
+const IMAGE_QUALITY = 'medium';
 
 const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico }) => ({
   model: MODEL_ECONOMY,
@@ -492,6 +550,10 @@ module.exports = {
   planoAulaSkill,
   conteudoSkill,
   slidesSkill,
+  estiloVisualSkill,
+  IMAGE_LAYOUT_CONSTRAINTS,
+  MODEL_IMAGE,
+  IMAGE_QUALITY,
   // Ciclo de revisão e melhoria (Etapas 5★ e 6)
   revisaoQualidadeSkill,
   aplicarMelhoriasSkill,

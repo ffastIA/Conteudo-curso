@@ -453,11 +453,26 @@
       <h2>Geração de Slides (PowerPoint)</h2>
       <p style="font-size:.85rem;color:#555;line-height:1.6">
         Gera automaticamente um arquivo <strong>.pptx por aula</strong>, a partir do conteúdo
-        já produzido na Etapa 5 — a IA extrai os tópicos principais de cada aula e organiza
-        em 6 a 10 slides autoexplicativos, sem notas do apresentador, prontos para
-        projeção ou edição posterior no PowerPoint/Canva.
+        já produzido na Etapa 5 — a IA extrai os tópicos principais de cada aula, organiza
+        em 6 a 10 slides autoexplicativos e ilustra os slides que se beneficiam de imagem,
+        no estilo visual que você escolher abaixo. Prontos para projeção ou edição posterior
+        no PowerPoint/Canva.
       </p>
-      <p class="field-hint">Requer a conclusão da Etapa 5 (Conteúdo). Etapa opcional e independente.</p>
+      <p class="field-hint">
+        Requer a conclusão da Etapa 5 (Conteúdo). Etapa opcional e independente. A geração de
+        imagens para várias aulas pode levar alguns minutos.
+      </p>
+
+      <!-- Seleção de estilo visual (exibida antes da primeira geração) -->
+      <div id="estiloVisualContainer" style="display:none">
+        <h3 style="font-size:1rem;margin-bottom:8px">Escolha o estilo visual das imagens</h3>
+        <p style="font-size:.82rem;color:#777;margin-bottom:12px">Selecione uma opção — será aplicada a todas as aulas.</p>
+        <div id="estilosVisuaisList" class="bncc-checklist"></div>
+        <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
+          <button id="btnConfirmarEstiloVisual" class="btn btn-primary">Confirmar estilo e gerar →</button>
+        </div>
+      </div>
+
       <div class="btn-row">
         <button id="btnSlides" class="btn btn-primary" disabled>🖥️ Gerar Slides</button>
       </div>

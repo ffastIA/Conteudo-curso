@@ -253,7 +253,8 @@ textarea { resize: vertical; min-height: 80px; }
   transition: border-color .15s, background .15s;
 }
 .bncc-item:hover { border-color: #7B68D4; background: #ede9fb; }
-.bncc-item input[type="checkbox"] { margin-top: 2px; accent-color: #7B68D4; flex-shrink: 0; }
+.bncc-item input[type="checkbox"],
+.bncc-item input[type="radio"] { margin-top: 2px; accent-color: #7B68D4; flex-shrink: 0; }
 .bncc-item span strong { color: #4A3B8C; }
 .metodologia-card {
   background: #f3f0fd;
