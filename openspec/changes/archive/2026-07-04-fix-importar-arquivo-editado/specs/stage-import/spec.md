@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Importar .docx editado para substituir artefato de etapa
 O sistema SHALL aceitar o upload de um arquivo `.docx` editado pelo usuário, extrair seu conteúdo textual via `mammoth`, identificar a qual etapa ele pertence e sobrescrever o `.txt` correspondente após confirmação explícita do usuário. A identificação por nome de arquivo SHALL aceitar tanto o basename exato do stage quanto basenames com prefixo do curso no formato `<prefixo>_<stage>` (padrão gerado pelo export `.docx` do sistema).
@@ -25,40 +25,6 @@ O sistema SHALL aceitar o upload de um arquivo `.docx` editado pelo usuário, ex
 
 ---
 
-### Requirement: Confirmar importação e sobrescrever artefato
-O sistema SHALL sobrescrever o `.txt` da etapa identificada somente após confirmação explícita do cliente, atualizando também o `projeto.json`.
-
-#### Scenario: Confirmação com estágio identificado
-- **WHEN** o cliente faz `POST /api/importar/confirmar` com `{ stage: "aula03_conteudo", texto: "..." }`
-- **THEN** o sistema sobrescreve `saídas/{slug}/aula03_conteudo.txt`, atualiza `sess.conteudoPorAula[2].texto`, atualiza `projeto.json` com `stages["aula03_conteudo"] = { fonte: "usuario", importadoEm: ISO8601 }` e retorna `{ ok: true, stage: "aula03_conteudo" }`
-
-#### Scenario: Confirmação para etapa consolidada (conteudo, plano_de_ensino, etc.)
-- **WHEN** o cliente confirma importação para `plano_de_ensino`
-- **THEN** o sistema sobrescreve `plano_de_ensino.txt` e atualiza `sess.planoEnsino`
-
-#### Scenario: Stage inválido na confirmação
-- **WHEN** o cliente envia stage que não existe nos artefatos conhecidos
-- **THEN** o sistema retorna status 400 com `{ error: "Stage desconhecido" }`
-
----
-
-### Requirement: Indicar origem de cada artefato na interface
-O sistema SHALL exibir em cada etapa concluída um badge indicando se o artefato é de origem `"ia"` (gerado pela IA) ou `"usuario"` (importado manualmente).
-
-#### Scenario: Artefato gerado pela IA
-- **WHEN** a interface exibe uma etapa concluída cujo `projeto.json.stages[stage].fonte === "ia"`
-- **THEN** exibe badge `🤖 Gerado pela IA` em cinza próximo ao resultado
-
-#### Scenario: Artefato importado pelo usuário
-- **WHEN** a interface exibe uma etapa cujo `projeto.json.stages[stage].fonte === "usuario"`
-- **THEN** exibe badge `✏️ Versão do usuário` em verde e a data de importação
-
-#### Scenario: Tentativa de regenerar artefato de origem usuário
-- **WHEN** o usuário clica em regenerar uma etapa cujo artefato tem `fonte === "usuario"`
-- **THEN** o sistema exibe modal de confirmação: "Esta etapa usa uma versão editada por você. Regenerar vai substituí-la pelo conteúdo da IA. Confirmar?"
-
----
-
 ### Requirement: Botão de importação disponível em cada etapa concluída
 O sistema SHALL exibir o botão "Importar versão editada (.docx)" em cada etapa após sua conclusão. Os manipuladores de evento do modal de importação SHALL estar registrados e funcionais quando a página termina de carregar, independentemente da posição do modal no documento em relação ao script.
 
@@ -78,7 +44,7 @@ O sistema SHALL exibir o botão "Importar versão editada (.docx)" em cada etapa
 - **WHEN** o usuário abriu o modal a partir do botão de uma etapa específica (ex.: metodologia) e o backend retorna detecção ambígua com lista de candidatos
 - **THEN** o seletor manual de etapa é exibido com a etapa de origem pré-selecionada e o botão "Confirmar importação" habilitado, permanecendo o usuário livre para trocar a seleção
 
----
+## ADDED Requirements
 
 ### Requirement: Atualizar conteúdo exibido após importação confirmada
 Após `POST /api/importar/confirmar` bem-sucedido, a interface SHALL re-renderizar o conteúdo da etapa afetada com o texto importado, além de atualizar o badge de origem.

@@ -87,10 +87,25 @@ carga                  integer    obrigatório  (horas totais)
 duracao                integer    obrigatório  (minutos por aula)
 nivel                  enum       obrigatório  básico | intermediário | avançado
 modalidade             enum       obrigatório  presencial | EaD | híbrido
+distribuicaoHibrida    string     opcional     só híbrido — divisão presencial/a distância (texto livre)
+cargaSincronaPorAula   string     opcional     só EaD — janela síncrona regular por aula (texto livre)
 objetivos              string     obrigatório
 proporcaoTeoricoPratico string    obrigatório  ex: "70% teórico / 30% prático"
 preRequisitos          string     opcional
 ```
+
+> Propagação da modalidade: `buildPedagogicalContext` (server.js) injeta o bloco
+> `## Modalidade do Curso` (diretrizes em `MODALIDADE_DIRETRIZES`, skills.js) em
+> todas as etapas geradoras, e cada skill recebe `modalidade` para a linha de
+> dados e o cabeçalho dos documentos. A metodologia tem fallback de leitura em
+> disco (`getMetodologia`) — sessão perdida não gera mais sem metodologia.
+>
+> Propagação do nível: cada skill geradora injeta `nivelBlock(nivel)` — bloco
+> `## Diretrizes de Nível` de `NIVEL_DIRETRIZES` (skills.js) com profundidade,
+> vocabulário, pré-requisitos e Bloom-alvo; as pesquisas web usam a variante
+> `pesquisa`. O system das skills principais declara o nível como PESO ALTO,
+> e a revisão de qualidade fiscaliza "Adequação ao Nível Declarado". Não
+> confundir com o nível BNCC (ef1/ef2/em/competencias).
 
 ### Session (in-memory)
 ```

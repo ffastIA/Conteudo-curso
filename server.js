@@ -97,12 +97,24 @@ function getSession(req, res) {
   return sessions[id];
 }
 
+// Metodologia com fallback de leitura em disco — a sessão in-memory pode ter
+// sido perdida (restart do servidor) sem o usuário recarregar o projeto.
+function getMetodologia(sess) {
+  return sess.metodologia || readMemory(sess, 'metodologia');
+}
+
 // Monta bloco de contexto pedagógico para injetar nos prompts das skills.
-// Retorna string vazia se nem BNCC nem metodologia estiverem definidos.
+// Retorna string vazia se nem modalidade, nem BNCC, nem metodologia estiverem definidos.
 function buildPedagogicalContext(sess) {
   const parts = [];
-  if (sess.metodologia) {
-    parts.push(`## Metodologia Pedagógica\n${sess.metodologia}`);
+  const modBlock = skills.modalidadeBlock(sess.config?.modalidade, {
+    distribuicaoHibrida: sess.config?.distribuicaoHibrida,
+    cargaSincronaPorAula: sess.config?.cargaSincronaPorAula
+  });
+  if (modBlock) parts.push(modBlock);
+  const metodologia = getMetodologia(sess);
+  if (metodologia) {
+    parts.push(`## Metodologia Pedagógica\n${metodologia}`);
   }
   if (sess.bncc?.ativo && sess.bncc.itens?.length) {
     const itensStr = sess.bncc.itens
@@ -412,9 +424,9 @@ app.post('/api/bncc/pular', (req, res) => {
 // ── GET /api/metodologia ─────────────────────────────────────────────────────
 app.get('/api/metodologia', async (req, res) => {
   const sess = getSession(req, res);
-  const { nome, publico, carga, nivel, proporcaoTeoricoPratico } = sess.config;
+  const { nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade } = sess.config;
   try {
-    const skill = skills.metodologiaSkill({ nome, publico, carga, nivel, proporcaoTeoricoPratico });
+    const skill = skills.metodologiaSkill({ nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade });
     const completion = await openai.chat.completions.create({
       model: skill.model,
       messages: [
@@ -424,7 +436,7 @@ app.get('/api/metodologia', async (req, res) => {
     });
     addUsage(completion.usage);
     sess.metodologia = completion.choices[0]?.message?.content?.trim() || '';
-    res.json({ ok: true, metodologia: sess.metodologia });
+    res.json({ ok: true, metodologia: getMetodologia(sess) });
   } catch (err) {
     console.error('Erro ao gerar metodologia:', err.message);
     res.status(500).json({ error: err.message });
@@ -441,10 +453,10 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
 
   try {
     if (sess._precisaGerarEmenta) {
-      const { nome, publico, carga, duracao, nivel, objetivos } = sess.config;
+      const { nome, publico, carga, duracao, nivel, objetivos, modalidade } = sess.config;
       const skill = skills.ementaSkill({
-        nome, publico, carga, duracao, nivel, objetivos,
-        metodologia: sess.metodologia,
+        nome, publico, carga, duracao, nivel, objetivos, modalidade,
+        metodologia: getMetodologia(sess),
         bnccContext: sess.bncc?.ativo ? sess.bncc.itens.map(i => `${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('; ') : ''
       });
       const completion = await openai.chat.completions.create({
@@ -488,7 +500,7 @@ app.get('/api/qualidade', async (req, res) => {
     planoEnsino: sess.planoEnsino,
     planoAula: sess.planoAula,
     resumosAulas,
-    metodologia: sess.metodologia,
+    metodologia: getMetodologia(sess),
     bncc: sess.bncc
   });
 
@@ -565,7 +577,7 @@ app.get('/api/ppc', async (req, res) => {
     const assemblySkill = skills.ppcAssemblySkill({
       config: sess.config, ementa: sess.ementa, pesquisa: truncate(sess.pesquisa, 1500),
       planoEnsino: truncate(sess.planoEnsino, 2000), planoAula: truncate(sess.planoAula, 1500),
-      metodologia: sess.metodologia, bncc: sess.bncc,
+      metodologia: getMetodologia(sess), bncc: sess.bncc,
       perfilEgresso, competencias, perfilDocente, infraestrutura
     });
 
@@ -660,7 +672,7 @@ app.get('/api/slides', async (req, res) => {
         message: `Gerando slides da aula ${i + 1} de ${aulas.length}: ${aula.titulo}`
       });
 
-      const skill = skills.slidesSkill({ nomeCurso: sess.config.nome, aula });
+      const skill = skills.slidesSkill({ nomeCurso: sess.config.nome, aula, nivel: sess.config.nivel });
       const completion = await openai.chat.completions.create({
         model: skill.model,
         response_format: { type: 'json_object' },
@@ -781,13 +793,13 @@ app.get('/api/search', async (req, res) => {
   const { topicos = '', limite = 3 } = req.query;
   sess.inputs.topicos = topicos;
   sess.inputs.limite = Number(limite);
-  const { nome, nivel, publico } = sess.config;
+  const { nome, nivel, publico, modalidade } = sess.config;
 
   send(res, { type: 'progress', message: 'Iniciando pesquisa...' });
 
   // Skill de pesquisa na internet — usa o modelo com capacidade de busca web
   // (gpt-4o-search-preview) e referencia a ementa já gerada para manter o foco.
-  const skill = skills.pesquisaWebSkill({ nome, nivel, publico, topicos, ementa: sess.ementa, metodologia: sess.metodologia, bnccContext: buildPedagogicalContext(sess) });
+  const skill = skills.pesquisaWebSkill({ nome, nivel, publico, modalidade, topicos, ementa: sess.ementa, metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess) });
 
   try {
     send(res, { type: 'progress', message: 'Buscando na web...' });
@@ -809,7 +821,7 @@ app.get('/api/search', async (req, res) => {
         // Fallback sem web search
         usedFallback = true;
         send(res, { type: 'progress', message: '⚠️ Pesquisa web indisponível — gerando a partir do conhecimento do modelo...' });
-        const fbSkill = skills.pesquisaFallbackSkill({ nome, nivel, publico, topicos, ementa: sess.ementa, metodologia: sess.metodologia, bnccContext: buildPedagogicalContext(sess) });
+        const fbSkill = skills.pesquisaFallbackSkill({ nome, nivel, publico, modalidade, topicos, ementa: sess.ementa, metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess) });
         completion = await openai.chat.completions.create({
           model: fbSkill.model,
           max_tokens: 2000,
@@ -876,7 +888,7 @@ app.get('/api/plano-ensino', async (req, res) => {
   sseHeaders(res);
   const { ajustes = '' } = req.query;
   sess.inputs.ajustesEnsino = ajustes;
-  const { nome, publico, carga, duracao, nivel, objetivos } = sess.config;
+  const { nome, publico, carga, duracao, nivel, objetivos, modalidade } = sess.config;
 
   send(res, { type: 'progress', message: 'Preparando plano de ensino...' });
 
@@ -885,8 +897,8 @@ app.get('/api/plano-ensino', async (req, res) => {
   const pesquisa = sess.pesquisa || readMemory(sess, 'pesquisa');
 
   const skill = skills.planoEnsinoSkill({
-    nome, publico, carga, duracao, nivel, objetivos, ementa, pesquisa, ajustes,
-    metodologia: sess.metodologia, bnccContext: buildPedagogicalContext(sess),
+    nome, publico, carga, duracao, nivel, objetivos, modalidade, ementa, pesquisa, ajustes,
+    metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess),
     proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
   });
 
@@ -935,7 +947,7 @@ app.get('/api/plano-aula', async (req, res) => {
   sseHeaders(res);
   const { observacoes = '' } = req.query;
   sess.inputs.observacoesAula = observacoes;
-  const { nome, duracao, nivel, publico } = sess.config;
+  const { nome, duracao, nivel, publico, modalidade } = sess.config;
 
   send(res, { type: 'progress', message: 'Planejando as aulas do curso...' });
 
@@ -972,9 +984,9 @@ app.get('/api/plano-aula', async (req, res) => {
       const lessonSummaries = skills.summarizeLessons(aulas, { excludeIndex: i });
 
       const skill = skills.planoAulaSkill({
-        nome, duracao, nivel, publico, aula, index: i, total: aulas.length,
+        nome, duracao, nivel, publico, modalidade, aula, index: i, total: aulas.length,
         ementa, planoEnsino, lessonSummaries, observacoes,
-        metodologia: sess.metodologia, bnccContext: buildPedagogicalContext(sess),
+        metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess),
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
       });
 
@@ -1015,14 +1027,14 @@ app.get('/api/plano-aula', async (req, res) => {
 // (nunca truncado) e exige um campo "modulo" rastreável a um módulo real do
 // plano de ensino, permitindo auditar a aderência da grade ao currículo.
 async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
-  const { nome, carga, duracao, nivel, publico } = sess.config;
+  const { nome, carga, duracao, nivel, publico, modalidade } = sess.config;
   const totalMinutos = Number(carga) * 60;
   const numAulas = Math.max(1, Math.round(totalMinutos / Number(duracao)));
 
   const planoEnsino = planoEnsinoOverride || sess.planoEnsino || readMemory(sess, 'plano_de_ensino');
 
   const chamarSkill = async (correcao) => {
-    const skill = skills.planLessonsSkill({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas, correcao });
+    const skill = skills.planLessonsSkill({ nome, carga, duracao, nivel, publico, modalidade, planoEnsino, numAulas, correcao });
     const completion = await openai.chat.completions.create({
       model: skill.model,
       response_format: { type: 'json_object' },
@@ -1134,7 +1146,7 @@ async function streamSkillToClient(res, skill) {
 app.get('/api/conteudo', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
-  const { nome, nivel, publico, duracao } = sess.config;
+  const { nome, nivel, publico, duracao, modalidade } = sess.config;
 
   send(res, { type: 'progress', message: 'Analisando os objetivos das aulas do curso...' });
 
@@ -1176,9 +1188,9 @@ app.get('/api/conteudo', async (req, res) => {
       const lessonSummaries = skills.summarizeLessons(aulas, { excludeIndex: i });
 
       const baseSkill = skills.conteudoSkill({
-        nome, duracao, nivel, publico, aula, index: i, total: aulas.length,
+        nome, duracao, nivel, publico, modalidade, aula, index: i, total: aulas.length,
         ementa, planoAulaTrecho, lessonSummaries,
-        metodologia: sess.metodologia, bnccContext: buildPedagogicalContext(sess),
+        metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess),
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
       });
 
@@ -1374,7 +1386,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: sess.metodologia, inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null });
+  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────
@@ -1393,6 +1405,13 @@ function detectStage(filename, firstH1, sess) {
   if (STAGES_FIXOS[base]) return { stage: base, detectadoPor: 'nome' };
   // aula03_conteudo → aula03_conteudo
   if (/^aula\d{2}_conteudo$/.test(base)) return { stage: base, detectadoPor: 'nome' };
+  // O export gera "<nome_do_curso>_<stage>.docx" — casa pelo sufixo _<stage>
+  const baseLower = base.toLowerCase();
+  for (const key of Object.keys(STAGES_FIXOS)) {
+    if (baseLower.endsWith('_' + key)) return { stage: key, detectadoPor: 'nome' };
+  }
+  const mAula = baseLower.match(/_(aula\d{2}_conteudo)$/);
+  if (mAula) return { stage: mAula[1], detectadoPor: 'nome' };
 
   // 2. Pelo título H1
   if (firstH1 && sess.aulas?.length) {
@@ -1491,7 +1510,7 @@ app.post('/api/export/:step', async (req, res) => {
   };
 
   const textMap = {
-    metodologia: sess.metodologia,
+    metodologia: getMetodologia(sess),
     pesquisa: sess.pesquisa,
     'plano-ensino': sess.planoEnsino,
     'plano-aula': sess.planoAula,
@@ -1768,7 +1787,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
         aulaObjetivos: aula.objetivos,
         aulaConteudo: truncate(aula.texto, 2000),
         sobreposicoes: sobreposicoesPorAula[i],
-        metodologia: sess.metodologia,
+        metodologia: getMetodologia(sess),
         bnccContext
       });
 
@@ -1974,7 +1993,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         aulaObjetivos: aula.objetivos,
         conteudoAtual: aula.texto,
         observacoesRevisor: obs,
-        metodologia: sess.metodologia,
+        metodologia: getMetodologia(sess),
         bnccContext
       });
 
@@ -2324,7 +2343,7 @@ else:
       message: `Sessão populada com curso "Python para Iniciantes" (4 aulas). BNCC: ${comBncc ? `ativo (${sess.bncc.nivel})` : 'desativado'}. Acesse http://localhost:3000 e vá para a Etapa 5★, Agente de Qualidade ou PPC.`,
       config: { nome: sess.config.nome },
       bncc: sess.bncc.ativo ? { nivel: sess.bncc.nivel, itens: sess.bncc.itens.length } : 'desativado',
-      metodologia: sess.metodologia.substring(0, 60) + '...',
+      metodologia: getMetodologia(sess).substring(0, 60) + '...',
       aulas: sess.aulas.map(a => a.titulo)
     });
   });
@@ -2339,3 +2358,5 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports.detectStage = detectStage;
+module.exports.buildPedagogicalContext = buildPedagogicalContext;

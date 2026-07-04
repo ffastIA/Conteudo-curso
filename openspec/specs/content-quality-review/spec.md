@@ -114,3 +114,29 @@ O sistema SHALL anexar, como a última seção do relatório de revisão de qual
 #### Scenario: Pré-visualização ao vivo não exibe marcadores técnicos
 - **WHEN** o relatório é exibido ao vivo no navegador durante o streaming
 - **THEN** nenhum marcador técnico de quebra de página aparece como texto visível na tela
+
+---
+
+### Requirement: Revisão de qualidade avalia adequação à modalidade
+A `revisaoQualidadeSkill` SHALL receber a modalidade do curso e incluir no relatório uma avaliação de adequação do conteúdo à modalidade declarada; a `aplicarMelhoriasSkill` SHALL receber a modalidade para que as melhorias aplicadas a preservem.
+
+#### Scenario: Relatório aponta desvio de modalidade
+- **WHEN** o relatório de revisão é gerado para um curso EaD cujo conteúdo propõe dinâmicas exclusivamente presenciais
+- **THEN** o relatório sinaliza a inadequação à modalidade na seção correspondente, com recomendação de ajuste
+
+#### Scenario: Melhorias preservam a modalidade
+- **WHEN** o usuário aplica melhorias sugeridas pela revisão em um curso EaD
+- **THEN** o conteúdo melhorado mantém atividades e recursos compatíveis com EaD (o prompt de `aplicarMelhoriasSkill` contém a modalidade)
+
+---
+
+### Requirement: Revisão de qualidade avalia adequação ao nível declarado
+A `revisaoQualidadeSkill` SHALL incluir no relatório uma seção obrigatória "Adequação ao Nível Declarado", avaliando se profundidade, vocabulário e complexidade do conteúdo correspondem ao nível configurado (`config.nivel`), ao lado da avaliação de faixa etária/perfil de público já existente. A `aplicarMelhoriasSkill` SHALL injetar as diretrizes de nível para que as melhorias preservem o nível.
+
+#### Scenario: Relatório aponta desvio de nível
+- **WHEN** o relatório de revisão é gerado para um curso `Básico` cujo conteúdo usa vocabulário técnico sem definição e assume pré-requisitos
+- **THEN** o relatório sinaliza a inadequação na seção "Adequação ao Nível Declarado", com recomendação de ajuste
+
+#### Scenario: Melhorias preservam o nível
+- **WHEN** o usuário aplica melhorias sugeridas pela revisão em um curso `Avançado`
+- **THEN** o conteúdo melhorado mantém a profundidade e o vocabulário do nível avançado (o prompt de `aplicarMelhoriasSkill` contém as diretrizes de nível)

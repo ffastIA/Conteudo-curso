@@ -309,6 +309,15 @@ document.getElementById('btnPularEtapa0').addEventListener('click', async () => 
 });
 
 // ── STEP 1 — Config ──────────────────────────────────────────────────────────
+// Campos condicionais por modalidade: distribuição híbrida (só híbrido) e
+// carga síncrona por aula (só EaD).
+function atualizarCamposModalidade() {
+  const m = document.getElementById('modalidade').value;
+  document.getElementById('grupoDistribuicaoHibrida').style.display = m === 'híbrido' ? '' : 'none';
+  document.getElementById('grupoCargaSincrona').style.display = m === 'EaD' ? '' : 'none';
+}
+document.getElementById('modalidade').addEventListener('change', atualizarCamposModalidade);
+
 // Salva a configuração e encadeia a geração da metodologia — não navega para a
 // Etapa 2 ainda; isso só acontece na confirmação (btnSalvarMetodologia).
 async function salvarConfigEGerarMetodologia(triggerBtn) {
@@ -320,6 +329,11 @@ async function salvarConfigEGerarMetodologia(triggerBtn) {
     nivel: document.getElementById('nivel').value,
     objetivos: document.getElementById('objetivos').value.trim(),
     modalidade: document.getElementById('modalidade').value,
+    // Campos condicionais por modalidade — só enviados quando a modalidade os exibe
+    distribuicaoHibrida: document.getElementById('modalidade').value === 'híbrido'
+      ? document.getElementById('distribuicaoHibrida').value.trim() : '',
+    cargaSincronaPorAula: document.getElementById('modalidade').value === 'EaD'
+      ? document.getElementById('cargaSincronaPorAula').value.trim() : '',
     proporcaoTeoricoPratico: document.getElementById('proporcaoTeoricoPratico').value.trim(),
     preRequisitos: document.getElementById('preRequisitos').value.trim(),
     pastaProjeto: document.getElementById('pastaProjeto').value.trim()
@@ -912,10 +926,11 @@ async function carregarProjetoPorPasta(pasta) {
     // Repopula campos do formulário da Etapa 1
     if (data.config) {
       const c = data.config;
-      ['nome','publico','carga','duracao','nivel','objetivos','modalidade','proporcaoTeoricoPratico','preRequisitos','pastaProjeto'].forEach(id => {
+      ['nome','publico','carga','duracao','nivel','objetivos','modalidade','distribuicaoHibrida','cargaSincronaPorAula','proporcaoTeoricoPratico','preRequisitos','pastaProjeto'].forEach(id => {
         const el = document.getElementById(id);
         if (el && c[id] != null) el.value = c[id];
       });
+      atualizarCamposModalidade();
     }
 
     // Restaura o estilo visual escolhido (Etapa 8) — evita pedir de novo se já
@@ -958,6 +973,18 @@ const STAGE_BADGE_MAP = {
   plano_de_ensino: 'origemEtapa3',
   plano_de_aula: 'origemEtapa4',
   conteudo: 'origemEtapa5',
+};
+
+// Elemento de resultado de cada etapa fixa (re-render após importação).
+// aulaNN_conteudo fica de fora: resultConteudo agrega todas as aulas e seria
+// clobberado por um texto de aula única — a versão importada é persistida e
+// aparece ao recarregar o projeto.
+const STAGE_RESULT_MAP = {
+  metodologia: 'metodologiaResult',
+  pesquisa: 'resultSearch',
+  plano_de_ensino: 'resultEnsino',
+  plano_de_aula: 'resultAula',
+  revisao_qualidade: 'resultRevisaoQualidade',
 };
 
 function atualizarBadgeOrigem(stage, fonte, data) {
@@ -1014,7 +1041,14 @@ document.getElementById('importarFileInput').addEventListener('change', async (e
       selDiv.style.display = 'block';
       const sel = document.getElementById('importarStageSeletor');
       sel.innerHTML = (data.candidatos || []).map(c => `<option value="${c.stage}">${c.titulo}</option>`).join('');
-      _importarStageBuffer = '';
+      // Hint da etapa de origem do clique pré-seleciona (usuário pode trocar)
+      const hint = _importarStageBuffer;
+      if (hint && (data.candidatos || []).some(c => c.stage === hint)) {
+        sel.value = hint;
+        btnConf.disabled = false;
+      } else {
+        _importarStageBuffer = '';
+      }
       sel.onchange = () => { _importarStageBuffer = sel.value; btnConf.disabled = !_importarStageBuffer; };
     } else {
       _importarStageBuffer = data.stagioDetectado;
@@ -1048,6 +1082,10 @@ document.getElementById('btnConfirmarImportar').addEventListener('click', async 
     const data = await r.json();
     if (!r.ok) { alert(data.error || 'Erro ao confirmar'); return; }
     atualizarBadgeOrigem(_importarStageBuffer, 'usuario', new Date().toISOString());
+    // Reflete o texto importado no resultado exibido da etapa
+    const resultId = STAGE_RESULT_MAP[_importarStageBuffer];
+    const resultEl = resultId && document.getElementById(resultId);
+    if (resultEl) resultEl.innerHTML = renderMarkdown(_importarTextoBuffer);
     fecharModalImportar();
     alert(`Artefato "${_importarStageBuffer}" atualizado com sua versão.`);
   } catch (err) {

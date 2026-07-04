@@ -148,6 +148,16 @@
               <option value="híbrido">Híbrido</option>
             </select>
           </div>
+          <div class="form-group full" id="grupoDistribuicaoHibrida" style="display:none">
+            <label for="distribuicaoHibrida">Distribuição híbrida (opcional)</label>
+            <input type="text" id="distribuicaoHibrida"
+                   placeholder="Ex: prática presencial, teoria a distância — ou 40% presencial / 60% EaD" />
+          </div>
+          <div class="form-group full" id="grupoCargaSincrona" style="display:none">
+            <label for="cargaSincronaPorAula">Carga síncrona por aula (opcional)</label>
+            <input type="text" id="cargaSincronaPorAula"
+                   placeholder="Ex: 15 min de interação síncrona com o instrutor por aula" />
+          </div>
           <div class="form-group">
             <label for="proporcaoTeoricoPratico">Proporção Teórico / Prático *</label>
             <input type="text" id="proporcaoTeoricoPratico" placeholder="Ex: 70% teoria / 30% prática" required />
@@ -487,7 +497,7 @@
 
 </main>
 
-<script src="app.js"></script>
+<script src="app.js" defer></script>
 
 <!-- Modal de importação de .docx -->
 <div id="modalImportar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">

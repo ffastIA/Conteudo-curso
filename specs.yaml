@@ -53,10 +53,51 @@ models:
         required: true
         enum: [básico, intermediário, avançado]
         example: "básico"
+        description: >
+          Nível de conteúdo. Propagado a todas as skills geradoras via bloco
+          "## Diretrizes de Nível" (NIVEL_DIRETRIZES em skills.js: profundidade,
+          vocabulário, pré-requisitos, Bloom-alvo) e às pesquisas web pela
+          variante `pesquisa`. Declarado como fator de PESO ALTO no system das
+          skills principais. Distinto do nível BNCC (ef1/ef2/em/competencias).
       objetivos:
         type: string
         required: true
         description: Objetivos de aprendizagem descritos em texto livre.
+      modalidade:
+        type: string
+        required: true
+        enum: [presencial, EaD, híbrido]
+        description: >
+          Modalidade de ensino. Propagada a todas as skills geradoras via
+          bloco "## Modalidade do Curso" (MODALIDADE_DIRETRIZES em skills.js,
+          injetado por buildPedagogicalContext). Em conflito, a Metodologia
+          Pedagógica definida prevalece sobre as diretrizes de modalidade.
+      distribuicaoHibrida:
+        type: string
+        required: false
+        description: >
+          Somente modalidade híbrida. Texto livre descrevendo a divisão
+          presencial/a distância (ex. "prática presencial, teoria EaD").
+          Quando preenchida, os prompts instruem respeito rigoroso.
+      cargaSincronaPorAula:
+        type: string
+        required: false
+        description: >
+          Somente modalidade EaD. Janela síncrona regular por aula (ex.
+          "15 min de interação com o instrutor"). Quando preenchida, cada
+          plano de aula reserva a janela explicitamente, com objetivo definido.
+      preRequisitos:
+        type: string
+        required: false
+        description: Conhecimentos prévios necessários, em texto livre.
+      proporcaoTeoricoPratico:
+        type: string
+        required: true
+        example: "70% teoria / 30% prática"
+      pastaProjeto:
+        type: string
+        required: true
+        description: Caminho absoluto da pasta raiz do projeto do curso.
 
   Session:
     description: >

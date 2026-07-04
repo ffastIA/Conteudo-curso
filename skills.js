@@ -24,7 +24,155 @@ function pedagCtxBlock(metodologia, bnccContext) {
   return parts.length ? '\n\n' + parts.join('\n\n') : '';
 }
 
-const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext }) => ({
+// ── Diretrizes por modalidade de ensino ──────────────────────────────────────
+// Injetadas no bloco "## Modalidade do Curso" via buildPedagogicalContext
+// (server.js), que alcança todas as etapas geradoras. Em caso de conflito,
+// a Metodologia Pedagógica definida prevalece (regra incluída no próprio bloco).
+const MODALIDADE_DIRETRIZES = {
+  presencial:
+    '- Atividades: privilegie o que só o encontro físico oferece — prática supervisionada em ' +
+    'laboratório/oficina, dinâmicas em grupo, demonstrações ao vivo, simulações e estudos de caso discutidos em turma.\n' +
+    '- Recursos: sala de aula, laboratório/oficina e equipamentos físicos; quadro e projetor; ' +
+    'apostila como apoio. Não pressuponha AVA como canal principal.\n' +
+    '- Interação: síncrona, em turma, com mediação direta do docente e feedback imediato.\n' +
+    '- Avaliação: prática observada pelo docente, provas presenciais, apresentações e participação em turma.\n' +
+    '- Evite: atividades dependentes de longos períodos de estudo autônomo não mediado; ' +
+    'ferramentas online como única via de entrega.',
+  ead:
+    '- Atividades: autoinstrucionais e assíncronas — videoaulas, leituras guiadas, quizzes com feedback ' +
+    'automático, fóruns temáticos, projetos com entrega digital. Encontros síncronos (webconferência) como ' +
+    'complemento, nunca como estrutura principal.\n' +
+    '- Recursos: Ambiente Virtual de Aprendizagem (AVA), videoaulas e material navegável; para prática, ' +
+    'simuladores, laboratórios virtuais ou roteiros que o aluno execute com recursos próprios.\n' +
+    '- Interação: fóruns, mensagens e tutoria a distância; inclua orientações explícitas de estudo ' +
+    'autônomo, organização de rotina e gestão de tempo.\n' +
+    '- Avaliação: instrumentos aplicáveis a distância — questionários online, entregas de projeto, ' +
+    'portfólio digital, participação qualificada em fórum.\n' +
+    '- Evite: qualquer atividade que dependa de presença física, laboratório físico ou dinâmica de sala; ' +
+    'excesso de carga síncrona.',
+  hibrido:
+    '- Distribuição: reserve os momentos presenciais prioritariamente para prática em laboratório/oficina, ' +
+    'dinâmicas e avaliações práticas; os momentos a distância para teoria, preparação prévia e fixação.\n' +
+    '- Integração: os momentos a distância devem preparar ou consolidar os encontros presenciais ' +
+    '(ex.: sala de aula invertida) — nunca duas trilhas paralelas desconexas.\n' +
+    '- Identificação: em ementa, plano de ensino e plano de aula, explicite quais atividades/momentos ' +
+    'são presenciais e quais são a distância.\n' +
+    '- Recursos: combine AVA e materiais digitais (parte a distância) com laboratório/oficina e ' +
+    'dinâmicas de turma (parte presencial).\n' +
+    '- Avaliação: combine instrumentos das duas modalidades, posicionando avaliações práticas nos momentos presenciais.\n' +
+    '- Evite: tratar o híbrido como "presencial com material online de apoio" ou como "EaD com encontros ' +
+    'ocasionais sem função definida".'
+};
+
+// Lookup tolerante a caixa/acentuação ("EaD", "Híbrido", "presencial"...).
+function normalizeModalidade(v) {
+  return String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+// Bloco "## Modalidade do Curso" para o contexto pedagógico. Retorna string
+// vazia para modalidade ausente/desconhecida (projetos legados não quebram).
+function modalidadeBlock(modalidade, { distribuicaoHibrida, cargaSincronaPorAula } = {}) {
+  const diretrizes = MODALIDADE_DIRETRIZES[normalizeModalidade(modalidade)];
+  if (!diretrizes) return '';
+  const extras = [];
+  if (distribuicaoHibrida) {
+    extras.push(
+      `Distribuição híbrida definida para este curso: ${distribuicaoHibrida} — respeite-a rigorosamente ` +
+      `na organização de atividades presenciais e a distância.`
+    );
+  }
+  if (cargaSincronaPorAula) {
+    extras.push(
+      `Carga síncrona por aula definida para este curso: ${cargaSincronaPorAula} — reserve essa janela ` +
+      `explicitamente em cada plano de aula, com objetivo definido (tira-dúvidas, feedback ou demonstração ` +
+      `ao vivo), mantendo o restante da aula autoinstrucional.`
+    );
+  }
+  return (
+    `## Modalidade do Curso: ${modalidade}\n${diretrizes}` +
+    (extras.length ? '\n' + extras.join('\n') : '') +
+    '\nEm caso de conflito entre estas diretrizes e a Metodologia Pedagógica definida, ' +
+    'a Metodologia Pedagógica prevalece.'
+  );
+}
+
+// ── Diretrizes por nível de conteúdo ─────────────────────────────────────────
+// O nível (básico/intermediário/avançado) define profundidade, vocabulário,
+// pré-requisitos assumíveis e o alvo na Taxonomia de Bloom. Variante `geral`
+// para as skills de geração; variante `pesquisa` para direcionar as buscas web.
+// Distinto do nível BNCC (ef1/ef2/em/competencias) — não confundir.
+const NIVEL_DIRETRIZES = {
+  basico: {
+    geral:
+      '- Pré-requisitos: não assuma nenhum conhecimento prévio na área além dos requisitos de ' +
+      'ingresso do curso, nem experiência profissional.\n' +
+      '- Vocabulário: defina todo termo técnico na primeira ocorrência, em linguagem simples; ' +
+      'use analogias com o cotidiano quando ajudar.\n' +
+      '- Profundidade: foque no "o quê" e no "como" fundamentais; funcionamento interno e ' +
+      'casos-limite apenas mencionados, sem aprofundar.\n' +
+      '- Exemplos e atividades: situações do cotidiano e tarefas simples da ocupação; atividades ' +
+      'guiadas, com instruções passo a passo e resultado verificável; progressão em passos pequenos.\n' +
+      '- Taxonomia de Bloom (alvo): lembrar, entender e aplicar.\n' +
+      '- Evite: jargão sem explicação, saltos de raciocínio, atividades que exijam autonomia ' +
+      'técnica ou decisões de projeto, aprofundamento em otimização e internals.',
+    pesquisa:
+      'priorize guias introdutórios, tutoriais passo a passo, materiais didáticos de entrada, ' +
+      'glossários e documentação "getting started"; evite artigos avançados, benchmarks e ' +
+      'material voltado a profissionais experientes.'
+  },
+  intermediario: {
+    geral:
+      '- Pré-requisitos: assuma domínio dos fundamentos da área (nível básico concluído); use ' +
+      'termos fundamentais livremente e defina brevemente apenas os especializados.\n' +
+      '- Profundidade: além do "como", explique o "porquê"; compare alternativas e apresente ' +
+      'critérios de escolha e boas práticas de mercado.\n' +
+      '- Exemplos e atividades: cenários reais de trabalho com complexidade moderada; problemas ' +
+      'com mais de um caminho possível; pequenos projetos integradores; atividades semiestruturadas.\n' +
+      '- Taxonomia de Bloom (alvo): aplicar e analisar.\n' +
+      '- Evite: reexplicar fundamentos extensivamente (referencie em vez de reensinar) e ' +
+      'profundidade de especialista (tuning fino, casos-limite raros).',
+    pesquisa:
+      'priorize documentação oficial, boas práticas e padrões de mercado, estudos de caso e ' +
+      'comparativos de ferramentas e abordagens; evite material puramente introdutório e ' +
+      'material de fronteira/pesquisa.'
+  },
+  avancado: {
+    geral:
+      '- Pré-requisitos: assuma experiência prática consolidada na área; use vocabulário técnico ' +
+      'livremente, sem definições introdutórias.\n' +
+      '- Profundidade: funcionamento interno, otimização, trade-offs, casos-limite, integração ' +
+      'entre sistemas/processos, tendências e evolução da área.\n' +
+      '- Exemplos e atividades: cenários complexos e realistas (incidentes, projetos completos, ' +
+      'decisões sob restrição); atividades abertas — projetos autorais, análise crítica e ' +
+      'tomada de decisão justificada.\n' +
+      '- Taxonomia de Bloom (alvo): analisar, avaliar e criar.\n' +
+      '- Evite: gastar tempo em fundamentos, definições introdutórias e exercícios mecânicos de repetição.',
+    pesquisa:
+      'priorize documentação avançada e de referência, benchmarks, artigos técnicos, tendências ' +
+      'de ponta e certificações profissionais avançadas da área; evite tutoriais introdutórios ' +
+      'e material generalista.'
+  }
+};
+
+// Bloco de diretrizes de nível (vazio para nível ausente/desconhecido —
+// projetos legados não quebram). Reusa a normalização de caixa/acentos.
+function nivelBlock(nivel, tipo = 'geral') {
+  const d = NIVEL_DIRETRIZES[normalizeModalidade(nivel)];
+  if (!d) return '';
+  if (tipo === 'pesquisa') {
+    return `Direcionamento da pesquisa pelo nível (${nivel}): ${d.pesquisa}\n`;
+  }
+  return `\n\n## Diretrizes de Nível — ${nivel}\n${d.geral}`;
+}
+
+// Declaração de peso do nível para o prompt `system` das skills geradoras
+// principais (instruções em system têm mais aderência que metadado em user).
+const NIVEL_PESO_ALTO =
+  ' O nível configurado do curso (básico, intermediário ou avançado) é um fator de PESO ALTO ' +
+  'na definição de profundidade, vocabulário e complexidade do que você produzir — subordinado ' +
+  'apenas à Metodologia Pedagógica definida para o curso.';
+
+const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext, modalidade }) => ({
   model: MODEL_RESEARCH,
   web_search_options: { search_context_size: 'medium' },
   system:
@@ -34,6 +182,8 @@ const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, 
   user:
     `Pesquise conteúdos atuais para um curso de formação tecnológica:\n` +
     `Curso: ${nome}\nNível: ${nivel}\nPúblico: ${publico}\n` +
+    (modalidade ? `Modalidade: ${modalidade} — considere recursos e práticas compatíveis com essa modalidade na pesquisa.\n` : '') +
+    nivelBlock(nivel, 'pesquisa') +
     (ementa ? `Ementa do curso (referência): ${ementa}\n` : '') +
     `Tópicos extras: ${topicos || 'nenhum'}\n\n` +
     `Forneça: principais tópicos do mercado, referências, ferramentas, ` +
@@ -41,7 +191,7 @@ const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, 
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext }) => ({
+const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em educação tecnológica. Com base no seu conhecimento, ' +
@@ -52,6 +202,8 @@ const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodolo
     `Sintetize conteúdos relevantes para um curso de formação tecnológica, ' +
     'com base no seu conhecimento sobre o tema:\n` +
     `Curso: ${nome}\nNível: ${nivel}\nPúblico: ${publico}\n` +
+    (modalidade ? `Modalidade: ${modalidade} — considere recursos e práticas compatíveis com essa modalidade.\n` : '') +
+    nivelBlock(nivel, 'pesquisa') +
     (ementa ? `Ementa do curso (referência): ${ementa}\n` : '') +
     `Tópicos extras: ${topicos || 'nenhum'}\n\n` +
     `Forneça: principais tópicos do mercado, referências bibliográficas recomendadas, ` +
@@ -60,46 +212,54 @@ const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodolo
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodologia, bnccContext }) => ({
+const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodologia, bnccContext, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional. Escreva ementas de curso ' +
     'objetivas e bem estruturadas. Responda em português, em texto corrido ' +
-    '(sem JSON, sem marcações de código).',
+    '(sem JSON, sem marcações de código).' + NIVEL_PESO_ALTO,
   user:
     `Redija a EMENTA de um curso de formação tecnológica, em até 2 parágrafos, ` +
     `cobrindo: do que trata o curso, a quem se destina e o que o aluno será capaz ` +
     `de fazer ao final.\n\n` +
+    `Inicie o documento com um cabeçalho de identificação em linhas curtas ` +
+    `(Curso, Carga horária${modalidade ? ', Modalidade' : ''}${nivel ? ', Nível' : ''}), antes dos parágrafos da ementa.\n\n` +
     `Curso: ${nome}\nPúblico-alvo: ${publico}\nCarga horária: ${carga}h\n` +
     `Duração por aula: ${duracao} min\nNível: ${nivel}\n` +
+    (modalidade ? `Modalidade: ${modalidade}\n` : '') +
     `Objetivos informados: ${objetivos || 'não especificados'}` +
+    nivelBlock(nivel) +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, ementa, pesquisa, ajustes, metodologia, bnccContext, proporcaoTeoricoPratico }) => ({
+const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, ementa, pesquisa, ajustes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional para cursos de formação ' +
     'tecnológica. Crie planos de ensino detalhados e coerentes com a ementa ' +
-    'do curso. Responda em português.',
+    'do curso. Responda em português.' + NIVEL_PESO_ALTO,
   user:
     `Crie um plano de ensino completo para o curso a seguir, MANTENDO COERÊNCIA ` +
     `TOTAL com a ementa abaixo (não contradiga nem amplie o escopo definido nela):\n\n` +
     `Curso: ${nome}\nPúblico: ${publico}\nCarga horária: ${carga}h\n` +
     `Duração por aula: ${duracao} min\nNível: ${nivel}\n` +
+    (modalidade ? `Modalidade: ${modalidade}\n` : '') +
     `Objetivos: ${objetivos || 'não especificados'}\n` +
     (proporcaoTeoricoPratico ? `Proporção teórico/prático: ${proporcaoTeoricoPratico}\n` : '') +
     `Ementa do curso: ${ementa || 'não gerada'}\n` +
     `Referências pesquisadas: ${pesquisa || 'nenhuma'}\n` +
     `Ajustes: ${ajustes || 'nenhum'}\n\n` +
+    `Inicie o documento com um cabeçalho de identificação em linhas curtas ` +
+    `(Curso, Carga horária${modalidade ? ', Modalidade' : ''}${nivel ? ', Nível' : ''}), antes das seções do plano.\n` +
     `Inclua: ementa, objetivos, conteúdo programático dividido em MÓDULOS bem ` +
     `delimitados (nomeie cada módulo), metodologia, recursos, avaliação e ` +
     `bibliografia. Os módulos listados aqui serão a referência oficial usada nas ` +
     `próximas etapas — não introduza, nesta etapa, temas que fujam da ementa.` +
+    nivelBlock(nivel) +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas, correcao }) => ({
+const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas, correcao, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional para cursos de formação ' +
@@ -114,7 +274,9 @@ const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, n
     `exatamente ${numAulas} aulas que, juntas, cubram toda a carga horária e ` +
     `sigam a ordem dos módulos definidos no plano de ensino.\n\n` +
     `Curso: ${nome}\nCarga horária total: ${carga}h\nDuração por aula: ${duracao} min\n` +
-    `Nível: ${nivel}\nPúblico: ${publico}\n\n` +
+    `Nível: ${nivel}\nPúblico: ${publico}\n` +
+    (modalidade ? `Modalidade: ${modalidade}\n` : '') +
+    nivelBlock(nivel) + `\n\n` +
     `Plano de ensino (referência oficial — use SOMENTE os módulos e tópicos ` +
     `listados aqui; não introduza temas que não constem dele):\n${planoEnsino}\n\n` +
     `Responda SOMENTE com um JSON no formato exato:\n` +
@@ -131,7 +293,7 @@ const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, n
 // (Geração de Slides), que só reorganiza/resume o que já existe, sem gerar
 // conteúdo pedagógico novo. Também decide, por slide, se uma imagem ajuda —
 // no mesmo call, para não divergir da segmentação e não gastar uma chamada extra.
-const slidesSkill = ({ nomeCurso, aula }) => ({
+const slidesSkill = ({ nomeCurso, aula, nivel }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional e comunicação visual. Extraia ' +
@@ -155,7 +317,9 @@ const slidesSkill = ({ nomeCurso, aula }) => ({
     `descreva SOMENTE a cena em inglês, sem palavras de estilo (nada de "cartoon", ` +
     `"flat illustration", cores, etc. — isso é definido à parte); quando não, use null.\n\n` +
     `Curso: ${nomeCurso}\nAula: ${aula.titulo}\nMódulo: ${aula.modulo || 'não especificado'}\n` +
-    `Objetivos: ${aula.objetivos || 'não especificados'}\n\n` +
+    (nivel ? `Nível do curso: ${nivel} — adeque a densidade de informação por slide e o vocabulário a esse nível.\n` : '') +
+    `Objetivos: ${aula.objetivos || 'não especificados'}` +
+    nivelBlock(nivel) + `\n\n` +
     `Conteúdo completo da aula:\n${aula.texto}\n\n` +
     `Responda SOMENTE com um JSON no formato exato:\n` +
     `{"slides": [{"titulo": "string", "bullets": ["string", ...], ` +
@@ -185,7 +349,8 @@ const estiloVisualSkill = ({ nome, publico, nivel, objetivos, modalidade }) => (
     'sem referência conhecida. Responda apenas com JSON válido, sem texto adicional.',
   user:
     `Curso: ${nome}\nPúblico-alvo: ${publico}\nNível: ${nivel}\nModalidade: ${modalidade}\n` +
-    `Objetivos: ${objetivos}\n\n` +
+    `Objetivos: ${objetivos}\n` +
+    nivelBlock(nivel) + `\n\n` +
     `Proponha de 3 a 5 estilos visuais distintos, ancorados em arquétipos nomeados e ` +
     `coerentes com este perfil de curso. Para cada um, dê:\n` +
     `- um título curto em português que nomeie o arquétipo (ex.: "Lúdico e Colorido", ` +
@@ -210,17 +375,18 @@ const IMAGE_LAYOUT_CONSTRAINTS =
 const MODEL_IMAGE = 'gpt-image-1.5';
 const IMAGE_QUALITY = 'medium';
 
-const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico }) => ({
+const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional. Crie planos de aula ' +
     'detalhados, engajantes e que respeitem rigorosamente o escopo de cada ' +
-    'aula dentro da sequência do curso. Responda em português.',
+    'aula dentro da sequência do curso. Responda em português.' + NIVEL_PESO_ALTO,
   user:
     `Crie um plano de aula detalhado para:\n` +
     `Curso: ${nome}\nAula ${index + 1} de ${total}: ${aula.titulo}\n` +
     `Módulo do plano de ensino: ${aula.modulo || 'não especificado'}\n` +
     `Duração: ${duracao} min\nNível: ${nivel}\nPúblico: ${publico}\n` +
+    (modalidade ? `Modalidade: ${modalidade}\n` : '') +
     `Objetivos desta aula: ${aula.objetivos || 'não especificados'}\n\n` +
     `Ementa do curso: ${ementa || 'não gerada'}\n\n` +
     `Plano de ensino (referência oficial — completo):\n${planoEnsino || 'não gerado'}\n\n` +
@@ -232,18 +398,21 @@ const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, eme
     `conceitos reservados a outras aulas listadas no mapa acima — eles serão ` +
     `tratados em seu devido momento.\n\n` +
     (proporcaoTeoricoPratico ? `Proporção teórico/prático do curso: ${proporcaoTeoricoPratico} — distribua as atividades desta aula respeitando essa proporção.\n\n` : '') +
+    `Inicie o documento com um cabeçalho de identificação em linhas curtas ` +
+    `(Curso, Aula, Duração${modalidade ? ', Modalidade' : ''}${nivel ? ', Nível' : ''}), antes da sequência didática.\n` +
     `Inclua: objetivos, pré-requisitos, sequência didática com tempos ` +
     `(abertura/desenvolvimento/encerramento), atividades, recursos e avaliação.` +
+    nivelBlock(nivel) +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, metodologia, bnccContext, proporcaoTeoricoPratico }) => ({
+const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é um especialista técnico e educador, com profundo domínio do ' +
     'conteúdo da área. Produza material técnico robusto, preciso e ' +
     'aprofundado — referência de estudo para o instrutor, não um resumo ' +
-    'superficial. Respeite rigorosamente o escopo da aula. Responda em português.',
+    'superficial. Respeite rigorosamente o escopo da aula. Responda em português.' + NIVEL_PESO_ALTO,
   user:
     `Analise cuidadosamente os objetivos de aprendizagem desta aula e desenvolva ` +
     `um conteúdo técnico robusto e aprofundado, que sirva de material de apoio e ` +
@@ -251,6 +420,7 @@ const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, emen
     `Curso: ${nome}\nAula ${index + 1} de ${total}: ${aula.titulo}\n` +
     `Módulo do plano de ensino: ${aula.modulo || 'não especificado'}\n` +
     `Duração: ${duracao} min\nNível: ${nivel}\nPúblico: ${publico}\n` +
+    (modalidade ? `Modalidade: ${modalidade}\n` : '') +
     `Objetivos de aprendizagem desta aula: ${aula.objetivos || 'não especificados'}\n\n` +
     `Ementa do curso: ${ementa || 'não gerada'}\n\n` +
     `Plano de aula desta aula (referência — trecho específico desta aula):\n${planoAulaTrecho || 'não disponível'}\n\n` +
@@ -267,6 +437,7 @@ const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, emen
     `correta), exemplos práticos e analogias que facilitem o ensino, casos reais do ` +
     `mercado, erros comuns e pontos de atenção, e uma síntese consolidando o que o ` +
     `instrutor deve garantir que os alunos compreendam ao final.` +
+    nivelBlock(nivel) +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
@@ -287,7 +458,9 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `Analise o conteúdo da Aula ${aulaIndex + 1} do curso "${config?.nome || '?'}" e produza ` +
       `uma revisão de qualidade estruturada nas seções abaixo.\n\n` +
       `## Dados da Aula\n` +
-      `Título: ${aulaTitulo}\nObjetivos: ${aulaObjetivos || 'não especificados'}\n\n` +
+      `Título: ${aulaTitulo}\nObjetivos: ${aulaObjetivos || 'não especificados'}\n` +
+      (config?.modalidade ? `Modalidade do curso: ${config.modalidade}\n` : '') +
+      (config?.nivel ? `Nível declarado do curso: ${config.nivel}\n` : '') + `\n` +
       `## Plano de Aula desta Aula (referência)\n${planoAulaTrecho || 'não disponível'}\n\n` +
       `## Plano de Ensino do Curso (referência)\n${planoEnsino || 'não disponível'}\n\n` +
       `## Ementa do Curso (referência)\n${ementa || 'não gerada'}\n\n` +
@@ -306,6 +479,19 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `são adequados ao público "${config?.publico || 'não informado'}". ` +
       `Justifique pedagogicamente e proponha ajustes concretos quando houver inadequação. ` +
       `Se o público não estiver informado, indique que a avaliação não pode ser realizada.\n\n` +
+      (config?.modalidade
+        ? `### Adequação à Modalidade (${config.modalidade})\n` +
+          `Avalie se as atividades, recursos e formas de avaliação propostos no conteúdo são ` +
+          `operacionalizáveis na modalidade declarada do curso. Sinalize qualquer atividade ` +
+          `incompatível (ex.: dinâmica presencial em curso EaD) e proponha substituição.\n\n`
+        : '') +
+      (config?.nivel
+        ? `### Adequação ao Nível Declarado (${config.nivel})\n` +
+          `Avalie se profundidade, vocabulário, pré-requisitos assumidos e complexidade das ` +
+          `atividades correspondem ao nível declarado do curso. Sinalize desvios (ex.: jargão ` +
+          `sem definição em curso básico; tempo excessivo em fundamentos em curso avançado) ` +
+          `e proponha ajustes concretos.\n\n`
+        : '') +
       `### Sobreposições Detectadas\n` +
       `Liste as sobreposições informadas acima e avalie se representam um problema pedagógico ` +
       `ou se são legítimas dado o contexto das aulas.\n\n` +
@@ -338,13 +524,18 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
     `aplicando as melhorias indicadas pelo revisor humano e complementando com pesquisa ` +
     `na web quando necessário para enriquecer o conteúdo.\n\n` +
     `## Dados da Aula\n` +
-    `Título: ${aulaTitulo}\nObjetivos: ${aulaObjetivos || 'não especificados'}\n\n` +
+    `Título: ${aulaTitulo}\nObjetivos: ${aulaObjetivos || 'não especificados'}\n` +
+    (config?.modalidade
+      ? `Modalidade do curso: ${config.modalidade} — mantenha as atividades e recursos do ` +
+        `conteúdo melhorado compatíveis com essa modalidade.\n`
+      : '') + `\n` +
     `## Observações e Melhorias Indicadas\n` +
     `${observacoesRevisor || 'Nenhuma observação específica. Melhore o conteúdo com base em boas práticas e pesquisa web.'}\n\n` +
     `## Conteúdo Atual da Aula\n${conteudoAtual}\n\n` +
     `Produza a versão melhorada do conteúdo, mantendo a estrutura original onde ` +
     `estiver boa e aplicando as melhorias indicadas. Use a busca na web para ` +
     `complementar com exemplos, referências e informações atualizadas quando pertinente.` +
+    nivelBlock(config?.nivel) +
     pedagCtxBlock(metodologia, bnccContext) +
     `\n\nAo final do conteúdo revisado, adicione obrigatoriamente a seguinte seção:\n\n` +
     `### Melhorias Aplicadas\n` +
@@ -355,7 +546,7 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
 
 // ── Skills novas — Base Pedagógica e PPC ──────────────────────────────────────
 
-const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico }) => ({
+const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é um especialista em design instrucional e pedagogia, com profundo ' +
@@ -371,7 +562,13 @@ const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico
     `Público-alvo: ${publico || 'não informado'}\n` +
     `Carga horária: ${carga || '?'}h\n` +
     `Nível: ${nivel || 'não informado'}\n` +
-    `Proporção teórico/prático: ${proporcaoTeoricoPratico || 'não informada'}\n\n` +
+    (modalidade
+      ? `Modalidade: ${modalidade} — a metodologia recomendada DEVE ser compatível e ` +
+        `operacionalizável nessa modalidade (não recomende dinâmicas exclusivamente ` +
+        `presenciais para EaD, nem estratégias dependentes de estudo remoto para presencial).\n`
+      : '') +
+    `Proporção teórico/prático: ${proporcaoTeoricoPratico || 'não informada'}\n` +
+    nivelBlock(nivel) + `\n\n` +
     `Responda com:\n` +
     `1. **Metodologia recomendada** (nome)\n` +
     `2. **Justificativa pedagógica** (por que essa metodologia se encaixa neste perfil)\n` +
@@ -541,6 +738,10 @@ module.exports = {
   MODEL_RESEARCH,
   MODEL_ECONOMY,
   summarizeLessons,
+  MODALIDADE_DIRETRIZES,
+  modalidadeBlock,
+  NIVEL_DIRETRIZES,
+  nivelBlock,
   // Pipeline principal
   pesquisaWebSkill,
   pesquisaFallbackSkill,
