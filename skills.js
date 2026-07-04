@@ -586,7 +586,14 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
 // ciclo da Etapa 6. Nunca altera ementa/plano de ensino — extrapolações de
 // escopo são sinalizadas em linhas "> ⚠️ ALERTA DE ESCOPO:" que o server
 // extrai para o relatório (não ficam no plano persistido).
-const realinharPlanoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, planoAulaTrechoAtual, conteudoMelhorado, ementa, planoEnsinoResumo, metodologia, bnccContext }) => ({
+//
+// `melhorias` (mesma lista já passada a aplicarMelhoriasSkill) é opcional e
+// cobre o caso em que uma melhoria descreve algo que só existe no PLANO (ex.:
+// uma atividade/dinâmica incompatível com a modalidade) — aplicarMelhoriasSkill
+// não tem como corrigir isso porque edita só o conteúdo; sem essa lista aqui,
+// a melhoria nunca era aplicada em lugar nenhum e a mesma observação reaparecia
+// em todo ciclo de revisão seguinte.
+const realinharPlanoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, planoAulaTrechoAtual, conteudoMelhorado, ementa, planoEnsinoResumo, melhorias, metodologia, bnccContext }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional. Atualize planos de aula para ' +
@@ -604,6 +611,15 @@ const realinharPlanoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, t
     `## Seção atual do plano de aula (base — mantenha a estrutura)\n` +
     `${planoAulaTrechoAtual || 'não disponível'}\n\n` +
     `## Conteúdo melhorado da aula (referência do que mudou)\n${conteudoMelhorado}\n\n` +
+    (Array.isArray(melhorias) && melhorias.length
+      ? `## Melhorias pedidas pelo revisor para esta aula\n` +
+        melhorias.map((m, n) => `${n + 1}. ${m}`).join('\n') + `\n` +
+        `IMPORTANTE: algumas dessas melhorias podem descrever uma atividade, dinâmica ou recurso ` +
+        `que existe NESTA SEÇÃO DO PLANO (não necessariamente no conteúdo da aula) — por exemplo, ` +
+        `uma dinâmica presencial incompatível com a modalidade do curso. Se identificar isso, ` +
+        `corrija diretamente a atividade na seção do plano, mesmo que o conteúdo melhorado acima ` +
+        `não mencione essa mudança.\n\n`
+      : '') +
     `## Escopo oficial do curso (você NÃO PODE ampliá-lo)\n` +
     `Ementa: ${ementa || 'não disponível'}\n` +
     `Plano de ensino (resumo): ${planoEnsinoResumo || 'não disponível'}\n\n` +
@@ -613,7 +629,7 @@ const realinharPlanoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, t
     `2. Se o conteúdo melhorado abordar tema que NÃO conste da ementa/plano de ensino ` +
     `acima, NÃO incorpore esse tema ao plano e acrescente ao FINAL uma linha no formato ` +
     `exato: "> ⚠️ ALERTA DE ESCOPO: <tema> não consta da ementa/plano de ensino".\n` +
-    `3. Não invente atividades sem relação com o conteúdo melhorado.` +
+    `3. Não invente atividades sem relação com o conteúdo melhorado ou com as melhorias pedidas.` +
     nivelBlock(nivel) +
     pedagCtxBlock(metodologia, bnccContext)
 });

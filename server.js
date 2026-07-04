@@ -2397,6 +2397,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
               planoAulaTrechoAtual: extractLessonBlock(planoAula, i),
               conteudoMelhorado: truncate(aula.texto, 3000),
               ementa: ementaRef, planoEnsinoResumo: planoEnsinoRef,
+              melhorias: observacoes[i]?.melhorias,
               metodologia: getMetodologia(sess), bnccContext
             });
             const completion = await openai.chat.completions.create({
