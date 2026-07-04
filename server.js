@@ -258,6 +258,15 @@ function normalizeTitulo(s) {
     .trim();
 }
 
+// Limiar de similaridade acima do qual uma seção "substituída" é sinalizada
+// como possivelmente sem mudança real — calibrado empiricamente (ver design.md
+// do change verificacao-mecanica-melhorias): seção idêntica devolvida pelo
+// modelo mediu 1.000; seção alongada mas declarada "resumida" mediu 0.931;
+// uma reescrita genuína e substancial mediu 0.431. Investigação nasceu de um
+// caso real em que o modelo declarava melhorias aplicadas que nunca
+// aconteceram no texto — esta checagem não corrige isso, só torna visível.
+const LIMIAR_SECAO_SUSPEITA = 0.85;
+
 // Funde um patch por seção ("<<<SECAO: título>>>...<<<FIM_SECAO>>>", um ou mais
 // blocos) no texto original de uma aula. Localiza cada título por comparação
 // tolerante a acento/caixa/pontuação (não por nível de heading Markdown —
@@ -265,16 +274,19 @@ function normalizeTitulo(s) {
 // entre aulas). Título não encontrado no original vira seção nova, acrescentada
 // ao final. Sem nenhum "<<<SECAO:" no patch, devolve o patch como reescrita
 // integral (fallback — mesmo comportamento anterior a esta mudança).
-// Retorna { texto, substituidas: [], novas: [] } para o relatório de melhorias.
+// Retorna { texto, substituidas: [], novas: [], suspeitas: [{ titulo, similaridade }] }
+// — suspeitas cobre só seções SUBSTITUÍDAS cujo corpo novo mal difere do antigo
+// (nunca seções novas, que por definição são conteúdo adicional).
 function mergeSecoesConteudo(textoOriginal, patchTexto) {
   const blocoRegex = /<<<SECAO:\s*([^\n>]+?)\s*>>>\n?([\s\S]*?)<<<FIM_SECAO>>>/g;
   const blocos = [...(patchTexto || '').matchAll(blocoRegex)];
   if (!blocos.length) {
-    return { texto: patchTexto, substituidas: [], novas: [] };
+    return { texto: patchTexto, substituidas: [], novas: [], suspeitas: [] };
   }
 
   const substituidas = [];
   const novas = [];
+  const suspeitas = [];
   let texto = textoOriginal || '';
 
   for (const [, tituloBruto, corpoBruto] of blocos) {
@@ -310,13 +322,39 @@ function mergeSecoesConteudo(textoOriginal, patchTexto) {
         break;
       }
     }
+    const corpoAntigo = linhas.slice(inicio + 1, fim).join('\n').trim();
     const antes = linhas.slice(0, inicio + 1).join('\n');
     const depois = linhas.slice(fim).join('\n');
     texto = antes + '\n\n' + corpo + (depois ? '\n\n' + depois : '\n');
     substituidas.push(titulo);
+
+    const similaridade = textSimilarity(corpoAntigo, corpo);
+    if (similaridade >= LIMIAR_SECAO_SUSPEITA) suspeitas.push({ titulo, similaridade });
   }
 
-  return { texto, substituidas, novas };
+  return { texto, substituidas, novas, suspeitas };
+}
+
+// Extrai termos que uma melhoria espera ver refletidos no resultado final:
+// trechos entre aspas (ex.: "Círculo de Histórias") e siglas em maiúsculas
+// (ex.: BNCC). Usado pela checagem de termo-chave — segunda frente da
+// verificação mecânica, complementar à similaridade de seção (pega o caso em
+// que a seção mudou bastante mas nunca tocou no termo pedido).
+function extrairTermosEsperados(melhoria) {
+  const termos = [];
+  for (const m of (melhoria || '').matchAll(/"([^"]{3,60})"/g)) termos.push(m[1].trim());
+  for (const m of (melhoria || '').matchAll(/\b[A-ZÇÃÕÁÉÍÓÚÊÂÀ]{2,8}\b/g)) termos.push(m[0]);
+  return termos;
+}
+
+// Verdadeiro se `termo` não aparece (tolerante a acento/caixa) em nenhum dos
+// dois textos finais — conteúdo da aula e plano de aula. Presente em qualquer
+// um dos dois já basta para não sinalizar (a correção pode legitimamente ter
+// acontecido em qualquer um dos dois documentos).
+function termoAusente(termo, conteudoFinal, planoFinal) {
+  const alvo = normalizeTitulo(termo);
+  if (!alvo) return false;
+  return !normalizeTitulo(conteudoFinal).includes(alvo) && !normalizeTitulo(planoFinal).includes(alvo);
 }
 
 // Similaridade simples por sobreposição de palavras (Jaccard truncado) — usada
@@ -2238,6 +2276,10 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
 
   const metricasPorAula = [];
   const reportSections = [];
+  // Verificação mecânica e independente da autoavaliação do modelo — nunca
+  // bloqueia persistência, só torna visível ao revisor humano. Ver design.md
+  // do change verificacao-mecanica-melhorias.
+  const inconsistenciasVerificacao = [];
 
   try {
     for (let i = 0; i < aulas.length; i++) {
@@ -2324,7 +2366,10 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       // Funde o patch por seção no conteúdo anterior (fallback: se a resposta
       // não usou o formato <<<SECAO:>>>, é tratada como reescrita integral —
       // mergeSecoesConteudo devolve o texto sem alteração nesse caso).
-      const { texto: textoMesclado, substituidas, novas } = mergeSecoesConteudo(textoAntigo, texto);
+      const { texto: textoMesclado, substituidas, novas, suspeitas } = mergeSecoesConteudo(textoAntigo, texto);
+      suspeitas.forEach(s => inconsistenciasVerificacao.push(
+        `Aula ${i + 1} (${aula.titulo}) — seção "${s.titulo}" do conteúdo: substituída, mas ${Math.round(s.similaridade * 100)}% similar ao texto anterior — possivelmente sem mudança real.`
+      ));
 
       const similaridade = textSimilarity(textoAntigo || '', textoMesclado);
       metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade });
@@ -2367,14 +2412,22 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         fontePlano = p.stages?.['plano_de_aula']?.fonte || 'ia';
       } catch { /* sem projeto.json — trata como ia */ }
 
-      const alteradas = metricasPorAula.filter(m => m.similaridade <= 0.90);
+      // Inclui também aulas cujo CONTEÚDO mudou pouco (similaridade > 0.90) mas
+      // que têm melhorias pendentes — uma melhoria pode se referir só ao plano
+      // (ex.: uma atividade incompatível com a modalidade), sem afetar o texto
+      // da aula o suficiente para passar no limiar de similaridade. Sem isso, o
+      // realinhamento (que agora também corrige melhorias do plano) nunca
+      // chegava a rodar para essas aulas.
+      const alteradas = metricasPorAula.filter(m =>
+        m.similaridade <= 0.90 || (observacoes[m.aulaIndex - 1]?.melhorias?.length > 0)
+      );
       const planoAulaBase = sess.planoAula || readMemory(sess, 'plano_de_aula');
 
       if (fontePlano === 'usuario') {
         realinhamentoLog.push('Plano de aula é versão do usuário — realinhamento automático pulado. Regenere o plano manualmente se quiser absorver as melhorias.');
         send(res, { type: 'progress', message: 'Plano de aula do usuário — realinhamento automático pulado' });
       } else if (!alteradas.length) {
-        realinhamentoLog.push('Nenhuma aula com alteração relevante (similaridade > 90%) — plano de aula mantido.');
+        realinhamentoLog.push('Nenhuma aula com alteração de conteúdo ou melhorias pendentes de plano — plano de aula mantido.');
       } else if (!planoAulaBase) {
         realinhamentoLog.push('Plano de aula não encontrado (sessão e disco) — realinhamento pulado.');
       } else {
@@ -2390,11 +2443,12 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           await new Promise(r => setTimeout(r, 4000));
           send(res, { type: 'progress', message: `Realinhando plano da aula ${i + 1} de ${novasPorAula.length}: ${aula.titulo}` });
           try {
+            const planoAulaTrechoAtual = extractLessonBlock(planoAula, i);
             const skill = skills.realinharPlanoAulaSkill({
               nome: sess.config.nome, duracao: sess.config.duracao,
               nivel: sess.config.nivel, publico: sess.config.publico,
               aula, index: i, total: novasPorAula.length,
-              planoAulaTrechoAtual: extractLessonBlock(planoAula, i),
+              planoAulaTrechoAtual,
               conteudoMelhorado: truncate(aula.texto, 3000),
               ementa: ementaRef, planoEnsinoResumo: planoEnsinoRef,
               melhorias: observacoes[i]?.melhorias,
@@ -2417,6 +2471,13 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
             alertas.forEach(a => alertasEscopo.push(`Aula ${i + 1} (${aula.titulo}): ${a}`));
             // Remove heading redundante caso o modelo o tenha incluído
             const corpo = secao.replace(/^#\s*Aula\s+\d+:[^\n]*\n+/i, '');
+            const planoAntigoSemHeading = planoAulaTrechoAtual.replace(/^#\s*Aula\s+\d+:[^\n]*\n+/i, '');
+            const similaridadePlano = textSimilarity(planoAntigoSemHeading, corpo);
+            if (similaridadePlano >= LIMIAR_SECAO_SUSPEITA) {
+              inconsistenciasVerificacao.push(
+                `Aula ${i + 1} (${aula.titulo}) — seção do PLANO DE AULA: realinhada, mas ${Math.round(similaridadePlano * 100)}% similar à anterior — possivelmente sem mudança real.`
+              );
+            }
             planoAula = replaceLessonBlock(planoAula, i, corpo);
             realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): seção do plano realinhada.`);
           } catch (e) {
@@ -2442,6 +2503,34 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       reportSections.push(
         `## Realinhamento de Planos\n\n` +
         realinhamentoLog.map(l => (l.startsWith('-') || l.startsWith('**')) ? l : `- ${l}`).join('\n')
+      );
+    }
+
+    // Checagem de termo-chave — roda uma única vez, com conteúdo e plano já
+    // finalizados: um termo pedido numa melhoria pode legitimamente ter sido
+    // endereçado em qualquer um dos dois documentos.
+    const planoFinalParaChecagem = planoAulaAtualizado || sess.planoAula || readMemory(sess, 'plano_de_aula') || '';
+    observacoes.forEach((obs, idx) => {
+      const conteudoFinal = novasPorAula[idx]?.texto || '';
+      (obs?.melhorias || []).forEach((melhoria, n) => {
+        const termosVistos = new Set();
+        extrairTermosEsperados(melhoria).forEach(termo => {
+          const chave = normalizeTitulo(termo);
+          if (!chave || termosVistos.has(chave)) return;
+          termosVistos.add(chave);
+          if (termoAusente(termo, conteudoFinal, planoFinalParaChecagem)) {
+            inconsistenciasVerificacao.push(
+              `Aula ${idx + 1} (${obs.titulo}) — melhoria ${n + 1} ("${melhoria}"): termo esperado ausente: "${termo}" (não encontrado no conteúdo nem no plano de aula).`
+            );
+          }
+        });
+      });
+    });
+    if (inconsistenciasVerificacao.length) {
+      reportSections.push(
+        `## Verificação Automática — Possíveis Inconsistências\n\n` +
+        `_Checagem mecânica e independente da autoavaliação do modelo acima — não bloqueia a persistência, é só um sinal para revisão humana._\n\n` +
+        inconsistenciasVerificacao.map(l => `- ${l}`).join('\n')
       );
     }
 
@@ -2793,3 +2882,6 @@ module.exports.parseMelhoriasEstruturadas = parseMelhoriasEstruturadas;
 module.exports.isRespostaMelhoriasCompleta = isRespostaMelhoriasCompleta;
 module.exports.acumulaTokenUsage = acumulaTokenUsage;
 module.exports.mergeSecoesConteudo = mergeSecoesConteudo;
+module.exports.extrairTermosEsperados = extrairTermosEsperados;
+module.exports.termoAusente = termoAusente;
+module.exports.LIMIAR_SECAO_SUSPEITA = LIMIAR_SECAO_SUSPEITA;
