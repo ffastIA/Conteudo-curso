@@ -12,8 +12,11 @@ async function refreshTokenCounter() {
   try {
     const r = await fetch('/api/tokens');
     if (!r.ok) return;
-    const { total } = await r.json();
-    document.getElementById('tokenCount').textContent = (total || 0).toLocaleString('pt-BR');
+    const data = await r.json();
+    const sessao = (data.total || 0).toLocaleString('pt-BR');
+    const projetoTotal = data.projeto?.total?.total;
+    document.getElementById('tokenCount').textContent =
+      projetoTotal ? `${sessao} · projeto: ${projetoTotal.toLocaleString('pt-BR')}` : sessao;
   } catch {
     // contador é apenas informativo — falha de rede não deve incomodar o usuário
   }

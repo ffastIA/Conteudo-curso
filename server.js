@@ -29,6 +29,9 @@ const SEARCH_TIMEOUT_MS = 45_000;
 const SEARCH_RETRY_TIMEOUT_MS = 30_000;
 const STALL_TIMEOUT_MS = 45_000;
 const CONTEUDO_SEARCH_TIMEOUT_MS = 90_000;
+// Teto de tokens de saída por aula, uniforme em todas as gerações de conteúdo
+// (streaming e web-search). Definido pelo usuário em 2026-07-04.
+const MAX_TOKENS_AULA = 10_000;
 
 function isRetriable(err) {
   if (err instanceof OpenAI.AuthenticationError) return false;
@@ -232,6 +235,13 @@ function parseMelhoriasEstruturadas(texto, totalAulas) {
     porAula[atual].push(item);
   }
   return { porAula, avisos };
+}
+
+// Uma resposta de melhorias é completa quando não foi cortada por limite de
+// tokens e contém a seção final obrigatória "### Melhorias Aplicadas".
+function isRespostaMelhoriasCompleta(texto, finishReason) {
+  if (finishReason === 'length') return false;
+  return /###\s*Melhorias Aplicadas/i.test(texto || '');
 }
 
 // Similaridade simples por sobreposição de palavras (Jaccard truncado) — usada
@@ -471,11 +481,50 @@ function send(res, obj) {
 // não faz sentido forçar esse mapeamento; só a contagem de chamadas bem-sucedidas.
 const tokenUsage = { prompt: 0, completion: 0, total: 0, images: 0 };
 
-function addUsage(usage) {
+function addUsage(usage, sess) {
   if (!usage) return;
   tokenUsage.prompt += usage.prompt_tokens || 0;
   tokenUsage.completion += usage.completion_tokens || 0;
   tokenUsage.total += usage.total_tokens || 0;
+  // Histórico persistido por projeto — só quando há projeto identificável
+  // (evita criar pasta "curso" antes da configuração da Etapa 1).
+  if (sess?.config?.nome || sess?.config?.pastaProjeto) persistTokenUsage(sess, usage);
+}
+
+// ── Histórico de uso de tokens por projeto (scr/token_usage.json) ───────────
+// Acumula o total e a quebra por dia; leitura tolerante a arquivo ausente ou
+// corrompido (recomeça zerado sem interromper a geração).
+function acumulaTokenUsage(atual, usage, dia) {
+  const zero = () => ({ prompt: 0, completion: 0, total: 0 });
+  const d = (atual && typeof atual === 'object' && !Array.isArray(atual)) ? atual : {};
+  d.total = d.total || zero();
+  d.porDia = d.porDia || {};
+  d.porDia[dia] = d.porDia[dia] || zero();
+  const somas = [['prompt', usage.prompt_tokens], ['completion', usage.completion_tokens], ['total', usage.total_tokens]];
+  for (const [k, v] of somas) {
+    d.total[k] = (d.total[k] || 0) + (v || 0);
+    d.porDia[dia][k] = (d.porDia[dia][k] || 0) + (v || 0);
+  }
+  d.atualizadoEm = new Date().toISOString();
+  return d;
+}
+
+function readTokenUsage(sess) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'token_usage.json'), 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function persistTokenUsage(sess, usage) {
+  try {
+    const dia = new Date().toISOString().slice(0, 10);
+    const dados = acumulaTokenUsage(readTokenUsage(sess), usage, dia);
+    fs.writeFileSync(path.join(courseScrDir(sess), 'token_usage.json'), JSON.stringify(dados, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Erro ao persistir token_usage.json:', e.message);
+  }
 }
 
 // ── GET /api/bncc ───────────────────────────────────────────────────────────
@@ -523,7 +572,7 @@ app.get('/api/metodologia', async (req, res) => {
         { role: 'user', content: skill.user }
       ]
     });
-    addUsage(completion.usage);
+    addUsage(completion.usage, sess);
     sess.metodologia = completion.choices[0]?.message?.content?.trim() || '';
     res.json({ ok: true, metodologia: getMetodologia(sess) });
   } catch (err) {
@@ -555,7 +604,7 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
           { role: 'user', content: skill.user }
         ]
       });
-      addUsage(completion.usage);
+      addUsage(completion.usage, sess);
       sess.ementa = completion.choices[0]?.message?.content?.trim() || '';
       sess._precisaGerarEmenta = false;
     }
@@ -612,7 +661,7 @@ app.get('/api/qualidade', async (req, res) => {
         fullText += text;
         send(res, { type: 'token', text });
       }
-      if (chunk.usage) addUsage(chunk.usage);
+      if (chunk.usage) addUsage(chunk.usage, sess);
     }
 
     sess.relatorioQualidade = fullText;
@@ -641,25 +690,25 @@ app.get('/api/ppc', async (req, res) => {
   try {
     const perfilEgressoSkill = skills.perfilEgressoSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino });
     const perfilEgressoResp = await openai.chat.completions.create({ model: perfilEgressoSkill.model, messages: [{ role: 'system', content: perfilEgressoSkill.system }, { role: 'user', content: perfilEgressoSkill.user }] });
-    addUsage(perfilEgressoResp.usage);
+    addUsage(perfilEgressoResp.usage, sess);
     const perfilEgresso = perfilEgressoResp.choices[0]?.message?.content?.trim() || '';
     send(res, { type: 'progress', message: 'Gerando PPC — Competências e Habilidades...' });
 
     const competenciasSkill = skills.competenciasSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino, bncc: sess.bncc });
     const competenciasResp = await openai.chat.completions.create({ model: competenciasSkill.model, messages: [{ role: 'system', content: competenciasSkill.system }, { role: 'user', content: competenciasSkill.user }] });
-    addUsage(competenciasResp.usage);
+    addUsage(competenciasResp.usage, sess);
     const competencias = competenciasResp.choices[0]?.message?.content?.trim() || '';
     send(res, { type: 'progress', message: 'Gerando PPC — Perfil Docente...' });
 
     const perfilDocenteSkill = skills.perfilDocenteSkill({ config: sess.config, ementa: sess.ementa });
     const perfilDocenteResp = await openai.chat.completions.create({ model: perfilDocenteSkill.model, messages: [{ role: 'system', content: perfilDocenteSkill.system }, { role: 'user', content: perfilDocenteSkill.user }] });
-    addUsage(perfilDocenteResp.usage);
+    addUsage(perfilDocenteResp.usage, sess);
     const perfilDocente = perfilDocenteResp.choices[0]?.message?.content?.trim() || '';
     send(res, { type: 'progress', message: 'Gerando PPC — Infraestrutura...' });
 
     const infraestruturaSkill = skills.infraestruturaSkill({ config: sess.config, conteudo: truncate(sess.conteudo, 3000) });
     const infraestruturaResp = await openai.chat.completions.create({ model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] });
-    addUsage(infraestruturaResp.usage);
+    addUsage(infraestruturaResp.usage, sess);
     const infraestrutura = infraestruturaResp.choices[0]?.message?.content?.trim() || '';
     send(res, { type: 'progress', message: 'Montando documento PPC...' });
 
@@ -679,7 +728,7 @@ app.get('/api/ppc', async (req, res) => {
     for await (const chunk of stream) {
       const text = chunk.choices[0]?.delta?.content;
       if (text) { fullText += text; send(res, { type: 'token', text }); }
-      if (chunk.usage) addUsage(chunk.usage);
+      if (chunk.usage) addUsage(chunk.usage, sess);
     }
 
     await persistStage(sess, 'ppc_completo', 'Projeto Pedagógico de Curso', fullText);
@@ -709,7 +758,7 @@ app.get('/api/estilos-visuais', async (req, res) => {
         { role: 'user', content: skill.user }
       ]
     });
-    addUsage(completion.usage);
+    addUsage(completion.usage, sess);
     let estilos = [];
     try {
       estilos = JSON.parse(completion.choices[0]?.message?.content || '{}').estilos || [];
@@ -770,7 +819,7 @@ app.get('/api/slides', async (req, res) => {
           { role: 'user', content: skill.user }
         ]
       });
-      addUsage(completion.usage);
+      addUsage(completion.usage, sess);
 
       let slidePlan = { slides: [] };
       try {
@@ -922,7 +971,7 @@ app.get('/api/search', async (req, res) => {
       }
     }
 
-    addUsage(completion.usage);
+    addUsage(completion.usage, sess);
 
     const message = completion.choices[0]?.message || {};
     const fullText = message.content || '';
@@ -1015,7 +1064,7 @@ app.get('/api/plano-ensino', async (req, res) => {
         fullText += text;
         send(res, { type: 'token', text });
       }
-      if (chunk.usage) addUsage(chunk.usage);
+      if (chunk.usage) addUsage(chunk.usage, sess);
     }
 
     sess.planoEnsino = fullText;
@@ -1095,7 +1144,7 @@ app.get('/api/plano-aula', async (req, res) => {
           fullText += text;
           send(res, { type: 'token', text });
         }
-        if (chunk.usage) addUsage(chunk.usage);
+        if (chunk.usage) addUsage(chunk.usage, sess);
       }
     }
 
@@ -1132,7 +1181,7 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
         { role: 'user', content: skill.user }
       ]
     });
-    addUsage(completion.usage);
+    addUsage(completion.usage, sess);
     let parsed = {};
     try {
       parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
@@ -1165,13 +1214,13 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
 // Executa uma chamada em streaming para uma skill de conteúdo e devolve o texto
 // completo gerado, repassando os tokens via SSE para o cliente.
 // Se a skill usa web_search_options, simula streaming por chunks (sem SSE nativo).
-async function streamSkillToClient(res, skill) {
+async function streamSkillToClient(res, skill, sess, meta = {}) {
   if (skill.web_search_options) {
     const completion = await openai.chat.completions.create(
       {
         model: skill.model,
         web_search_options: skill.web_search_options,
-        max_tokens: 16000,
+        max_tokens: MAX_TOKENS_AULA,
         messages: [
           { role: 'system', content: skill.system },
           { role: 'user', content: skill.user }
@@ -1179,8 +1228,10 @@ async function streamSkillToClient(res, skill) {
       },
       { signal: makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS) }
     );
-    addUsage(completion.usage);
+    addUsage(completion.usage, sess);
     const finishReason = completion.choices[0]?.finish_reason;
+    meta.finishReason = finishReason;
+    meta.completionTokens = completion.usage?.completion_tokens;
     const text = completion.choices[0]?.message?.content?.trim() || '';
     if (finishReason === 'length') {
       console.warn(`[web-search] resposta truncada (${text.length} chars, finish_reason=length)`);
@@ -1207,6 +1258,7 @@ async function streamSkillToClient(res, skill) {
     model: skill.model,
     stream: true,
     stream_options: { include_usage: true },
+    max_tokens: MAX_TOKENS_AULA,
     messages: [
       { role: 'system', content: skill.system },
       { role: 'user', content: skill.user }
@@ -1221,10 +1273,19 @@ async function streamSkillToClient(res, skill) {
         text += delta;
         send(res, { type: 'token', text: delta });
       }
-      if (chunk.usage) addUsage(chunk.usage);
+      const fr = chunk.choices[0]?.finish_reason;
+      if (fr) meta.finishReason = fr;
+      if (chunk.usage) {
+        addUsage(chunk.usage, sess);
+        meta.completionTokens = chunk.usage.completion_tokens;
+      }
     }
   } finally {
     clearTimeout(stallTimer);
+  }
+  if (meta.finishReason === 'length') {
+    console.warn(`[stream] resposta truncada (${text.length} chars, finish_reason=length)`);
+    send(res, { type: 'warning', text: 'Resposta truncada pelo limite de tokens. O conteúdo gerado pode estar incompleto — revise o arquivo gerado.' });
   }
   return text;
 }
@@ -1285,7 +1346,7 @@ app.get('/api/conteudo', async (req, res) => {
 
       let texto;
       try {
-        texto = await streamSkillToClient(res, baseSkill);
+        texto = await streamSkillToClient(res, baseSkill, sess);
       } catch (err) {
         if (err instanceof OpenAI.APIUserAbortError) {
           send(res, { type: 'error', message: `Tempo limite excedido ao gerar a aula ${i + 1}: ${titulo}. Tente novamente.` });
@@ -1316,9 +1377,11 @@ app.get('/api/conteudo', async (req, res) => {
   }
 });
 
-// ── GET /api/tokens — contador global de tokens utilizados ─────────────────
+// ── GET /api/tokens — contador global + histórico persistido do projeto ────
 app.get('/api/tokens', (req, res) => {
-  res.json(tokenUsage);
+  const sess = getSession(req, res);
+  const projeto = (sess.config?.nome || sess.config?.pastaProjeto) ? readTokenUsage(sess) : null;
+  res.json({ ...tokenUsage, ...(projeto ? { projeto } : {}) });
 });
 
 // Migra projetos legados (arquivos planos em saídas/{slug}/) para saídas/{slug}/scr/
@@ -1881,7 +1944,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
         bnccContext
       });
 
-      const texto = await streamSkillToClient(res, skill);
+      const texto = await streamSkillToClient(res, skill, sess);
       fullText += texto;
 
       const notaMatch = texto.match(/Nota:\s*([01](?:\.\d+)?)/i);
@@ -2130,7 +2193,59 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       });
 
       const textoAntigo = aula.texto;
-      const texto = await streamSkillToClient(res, skill);
+      const meta = {};
+      let texto = await streamSkillToClient(res, skill, sess, meta);
+      console.log(`[melhorias] aula ${i + 1}: finish=${meta.finishReason || '?'} tokens=${meta.completionTokens ?? '?'}`);
+
+      // ── Guarda de integridade: resposta cortada por limite de tokens ───────
+      // 1 tentativa de continuação; se ainda incompleta, preserva o conteúdo
+      // anterior da aula (nunca sobrescrever versão íntegra com truncada).
+      if (!isRespostaMelhoriasCompleta(texto, meta.finishReason)) {
+        send(res, { type: 'progress', message: `Aula ${i + 1}: resposta cortada — solicitando continuação...` });
+        try {
+          const cont = await openai.chat.completions.create(
+            {
+              model: skill.model,
+              web_search_options: skill.web_search_options,
+              max_tokens: MAX_TOKENS_AULA,
+              messages: [
+                { role: 'system', content: skill.system },
+                { role: 'user', content: skill.user },
+                { role: 'assistant', content: texto },
+                {
+                  role: 'user',
+                  content:
+                    `Sua resposta anterior foi CORTADA no meio. Continue EXATAMENTE de onde parou ` +
+                    `(o final do que você escreveu foi: "${texto.slice(-200)}"). NÃO repita nada do que ` +
+                    `já escreveu; apenas continue e conclua, garantindo a seção "### Melhorias Aplicadas" ` +
+                    `completa ao final.`
+                }
+              ]
+            },
+            { signal: makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS) }
+          );
+          addUsage(cont.usage, sess);
+          const contTexto = cont.choices[0]?.message?.content?.trim() || '';
+          if (contTexto) {
+            send(res, { type: 'token', text: '\n' + contTexto });
+            texto += '\n' + contTexto;
+          }
+          meta.finishReason = cont.choices[0]?.finish_reason;
+          console.log(`[melhorias] aula ${i + 1}: continuação finish=${meta.finishReason || '?'}`);
+        } catch (e) {
+          console.error(`[melhorias] aula ${i + 1}: falha na continuação:`, e.message);
+        }
+      }
+
+      if (!isRespostaMelhoriasCompleta(texto, meta.finishReason)) {
+        send(res, { type: 'warning', text: `Aula ${i + 1}: resposta truncada mesmo após continuação — o conteúdo anterior da aula foi preservado (melhorias NÃO aplicadas nesta aula).` });
+        reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n_(Resposta truncada pelo limite de tokens — conteúdo anterior preservado; melhorias NÃO aplicadas nesta aula.)_`);
+        metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade: 1, truncada: true });
+        fullText += textoAntigo || '';
+        novasPorAula.push({ ...aula });
+        continue;
+      }
+
       const similaridade = textSimilarity(textoAntigo || '', texto);
       metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade });
 
@@ -2204,7 +2319,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
                 { role: 'user', content: skill.user }
               ]
             });
-            addUsage(completion.usage);
+            addUsage(completion.usage, sess);
             const bruto = completion.choices[0]?.message?.content?.trim() || '';
             if (!bruto) {
               realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): resposta vazia — seção do plano mantida.`);
@@ -2587,3 +2702,5 @@ module.exports.extractLessonBlock = extractLessonBlock;
 module.exports.extractScopeAlerts = extractScopeAlerts;
 module.exports.extractResumoMelhorias = extractResumoMelhorias;
 module.exports.parseMelhoriasEstruturadas = parseMelhoriasEstruturadas;
+module.exports.isRespostaMelhoriasCompleta = isRespostaMelhoriasCompleta;
+module.exports.acumulaTokenUsage = acumulaTokenUsage;

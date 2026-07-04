@@ -100,6 +100,13 @@ preRequisitos          string     opcional
 > dados e o cabeçalho dos documentos. A metodologia tem fallback de leitura em
 > disco (`getMetodologia`) — sessão perdida não gera mais sem metodologia.
 >
+> Tokens: teto uniforme de saída por aula `MAX_TOKENS_AULA = 10.000` (ambos os
+> ramos de `streamSkillToClient`); corte por `finish_reason: length` gera aviso
+> SSE nos dois ramos. Nas melhorias, resposta cortada dispara 1 continuação e,
+> se ainda incompleta, o conteúdo anterior da aula é preservado. Consumo de
+> tokens persistido por projeto em `scr/token_usage.json` (total + por dia),
+> exposto em `GET /api/tokens` (campo `projeto`) e no contador da UI.
+>
 > Realinhamento pós-melhorias (Etapa 6): ao final do ciclo de aplicar melhorias,
 > as seções do plano de aula das aulas efetivamente alteradas (similaridade ≤ 0.90)
 > são realinhadas via `realinharPlanoAulaSkill` + `replaceLessonBlock`. Ementa e
