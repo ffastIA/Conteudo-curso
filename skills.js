@@ -544,6 +544,42 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
     `Se uma observação não foi aplicada, inclua um bullet indicando "Não aplicado: <motivo em uma frase>".`
 });
 
+// Realinha a seção do plano de aula de UMA aula com o conteúdo melhorado no
+// ciclo da Etapa 6. Nunca altera ementa/plano de ensino — extrapolações de
+// escopo são sinalizadas em linhas "> ⚠️ ALERTA DE ESCOPO:" que o server
+// extrai para o relatório (não ficam no plano persistido).
+const realinharPlanoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, planoAulaTrechoAtual, conteudoMelhorado, ementa, planoEnsinoResumo, metodologia, bnccContext }) => ({
+  model: MODEL_ECONOMY,
+  system:
+    'Você é especialista em design instrucional. Atualize planos de aula para ' +
+    'refletir o conteúdo efetivamente ministrado, sem jamais alterar objetivos, ' +
+    'título ou escopo da aula. Responda em português.' + NIVEL_PESO_ALTO,
+  user:
+    `O conteúdo da aula abaixo foi melhorado por um ciclo de revisão e a seção ` +
+    `correspondente do plano de aula ficou desatualizada. Atualize essa seção para ` +
+    `refletir o conteúdo melhorado — atividades, recursos, exemplos e sequência ` +
+    `didática com tempos — MANTENDO o título, os objetivos e o escopo originais ` +
+    `da aula e a mesma estrutura de seções do plano atual.\n\n` +
+    `Curso: ${nome}\nAula ${index + 1} de ${total}: ${aula.titulo}\n` +
+    `Duração: ${duracao} min\nNível: ${nivel}\nPúblico: ${publico}\n` +
+    `Objetivos (IMUTÁVEIS): ${aula.objetivos || 'não especificados'}\n\n` +
+    `## Seção atual do plano de aula (base — mantenha a estrutura)\n` +
+    `${planoAulaTrechoAtual || 'não disponível'}\n\n` +
+    `## Conteúdo melhorado da aula (referência do que mudou)\n${conteudoMelhorado}\n\n` +
+    `## Escopo oficial do curso (você NÃO PODE ampliá-lo)\n` +
+    `Ementa: ${ementa || 'não disponível'}\n` +
+    `Plano de ensino (resumo): ${planoEnsinoResumo || 'não disponível'}\n\n` +
+    `REGRAS DE SAÍDA:\n` +
+    `1. Responda SOMENTE com o corpo atualizado da seção, SEM a linha de título ` +
+    `"# Aula ${index + 1}: ..." (ela é recomposta pelo sistema).\n` +
+    `2. Se o conteúdo melhorado abordar tema que NÃO conste da ementa/plano de ensino ` +
+    `acima, NÃO incorpore esse tema ao plano e acrescente ao FINAL uma linha no formato ` +
+    `exato: "> ⚠️ ALERTA DE ESCOPO: <tema> não consta da ementa/plano de ensino".\n` +
+    `3. Não invente atividades sem relação com o conteúdo melhorado.` +
+    nivelBlock(nivel) +
+    pedagCtxBlock(metodologia, bnccContext)
+});
+
 // ── Skills novas — Base Pedagógica e PPC ──────────────────────────────────────
 
 const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade }) => ({
@@ -758,6 +794,7 @@ module.exports = {
   // Ciclo de revisão e melhoria (Etapas 5★ e 6)
   revisaoQualidadeSkill,
   aplicarMelhoriasSkill,
+  realinharPlanoAulaSkill,
   // Base pedagógica e PPC
   metodologiaSkill,
   qualidadeSkill,

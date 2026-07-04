@@ -100,6 +100,12 @@ preRequisitos          string     opcional
 > dados e o cabeçalho dos documentos. A metodologia tem fallback de leitura em
 > disco (`getMetodologia`) — sessão perdida não gera mais sem metodologia.
 >
+> Realinhamento pós-melhorias (Etapa 6): ao final do ciclo de aplicar melhorias,
+> as seções do plano de aula das aulas efetivamente alteradas (similaridade ≤ 0.90)
+> são realinhadas via `realinharPlanoAulaSkill` + `replaceLessonBlock`. Ementa e
+> plano de ensino nunca são alterados — extrapolações viram "ALERTA DE ESCOPO" no
+> relatório de melhorias. Plano de aula com `fonte: usuario` não é sobrescrito.
+>
 > Propagação do nível: cada skill geradora injeta `nivelBlock(nivel)` — bloco
 > `## Diretrizes de Nível` de `NIVEL_DIRETRIZES` (skills.js) com profundidade,
 > vocabulário, pré-requisitos e Bloom-alvo; as pesquisas web usam a variante

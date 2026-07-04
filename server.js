@@ -145,6 +145,35 @@ function extractLessonBlock(fullText, index) {
   return fullText.slice(start, end).trim();
 }
 
+// Substitui o bloco de UMA aula no texto integral do plano de aula, mantendo
+// a linha de título "# Aula N: ..." original e as demais seções intactas.
+// Contraparte de extractLessonBlock — usada pela fase de realinhamento da
+// Etapa 6. Índice sem heading correspondente devolve o texto inalterado.
+function replaceLessonBlock(fullText, index, novoCorpo) {
+  if (!fullText) return fullText;
+  const regex = /^# Aula (\d+):.*$/gm;
+  const matches = [...fullText.matchAll(regex)];
+  const target = matches[index];
+  if (!target) return fullText;
+  const headingLine = target[0];
+  const start = target.index;
+  const end = (index + 1 < matches.length) ? matches[index + 1].index : fullText.length;
+  const antes = fullText.slice(0, start);
+  const depois = fullText.slice(end);
+  return antes + headingLine + '\n\n' + (novoCorpo || '').trim() + (depois ? '\n\n' + depois : '\n');
+}
+
+// Extrai (e remove) as linhas "> ⚠️ ALERTA DE ESCOPO:" de uma seção realinhada —
+// os alertas vão apenas para o relatório de melhorias, nunca para o plano persistido.
+function extractScopeAlerts(texto) {
+  const alertas = [];
+  const secao = (texto || '')
+    .replace(/^>\s*⚠️?\s*ALERTA DE ESCOPO:\s*(.*)$/gim, (_, msg) => { alertas.push(msg.trim()); return ''; })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { secao, alertas };
+}
+
 // Similaridade simples por sobreposição de palavras (Jaccard truncado) — usada
 // para detectar duplicação de conteúdo entre aulas (Ajuste 5).
 function textSimilarity(a, b) {
@@ -2020,6 +2049,96 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
     sess.conteudoPorAula = novasPorAula;
     sess.conteudo = fullText;
 
+    // ── Fase de realinhamento: sincroniza o plano de aula com o conteúdo ─────
+    // melhorado (somente aulas efetivamente alteradas). Ementa e plano de
+    // ensino NUNCA são alterados — extrapolações viram alertas no relatório.
+    // Falha aqui não desfaz as melhorias já persistidas acima.
+    let planoAulaAtualizado = null;
+    const realinhamentoLog = [];
+    try {
+      let fontePlano = 'ia';
+      try {
+        const p = JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'projeto.json'), 'utf-8'));
+        fontePlano = p.stages?.['plano_de_aula']?.fonte || 'ia';
+      } catch { /* sem projeto.json — trata como ia */ }
+
+      const alteradas = metricasPorAula.filter(m => m.similaridade <= 0.90);
+      const planoAulaBase = sess.planoAula || readMemory(sess, 'plano_de_aula');
+
+      if (fontePlano === 'usuario') {
+        realinhamentoLog.push('Plano de aula é versão do usuário — realinhamento automático pulado. Regenere o plano manualmente se quiser absorver as melhorias.');
+        send(res, { type: 'progress', message: 'Plano de aula do usuário — realinhamento automático pulado' });
+      } else if (!alteradas.length) {
+        realinhamentoLog.push('Nenhuma aula com alteração relevante (similaridade > 90%) — plano de aula mantido.');
+      } else if (!planoAulaBase) {
+        realinhamentoLog.push('Plano de aula não encontrado (sessão e disco) — realinhamento pulado.');
+      } else {
+        let planoAula = planoAulaBase;
+        const ementaRef = truncate(sess.ementa || readMemory(sess, 'ementa'), 1200);
+        const planoEnsinoRef = truncate(sess.planoEnsino || readMemory(sess, 'plano_de_ensino'), 1200);
+        const alertasEscopo = [];
+
+        for (const m of alteradas) {
+          const i = m.aulaIndex - 1;
+          const aula = novasPorAula[i];
+          if (!aula) continue;
+          await new Promise(r => setTimeout(r, 4000));
+          send(res, { type: 'progress', message: `Realinhando plano da aula ${i + 1} de ${novasPorAula.length}: ${aula.titulo}` });
+          try {
+            const skill = skills.realinharPlanoAulaSkill({
+              nome: sess.config.nome, duracao: sess.config.duracao,
+              nivel: sess.config.nivel, publico: sess.config.publico,
+              aula, index: i, total: novasPorAula.length,
+              planoAulaTrechoAtual: extractLessonBlock(planoAula, i),
+              conteudoMelhorado: truncate(aula.texto, 3000),
+              ementa: ementaRef, planoEnsinoResumo: planoEnsinoRef,
+              metodologia: getMetodologia(sess), bnccContext
+            });
+            const completion = await openai.chat.completions.create({
+              model: skill.model,
+              messages: [
+                { role: 'system', content: skill.system },
+                { role: 'user', content: skill.user }
+              ]
+            });
+            addUsage(completion.usage);
+            const bruto = completion.choices[0]?.message?.content?.trim() || '';
+            if (!bruto) {
+              realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): resposta vazia — seção do plano mantida.`);
+              continue;
+            }
+            const { secao, alertas } = extractScopeAlerts(bruto);
+            alertas.forEach(a => alertasEscopo.push(`Aula ${i + 1} (${aula.titulo}): ${a}`));
+            // Remove heading redundante caso o modelo o tenha incluído
+            const corpo = secao.replace(/^#\s*Aula\s+\d+:[^\n]*\n+/i, '');
+            planoAula = replaceLessonBlock(planoAula, i, corpo);
+            realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): seção do plano realinhada.`);
+          } catch (e) {
+            console.error(`Erro ao realinhar plano da aula ${i + 1}:`, e.message);
+            realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): falha no realinhamento (${e.message}) — seção mantida.`);
+          }
+        }
+
+        sess.planoAula = planoAula;
+        planoAulaAtualizado = planoAula;
+        await persistStage(sess, 'plano_de_aula', 'Plano de Aula', planoAula);
+        if (alertasEscopo.length) {
+          realinhamentoLog.push('**Alertas de escopo — ementa/plano de ensino NÃO foram alterados; avalie manualmente:**');
+          alertasEscopo.forEach(a => realinhamentoLog.push(`- ${a}`));
+        }
+        send(res, { type: 'progress', message: 'Plano de aula realinhado com o conteúdo melhorado' });
+      }
+    } catch (e) {
+      console.error('Erro na fase de realinhamento:', e.message);
+      realinhamentoLog.push(`Falha geral no realinhamento: ${e.message} — melhorias já aplicadas foram preservadas.`);
+    }
+    if (realinhamentoLog.length) {
+      reportSections.push(
+        `## Realinhamento de Planos\n\n` +
+        realinhamentoLog.map(l => (l.startsWith('-') || l.startsWith('**')) ? l : `- ${l}`).join('\n')
+      );
+    }
+
     // Gravar meta.json com métricas do ciclo
     if (cicloDir && metricasPorAula.length > 0) {
       try {
@@ -2054,7 +2173,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
     } catch (e) { console.error('Erro ao gerar relatório timestampado:', e.message); }
 
     send(res, { type: 'progress', message: 'Concluído' });
-    send(res, { type: 'done', fullText });
+    send(res, { type: 'done', fullText, ...(planoAulaAtualizado ? { planoAula: planoAulaAtualizado } : {}) });
   } catch (err) {
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao aplicar melhorias' });
@@ -2360,3 +2479,6 @@ if (require.main === module) {
 module.exports = app;
 module.exports.detectStage = detectStage;
 module.exports.buildPedagogicalContext = buildPedagogicalContext;
+module.exports.replaceLessonBlock = replaceLessonBlock;
+module.exports.extractLessonBlock = extractLessonBlock;
+module.exports.extractScopeAlerts = extractScopeAlerts;

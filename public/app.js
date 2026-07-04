@@ -187,7 +187,7 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
       resultArea.scrollTop = resultArea.scrollHeight;
       es.close();
       refreshTokenCounter();
-      if (onDone) onDone(fullText);
+      if (onDone) onDone(fullText, msg);
     } else if (msg.type === 'warning') {
       warnLog(logPanel, msg.text);
     } else if (msg.type === 'error') {
@@ -628,9 +628,15 @@ document.getElementById('btnAplicarMelhorias').addEventListener('click', () => {
   streamSSE('/api/aplicar-melhorias/confirmar', {
     logPanel,
     resultEl: 'resultMelhoria',
-    onDone() {
+    onDone(_texto, msg) {
       document.getElementById('melhoriaActions').style.display = 'flex';
       document.getElementById('btnAplicarMelhorias').disabled = false;
+      // Plano de aula realinhado pelo ciclo: reflete na tela e no badge
+      if (msg?.planoAula) {
+        const el = document.getElementById('resultAula');
+        if (el) el.innerHTML = renderMarkdown(msg.planoAula);
+        atualizarBadgeOrigem('plano_de_aula', 'ia', new Date().toISOString());
+      }
     },
     onError() {
       document.getElementById('btnAplicarMelhorias').disabled = false;
