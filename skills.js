@@ -519,6 +519,17 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
 // `melhorias` (lista de itens da seção estruturada "Melhorias a serem Aplicadas")
 // tem precedência sobre `observacoesRevisor` (texto livre do modo legado) e
 // habilita a rastreabilidade numerada em "### Melhorias Aplicadas".
+//
+// Pede PATCH POR SEÇÃO (<<<SECAO: título>>>...<<<FIM_SECAO>>>), não a reescrita
+// integral da aula: conteudoSkill não usa um vocabulário fixo de seções (varia
+// nível de heading e organização por objetivo entre aulas), então o título é
+// copiado literalmente do original em vez de depender de um heading Markdown
+// previsível. Isso reduz drasticamente o volume de saída necessário — aulas
+// densas (Fundamentação Técnica + Exemplos + Erros Comuns + Atividade Prática)
+// facilmente excediam o teto de tokens quando a resposta precisava reproduzir
+// a aula inteira. server.js (mergeSecoesConteudo) funde o patch no texto
+// original; resposta sem nenhum "<<<SECAO:" é tratada como reescrita integral
+// (fallback, mesmo comportamento de antes desta mudança).
 const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, conteudoAtual, observacoesRevisor, melhorias, metodologia, bnccContext }) => ({
   model: MODEL_RESEARCH,
   web_search_options: { search_context_size: 'medium' },
@@ -541,12 +552,26 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
       ? melhorias.map((m, n) => `${n + 1}. ${m}`).join('\n')
       : (observacoesRevisor || 'Nenhuma observação específica. Melhore o conteúdo com base em boas práticas e pesquisa web.')) + `\n\n` +
     `## Conteúdo Atual da Aula\n${conteudoAtual}\n\n` +
-    `Produza a versão melhorada do conteúdo, mantendo a estrutura original onde ` +
-    `estiver boa e aplicando as melhorias indicadas. Use a busca na web para ` +
-    `complementar com exemplos, referências e informações atualizadas quando pertinente.` +
+    `FORMATO DE RESPOSTA — PATCH POR SEÇÃO (MUITO IMPORTANTE):\n` +
+    `NÃO reescreva a aula inteira. Produza APENAS as seções que precisam mudar para ` +
+    `aplicar as melhorias indicadas, cada uma delimitada exatamente assim:\n\n` +
+    `<<<SECAO: título da seção>>>\n` +
+    `(conteúdo revisado completo desta seção, pronto para substituir a seção original)\n` +
+    `<<<FIM_SECAO>>>\n\n` +
+    `Regras do patch:\n` +
+    `1. Se a seção JÁ EXISTE no "Conteúdo Atual da Aula" acima, copie o título EXATAMENTE ` +
+    `como está escrito lá (mesma grafia, sem adicionar ou remover palavras) — é assim que o ` +
+    `sistema localiza e substitui a seção certa.\n` +
+    `2. Se a melhoria exige conteúdo novo que não existe em nenhuma seção atual, use um título ` +
+    `novo e descritivo — será acrescentado à aula.\n` +
+    `3. Produza um bloco <<<SECAO:>>> para CADA seção afetada; seções não mencionadas ` +
+    `permanecem como estão e NÃO devem ser reproduzidas.\n` +
+    `4. Só reescreva a aula INTEIRA, sem usar o formato de blocos acima, se a melhoria ` +
+    `pedida genuinamente exigir refazer o texto todo (isso é exceção, não a regra).` +
     nivelBlock(config?.nivel) +
     pedagCtxBlock(metodologia, bnccContext) +
-    `\n\nAo final do conteúdo revisado, adicione obrigatoriamente a seguinte seção:\n\n` +
+    `\n\nAo final da resposta (depois do(s) bloco(s) <<<SECAO:>>>, fora deles), adicione ` +
+    `obrigatoriamente a seguinte seção:\n\n` +
     `### Melhorias Aplicadas\n` +
     (Array.isArray(melhorias) && melhorias.length
       ? `Referencie CADA melhoria da lista numerada acima PELO NÚMERO, uma por linha, no ` +

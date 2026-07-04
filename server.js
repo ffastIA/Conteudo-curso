@@ -238,10 +238,85 @@ function parseMelhoriasEstruturadas(texto, totalAulas) {
 }
 
 // Uma resposta de melhorias é completa quando não foi cortada por limite de
-// tokens e contém a seção final obrigatória "### Melhorias Aplicadas".
+// tokens, não tem bloco <<<SECAO:>>> aberto sem fechamento, e contém a seção
+// final obrigatória "### Melhorias Aplicadas".
 function isRespostaMelhoriasCompleta(texto, finishReason) {
   if (finishReason === 'length') return false;
-  return /###\s*Melhorias Aplicadas/i.test(texto || '');
+  const t = texto || '';
+  const abertos = (t.match(/<<<SECAO:/g) || []).length;
+  const fechados = (t.match(/<<<FIM_SECAO>>>/g) || []).length;
+  if (abertos !== fechados) return false;
+  return /###\s*Melhorias Aplicadas/i.test(t);
+}
+
+function normalizeTitulo(s) {
+  return (s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Funde um patch por seção ("<<<SECAO: título>>>...<<<FIM_SECAO>>>", um ou mais
+// blocos) no texto original de uma aula. Localiza cada título por comparação
+// tolerante a acento/caixa/pontuação (não por nível de heading Markdown —
+// conteudoSkill não usa um vocabulário fixo de seções, o nível/formato varia
+// entre aulas). Título não encontrado no original vira seção nova, acrescentada
+// ao final. Sem nenhum "<<<SECAO:" no patch, devolve o patch como reescrita
+// integral (fallback — mesmo comportamento anterior a esta mudança).
+// Retorna { texto, substituidas: [], novas: [] } para o relatório de melhorias.
+function mergeSecoesConteudo(textoOriginal, patchTexto) {
+  const blocoRegex = /<<<SECAO:\s*([^\n>]+?)\s*>>>\n?([\s\S]*?)<<<FIM_SECAO>>>/g;
+  const blocos = [...(patchTexto || '').matchAll(blocoRegex)];
+  if (!blocos.length) {
+    return { texto: patchTexto, substituidas: [], novas: [] };
+  }
+
+  const substituidas = [];
+  const novas = [];
+  let texto = textoOriginal || '';
+
+  for (const [, tituloBruto, corpoBruto] of blocos) {
+    const titulo = tituloBruto.trim();
+    const corpo = corpoBruto.trim();
+    const alvo = normalizeTitulo(titulo);
+
+    // Procura, no texto ATUAL (já pode ter sido alterado por blocos anteriores
+    // deste mesmo patch), a linha cujo conteúdo normalizado contém o título —
+    // independente de heading (#, ##, ####) ou negrito.
+    const linhas = texto.split('\n');
+    let inicio = -1;
+    for (let i = 0; i < linhas.length; i++) {
+      const linhaNorm = normalizeTitulo(linhas[i]);
+      if (linhaNorm && (linhaNorm === alvo || linhaNorm.includes(alvo))) { inicio = i; break; }
+    }
+
+    if (inicio === -1) {
+      // Seção nova: acrescenta ao final.
+      texto = texto.replace(/\s*$/, '') + `\n\n${titulo}\n\n${corpo}\n`;
+      novas.push(titulo);
+      continue;
+    }
+
+    // Fim da seção: próxima linha "que parece título" — curta, sem terminar
+    // em pontuação de frase (janela já delimitada pelo próprio patch, então
+    // essa heurística tem superfície de erro bem menor que no parser antigo).
+    let fim = linhas.length;
+    for (let j = inicio + 1; j < linhas.length; j++) {
+      const l = linhas[j].trim();
+      if (l && l.length < 90 && !/[.,:;!?]$/.test(l) && /^[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ0-9#*]/.test(l)) {
+        fim = j;
+        break;
+      }
+    }
+    const antes = linhas.slice(0, inicio + 1).join('\n');
+    const depois = linhas.slice(fim).join('\n');
+    texto = antes + '\n\n' + corpo + (depois ? '\n\n' + depois : '\n');
+    substituidas.push(titulo);
+  }
+
+  return { texto, substituidas, novas };
 }
 
 // Similaridade simples por sobreposição de palavras (Jaccard truncado) — usada
@@ -2246,7 +2321,12 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         continue;
       }
 
-      const similaridade = textSimilarity(textoAntigo || '', texto);
+      // Funde o patch por seção no conteúdo anterior (fallback: se a resposta
+      // não usou o formato <<<SECAO:>>>, é tratada como reescrita integral —
+      // mergeSecoesConteudo devolve o texto sem alteração nesse caso).
+      const { texto: textoMesclado, substituidas, novas } = mergeSecoesConteudo(textoAntigo, texto);
+
+      const similaridade = textSimilarity(textoAntigo || '', textoMesclado);
       metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade });
 
       if (similaridade > 0.90) {
@@ -2255,13 +2335,20 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
 
       const melhoriasMatch = texto.match(/###\s*Melhorias Aplicadas[\s\S]*/i);
       const melhoriasSection = melhoriasMatch ? melhoriasMatch[0].trim() : '_(seção não gerada)_';
-      reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n${melhoriasSection}`);
+      const secoesTocadas = [];
+      if (substituidas.length) secoesTocadas.push(`Seções revisadas: ${substituidas.join(', ')}`);
+      if (novas.length) secoesTocadas.push(`Seções novas: ${novas.join(', ')}`);
+      reportSections.push(
+        `## Aula ${i + 1}: ${aula.titulo}\n\n` +
+        (secoesTocadas.length ? secoesTocadas.join('\n') + '\n\n' : '') +
+        melhoriasSection
+      );
 
-      fullText += texto;
-      novasPorAula.push({ ...aula, texto });
+      fullText += textoMesclado;
+      novasPorAula.push({ ...aula, texto: textoMesclado });
 
       const numero = String(i + 1).padStart(2, '0');
-      await persistStage(sess, `aula${numero}_conteudo`, `Conteúdo — Aula ${i + 1}: ${aula.titulo}`, texto);
+      await persistStage(sess, `aula${numero}_conteudo`, `Conteúdo — Aula ${i + 1}: ${aula.titulo}`, textoMesclado);
     }
 
     sess.conteudoPorAula = novasPorAula;
@@ -2704,3 +2791,4 @@ module.exports.extractResumoMelhorias = extractResumoMelhorias;
 module.exports.parseMelhoriasEstruturadas = parseMelhoriasEstruturadas;
 module.exports.isRespostaMelhoriasCompleta = isRespostaMelhoriasCompleta;
 module.exports.acumulaTokenUsage = acumulaTokenUsage;
+module.exports.mergeSecoesConteudo = mergeSecoesConteudo;

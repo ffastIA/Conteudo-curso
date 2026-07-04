@@ -107,6 +107,16 @@ preRequisitos          string     opcional
 > tokens persistido por projeto em `scr/token_usage.json` (total + por dia),
 > exposto em `GET /api/tokens` (campo `projeto`) e no contador da UI.
 >
+> Aplicação de melhorias (Etapa 6): `aplicarMelhoriasSkill` pede um PATCH POR
+> SEÇÃO (`<<<SECAO: título>>>...<<<FIM_SECAO>>>`, título copiado literalmente
+> da seção original) em vez de reescrever a aula inteira — elimina a causa
+> raiz do truncamento em aulas densas. `mergeSecoesConteudo` (server.js) funde
+> o patch no conteúdo anterior por título (tolerante a acento/caixa, não por
+> nível de heading — `conteudoSkill` não usa vocabulário fixo de seções);
+> título ausente vira seção nova; resposta sem nenhum `<<<SECAO:` é tratada
+> como reescrita integral (fallback). A guarda de truncamento/continuação
+> permanece como rede de segurança.
+>
 > Realinhamento pós-melhorias (Etapa 6): ao final do ciclo de aplicar melhorias,
 > as seções do plano de aula das aulas efetivamente alteradas (similaridade ≤ 0.90)
 > são realinhadas via `realinharPlanoAulaSkill` + `replaceLessonBlock`. Ementa e
