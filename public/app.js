@@ -985,6 +985,10 @@ async function carregarProjetoPorPasta(pasta) {
     if (data.camposFaltantes?.length)
       banner.textContent += ` Campos a reinserir: ${data.camposFaltantes.join(', ')}.`;
 
+    // Só agora a sessão tem config.nome/pastaProjeto — GET /api/tokens passa a
+    // conseguir localizar e devolver o histórico persistido (scr/token_usage.json).
+    refreshTokenCounter();
+
     if (maxStep > 0) setTimeout(() => goStep(maxStep), 800);
   } catch (err) {
     alert('Erro ao carregar projeto: ' + err.message);
