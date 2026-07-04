@@ -574,10 +574,26 @@ document.getElementById('btnUploadMelhorias').addEventListener('click', async ()
 
     const total = data.aulas?.length || 0;
     const comObs = data.totalComObservacoes || 0;
+
+    // Modo estruturado: contagem real de melhorias por aula; legado: aviso.
+    let detalhe = '';
+    if (data.modoLegado) {
+      detalhe = `<span style="color:#b45309">⚠️ Seção "Melhorias a serem Aplicadas" não encontrada — usando modo legado (Observações do Revisor).</span><br>`;
+    } else {
+      const porAula = (data.aulas || [])
+        .map((a, i) => (a.melhorias?.length ? `Aula ${i + 1}: <strong>${a.melhorias.length}</strong> melhoria(s)` : null))
+        .filter(Boolean);
+      detalhe = porAula.length
+        ? `${porAula.join(' · ')} — total: <strong>${data.totalMelhorias || 0}</strong><br>`
+        : `<span style="color:#555">Nenhuma melhoria listada na seção estruturada.</span><br>`;
+      (data.avisosParser || []).forEach(a => { detalhe += `<span style="color:#b45309">⚠️ ${escHtml(a)}</span><br>`; });
+    }
+
     resumoEl.innerHTML =
       `<strong>✔ Arquivo processado!</strong> ` +
       `${total} aula(s) identificada(s), ` +
-      `<strong>${comObs}</strong> com observações do revisor.<br>` +
+      `<strong>${comObs}</strong> com melhorias indicadas.<br>` +
+      detalhe +
       `<span style="color:#555">Clique em "Aplicar Melhorias" para iniciar o processamento.</span>`;
     resumoEl.style.display = 'block';
 

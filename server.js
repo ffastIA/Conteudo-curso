@@ -174,6 +174,66 @@ function extractScopeAlerts(texto) {
   return { secao, alertas };
 }
 
+// Extrai os bullets de "### Resumo de Melhorias Propostas" da revisão de UMA
+// aula — alimenta a seção consolidada "Melhorias a serem Aplicadas" do relatório.
+function extractResumoMelhorias(textoAula) {
+  const m = (textoAula || '').match(/###\s*Resumo de Melhorias Propostas\s*\n([\s\S]*?)(?=\n###\s|\n#\s|$)/i);
+  if (!m) return [];
+  return m[1].split('\n')
+    .map(l => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim())
+    .filter(l => l && !/^nenhuma\.?$/i.test(l));
+}
+
+// Parser da seção "Melhorias a serem Aplicadas" do documento de revisão
+// anotado pelo revisor humano. Única zona lida pelo sistema; o resto do
+// documento é livre. Retorna null se a seção não existir (aciona o fallback
+// legado de "Observações do Revisor"). Regras (ver change melhorias-secao-
+// estruturada): âncora = ÚLTIMA linha que inicia com o título (tolerante a
+// acentos/caixa/#); blocos por linha "Aula NN" mapeados PELO NÚMERO; cada
+// linha não vazia = 1 melhoria (mammoth descarta marcadores de lista do Word
+// — prefixos são removidos, nunca exigidos); "Nenhuma" pula a aula.
+function parseMelhoriasEstruturadas(texto, totalAulas) {
+  if (!texto) return null;
+  const normLine = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const lines = texto.split(/\r?\n/);
+
+  let anchor = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (normLine(lines[i]).replace(/^#+\s*/, '').startsWith('melhorias a serem aplicadas')) anchor = i;
+  }
+  if (anchor === -1) return null;
+
+  const porAula = Array.from({ length: totalAulas }, () => []);
+  const avisos = [];
+  let atual = -1;
+
+  for (let i = anchor + 1; i < lines.length; i++) {
+    const bruta = lines[i].trim();
+    if (!bruta) continue;
+    const mAula = bruta.match(/^aula\s*(\d{1,3})\b/i);
+    if (mAula) {
+      const num = parseInt(mAula[1], 10);
+      if (num >= 1 && num <= totalAulas) {
+        atual = num - 1;
+      } else {
+        atual = -1;
+        avisos.push(`Bloco "Aula ${num}" ignorado — o curso tem ${totalAulas} aula(s).`);
+      }
+      continue;
+    }
+    if (atual === -1) continue;
+    const item = bruta.replace(/^(?:[-*•]|\d+[.)])\s*/, '').trim();
+    if (!item) continue;
+    if (/^nenhuma\.?$/i.test(item)) {
+      porAula[atual] = [];
+      atual = -1; // trava o bloco: linhas seguintes até a próxima "Aula NN" são ignoradas
+      continue;
+    }
+    porAula[atual].push(item);
+  }
+  return { porAula, avisos };
+}
+
 // Similaridade simples por sobreposição de palavras (Jaccard truncado) — usada
 // para detectar duplicação de conteúdo entre aulas (Ajuste 5).
 function textSimilarity(a, b) {
@@ -1793,6 +1853,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
   const bnccContext = buildPedagogicalContext(sess);
   let fullText = '';
   const notasPorAula = [];
+  const resumosMelhoriasPorAula = [];
 
   try {
     for (let i = 0; i < aulas.length; i++) {
@@ -1826,6 +1887,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
       const notaMatch = texto.match(/Nota:\s*([01](?:\.\d+)?)/i);
       const nota = notaMatch ? Math.max(0, Math.min(1, parseFloat(notaMatch[1]))) : null;
       notasPorAula.push({ numero: i + 1, titulo: aula.titulo, nota });
+      resumosMelhoriasPorAula.push(extractResumoMelhorias(texto));
     }
 
     notasPorAula.sort((a, b) => a.numero - b.numero);
@@ -1835,6 +1897,22 @@ app.get('/api/revisao-qualidade', async (req, res) => {
     }
     send(res, { type: 'token', text: resumoNotas });
     fullText += resumoNotas;
+
+    // Seção estruturada — única zona do documento lida pelo upload de melhorias.
+    // Pré-preenchida com o resumo emitido pela revisão de cada aula; o revisor
+    // humano faz curadoria (apaga, edita, acrescenta itens).
+    let secaoMelhorias =
+      '\n\n<!--PAGEBREAK-->\n\n' +
+      'Edite apenas os itens abaixo — uma melhoria por linha. O sistema aplicará ' +
+      'exclusivamente o que estiver nesta seção.\n\n' +
+      '## Melhorias a serem Aplicadas\n\n';
+    resumosMelhoriasPorAula.forEach((itens, i) => {
+      secaoMelhorias += `Aula ${String(i + 1).padStart(2, '0')}\n`;
+      secaoMelhorias += itens.length ? itens.map(t => `- ${t}`).join('\n') : '';
+      secaoMelhorias += '\n\n';
+    });
+    send(res, { type: 'token', text: secaoMelhorias });
+    fullText += secaoMelhorias;
 
     sess.revisaoQualidade = fullText;
     await persistStage(sess, 'revisao_qualidade', 'Revisão de Qualidade', fullText);
@@ -1871,30 +1949,45 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
     const { value: textoExtraido } = await mammoth.extractRawText({ buffer: req.file.buffer });
 
     const aulas = sess.conteudoPorAula || [];
-    const observacoesPorAula = aulas.map((aula, i) => {
-      const aulaIndex = i + 1;
-      const nextAulaIndex = i + 2;
 
-      const aulaStart = textoExtraido.search(new RegExp(`Aula ${aulaIndex}[:\\s—]`, 'i'));
-      let aulaEnd = textoExtraido.length;
-      if (nextAulaIndex <= aulas.length) {
-        const m = textoExtraido.search(new RegExp(`Aula ${nextAulaIndex}[:\\s—]`, 'i'));
-        if (m > aulaStart) aulaEnd = m;
-      }
+    // Preferência: seção estruturada "Melhorias a serem Aplicadas" (única zona
+    // lida quando presente — o corpo do documento é livre para o revisor).
+    const estruturado = parseMelhoriasEstruturadas(textoExtraido, aulas.length);
+    const modoLegado = !estruturado;
+    let observacoesPorAula;
 
-      const aulaTexto = aulaStart !== -1 ? textoExtraido.slice(aulaStart, aulaEnd) : '';
-      const obsStart = aulaTexto.search(/Observa[çc][oõ]es\s+do\s+Revisor/i);
-      let observacoes = '';
+    if (estruturado) {
+      observacoesPorAula = aulas.map((aula, i) => {
+        const melhorias = estruturado.porAula[i] || [];
+        return { titulo: aula.titulo, observacoes: melhorias.join('\n'), melhorias };
+      });
+    } else {
+      // Fallback legado: parser de "Observações do Revisor" por aula
+      observacoesPorAula = aulas.map((aula, i) => {
+        const aulaIndex = i + 1;
+        const nextAulaIndex = i + 2;
 
-      if (obsStart !== -1) {
-        const afterHeading = aulaTexto.indexOf('\n', obsStart);
-        const rawObs = afterHeading !== -1 ? aulaTexto.slice(afterHeading + 1) : '';
-        const nextSection = rawObs.search(/\n[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][a-záéíóúàâêôãõç\s]{3,}\n/);
-        observacoes = (nextSection !== -1 ? rawObs.slice(0, nextSection) : rawObs).trim();
-      }
+        const aulaStart = textoExtraido.search(new RegExp(`Aula ${aulaIndex}[:\\s—]`, 'i'));
+        let aulaEnd = textoExtraido.length;
+        if (nextAulaIndex <= aulas.length) {
+          const m = textoExtraido.search(new RegExp(`Aula ${nextAulaIndex}[:\\s—]`, 'i'));
+          if (m > aulaStart) aulaEnd = m;
+        }
 
-      return { titulo: aula.titulo, observacoes };
-    });
+        const aulaTexto = aulaStart !== -1 ? textoExtraido.slice(aulaStart, aulaEnd) : '';
+        const obsStart = aulaTexto.search(/Observa[çc][oõ]es\s+do\s+Revisor/i);
+        let observacoes = '';
+
+        if (obsStart !== -1) {
+          const afterHeading = aulaTexto.indexOf('\n', obsStart);
+          const rawObs = afterHeading !== -1 ? aulaTexto.slice(afterHeading + 1) : '';
+          const nextSection = rawObs.search(/\n[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ][a-záéíóúàâêôãõç\s]{3,}\n/);
+          observacoes = (nextSection !== -1 ? rawObs.slice(0, nextSection) : rawObs).trim();
+        }
+
+        return { titulo: aula.titulo, observacoes, melhorias: [] };
+      });
+    }
 
     sess.observacoesMelhorias = observacoesPorAula;
 
@@ -1930,7 +2023,16 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
       );
     } catch (e) { console.error('Erro ao gravar observacoes_pendentes.json:', e.message); }
     const comObservacoes = observacoesPorAula.filter(o => o.observacoes.length > 0);
-    res.json({ ok: true, aulas: observacoesPorAula, totalComObservacoes: comObservacoes.length, ...avisoResposta });
+    const totalMelhorias = observacoesPorAula.reduce((s, o) => s + (o.melhorias?.length || 0), 0);
+    res.json({
+      ok: true,
+      aulas: observacoesPorAula,
+      totalComObservacoes: comObservacoes.length,
+      totalMelhorias,
+      modoLegado,
+      avisosParser: estruturado?.avisos || [],
+      ...avisoResposta
+    });
   } catch (err) {
     console.error('Erro ao processar .docx:', err.message);
     res.status(500).json({ error: 'Erro ao processar o arquivo .docx: ' + err.message });
@@ -2022,6 +2124,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         aulaObjetivos: aula.objetivos,
         conteudoAtual: aula.texto,
         observacoesRevisor: obs,
+        melhorias: observacoes[i]?.melhorias,
         metodologia: getMetodologia(sess),
         bnccContext
       });
@@ -2482,3 +2585,5 @@ module.exports.buildPedagogicalContext = buildPedagogicalContext;
 module.exports.replaceLessonBlock = replaceLessonBlock;
 module.exports.extractLessonBlock = extractLessonBlock;
 module.exports.extractScopeAlerts = extractScopeAlerts;
+module.exports.extractResumoMelhorias = extractResumoMelhorias;
+module.exports.parseMelhoriasEstruturadas = parseMelhoriasEstruturadas;

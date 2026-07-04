@@ -507,12 +507,19 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `(0 = qualidade baixíssima, 1 = qualidade total). Responda com uma frase curta de ` +
       `justificativa seguida OBRIGATORIAMENTE de uma linha isolada no formato exato: ` +
       `"Nota: X.XX" (ex.: "Nota: 0.85").\n\n` +
+      `### Resumo de Melhorias Propostas\n` +
+      `Liste em bullets curtos, UM POR LINHA, cada melhoria concreta proposta nesta revisão — ` +
+      `espelho enxuto da seção de Deficiências e Melhorias Sugeridas, contendo apenas a ação a ` +
+      `executar, sem prosa nem justificativa. Se não houver melhorias, escreva apenas "Nenhuma".\n\n` +
       `### Observações do Revisor\n`
   };
 };
 
 // Aplica melhorias a uma aula com acesso à web — usa gpt-4o-search-preview.
-const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, conteudoAtual, observacoesRevisor, metodologia, bnccContext }) => ({
+// `melhorias` (lista de itens da seção estruturada "Melhorias a serem Aplicadas")
+// tem precedência sobre `observacoesRevisor` (texto livre do modo legado) e
+// habilita a rastreabilidade numerada em "### Melhorias Aplicadas".
+const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, conteudoAtual, observacoesRevisor, melhorias, metodologia, bnccContext }) => ({
   model: MODEL_RESEARCH,
   web_search_options: { search_context_size: 'medium' },
   system:
@@ -530,7 +537,9 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
         `conteúdo melhorado compatíveis com essa modalidade.\n`
       : '') + `\n` +
     `## Observações e Melhorias Indicadas\n` +
-    `${observacoesRevisor || 'Nenhuma observação específica. Melhore o conteúdo com base em boas práticas e pesquisa web.'}\n\n` +
+    (Array.isArray(melhorias) && melhorias.length
+      ? melhorias.map((m, n) => `${n + 1}. ${m}`).join('\n')
+      : (observacoesRevisor || 'Nenhuma observação específica. Melhore o conteúdo com base em boas práticas e pesquisa web.')) + `\n\n` +
     `## Conteúdo Atual da Aula\n${conteudoAtual}\n\n` +
     `Produza a versão melhorada do conteúdo, mantendo a estrutura original onde ` +
     `estiver boa e aplicando as melhorias indicadas. Use a busca na web para ` +
@@ -539,9 +548,13 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
     pedagCtxBlock(metodologia, bnccContext) +
     `\n\nAo final do conteúdo revisado, adicione obrigatoriamente a seguinte seção:\n\n` +
     `### Melhorias Aplicadas\n` +
-    `Liste em bullets curtos cada melhoria aplicada. Um bullet por melhoria. ` +
-    `Não inclua texto explicativo — apenas a melhoria em si. ` +
-    `Se uma observação não foi aplicada, inclua um bullet indicando "Não aplicado: <motivo em uma frase>".`
+    (Array.isArray(melhorias) && melhorias.length
+      ? `Referencie CADA melhoria da lista numerada acima PELO NÚMERO, uma por linha, no ` +
+        `formato exato "N. <ação tomada>" ou "N. Não aplicado: <motivo em uma frase>". ` +
+        `Não omita nenhum número da lista.`
+      : `Liste em bullets curtos cada melhoria aplicada. Um bullet por melhoria. ` +
+        `Não inclua texto explicativo — apenas a melhoria em si. ` +
+        `Se uma observação não foi aplicada, inclua um bullet indicando "Não aplicado: <motivo em uma frase>".`)
 });
 
 // Realinha a seção do plano de aula de UMA aula com o conteúdo melhorado no

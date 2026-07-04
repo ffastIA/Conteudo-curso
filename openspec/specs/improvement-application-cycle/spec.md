@@ -49,7 +49,7 @@ O sistema SHALL aceitar o upload de um arquivo `.docx` contendo o relatório de 
 ---
 
 ### Requirement: Aplicação de melhorias por aula com confirmação
-Após o upload, o sistema SHALL exibir ao usuário um resumo das observações encontradas e aguardar confirmação explícita antes de iniciar o processamento. Somente após a confirmação o sistema SHALL: (1) criar snapshot do conteúdo atual, (2) revisar cada aula individualmente aplicando as melhorias, (3) calcular métricas de mudança por aula, (4) avisar sobre aulas pouco alteradas. O sistema SHALL restaurar automaticamente `sess.conteudoPorAula` a partir do disco antes de iniciar o processamento, caso a sessão em memória esteja vazia. O sistema SHALL passar o conteúdo integral de cada aula (sem truncamento) para `aplicarMelhoriasSkill` — o parâmetro `conteudoAtual` SHALL receber `aula.texto` sem limitação de caracteres.
+Após o upload, o sistema SHALL exibir ao usuário um resumo das melhorias encontradas (com contagem por aula quando extraídas da seção estruturada) e aguardar confirmação explícita antes de iniciar o processamento. Somente após a confirmação o sistema SHALL: (1) criar snapshot do conteúdo atual, (2) revisar cada aula individualmente aplicando as melhorias, (3) calcular métricas de mudança por aula, (4) avisar sobre aulas pouco alteradas. O sistema SHALL restaurar automaticamente `sess.conteudoPorAula` a partir do disco antes de iniciar o processamento, caso a sessão em memória esteja vazia. O sistema SHALL passar o conteúdo integral de cada aula (sem truncamento) para `aplicarMelhoriasSkill` — o parâmetro `conteudoAtual` SHALL receber `aula.texto` sem limitação de caracteres. Quando as melhorias vierem da seção estruturada, elas SHALL ser passadas à `aplicarMelhoriasSkill` como **lista numerada**, e a seção `### Melhorias Aplicadas` do resultado SHALL referenciar cada item pelo número (ação tomada ou `Não aplicado: <motivo>`).
 
 #### Scenario: Confirmação e início do processamento
 - **WHEN** o usuário clica "Aplicar Melhorias" após visualizar o resumo
@@ -81,6 +81,11 @@ Após o upload, o sistema SHALL exibir ao usuário um resumo das observações e
 - **WHEN** o modelo gera o conteúdo revisado de cada aula
 - **THEN** o output inclui a seção `### Melhorias Aplicadas` ao final
 - **THEN** cada observação do revisor é listada com a ação tomada ou justificativa de não-aplicação
+
+#### Scenario: Rastreabilidade numerada por item
+- **WHEN** as melhorias de uma aula vieram da seção estruturada (ex.: 3 itens numerados)
+- **THEN** o prompt da `aplicarMelhoriasSkill` contém a lista numerada 1..3
+- **THEN** a seção `### Melhorias Aplicadas` do resultado referencia cada número com a ação tomada ou `Não aplicado: <motivo>`
 
 ---
 
@@ -195,3 +200,41 @@ O realinhamento SHALL NOT alterar a ementa nem o plano de ensino. A `realinharPl
 #### Scenario: Coerência restaurada verificada pela revisão seguinte
 - **WHEN** uma nova revisão de qualidade é executada após um ciclo de melhorias com realinhamento
 - **THEN** a seção "Compatibilidade com o Plano de Aula" não aponta descompasso causado pelo ciclo anterior (plano e conteúdo coerentes)
+
+---
+
+### Requirement: Parser da seção estruturada de melhorias
+No upload do documento de revisão anotado, o sistema SHALL localizar a **última ocorrência** do título "Melhorias a serem Aplicadas" (tolerante a caixa e acentos) e extrair as melhorias exclusivamente dessa seção: blocos abertos por linha iniciando com `Aula NN` (aceitando `Aula 1` e `Aula 01`, com ou sem título após), mapeados ao índice da sessão **pelo número**; dentro de cada bloco, **cada linha não vazia SHALL ser tratada como uma melhoria**, removendo-se prefixos de lista (`-`, `*`, `•`, `1.`, `1)`) quando presentes, sem jamais exigi-los. A palavra reservada `Nenhuma` (sozinha no bloco) SHALL pular a aula explicitamente. O parsing SHALL ser implementado em função exportável (`parseMelhoriasEstruturadas`) testável isoladamente.
+
+#### Scenario: Itens sem marcador de lista (mammoth descarta bullets do Word)
+- **WHEN** o revisor usa a lista nativa do Word e o texto extraído contém linhas puras sem `-`
+- **THEN** cada linha não vazia do bloco é reconhecida como uma melhoria distinta
+
+#### Scenario: Mapeamento pelo número da aula
+- **WHEN** a seção contém os blocos na ordem `Aula 03`, `Aula 01` (Aula 02 ausente)
+- **THEN** as melhorias são atribuídas às aulas 3 e 1 respectivamente e a aula 2 fica sem melhorias, sem erro
+
+#### Scenario: Palavra reservada Nenhuma
+- **WHEN** o bloco de uma aula contém apenas a linha `Nenhuma`
+- **THEN** a aula é registrada explicitamente sem melhorias (nenhum item é criado)
+
+#### Scenario: Âncora repetida no corpo do documento
+- **WHEN** a expressão "melhorias a serem aplicadas" aparece também no texto corrido do relatório
+- **THEN** o parser usa somente a última ocorrência como início da seção estruturada
+
+#### Scenario: Contagem por item na confirmação
+- **WHEN** o upload é processado com a seção estruturada presente
+- **THEN** a resposta inclui a quantidade de melhorias por aula e o resumo de confirmação exibe "Aula N: X melhoria(s)"
+
+---
+
+### Requirement: Fallback legado quando a seção estruturada está ausente
+Se o documento enviado não contiver a seção "Melhorias a serem Aplicadas", o sistema SHALL processá-lo com o parser legado de "Observações do Revisor" e sinalizar o modo na resposta (`modoLegado: true`) com aviso ao usuário.
+
+#### Scenario: Documento no formato antigo
+- **WHEN** o revisor envia um relatório gerado antes desta mudança (sem a seção estruturada)
+- **THEN** as observações são extraídas pelo mecanismo legado e a resposta contém o aviso "seção estruturada não encontrada — usando modo legado"
+
+#### Scenario: Seção presente tem precedência total
+- **WHEN** o documento contém a seção estruturada E textos sob "Observações do Revisor" no corpo
+- **THEN** somente os itens da seção estruturada são considerados para aplicação
