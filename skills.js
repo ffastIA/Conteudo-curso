@@ -515,10 +515,22 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
   };
 };
 
-// Aplica melhorias a uma aula com acesso à web — usa gpt-4o-search-preview.
+// Aplica melhorias a uma aula — usa gpt-4o-mini (sem busca web).
 // `melhorias` (lista de itens da seção estruturada "Melhorias a serem Aplicadas")
 // tem precedência sobre `observacoesRevisor` (texto livre do modo legado) e
 // habilita a rastreabilidade numerada em "### Melhorias Aplicadas".
+//
+// Historicamente usava gpt-4o-search-preview (busca web); trocado para
+// gpt-4o-mini por dois motivos concretos: (1) teste empírico mostrou que o
+// search-preview não é mais confiável que o mini nesta tarefa — ambos
+// declaram melhorias como "aplicadas" sem que o texto realmente mude (ver
+// change verificacao-mecanica-melhorias, que cobre os dois); (2) o teto de
+// tokens-por-minuto da conta para o search-preview é baixo o suficiente para
+// que uma única chamada com conteúdo integral de aula + metodologia + BNCC +
+// melhorias já estoure o limite (HTTP 429 "Request too large"), sem que
+// nenhuma quantidade de retry resolva — é um problema de tamanho da
+// requisição, não de frequência. O mini tem teto de TPM muito mais alto por
+// padrão, mesmo em contas básicas, e é mais barato.
 //
 // Pede PATCH POR SEÇÃO (<<<SECAO: título>>>...<<<FIM_SECAO>>>), não a reescrita
 // integral da aula: conteudoSkill não usa um vocabulário fixo de seções (varia
@@ -531,16 +543,13 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
 // original; resposta sem nenhum "<<<SECAO:" é tratada como reescrita integral
 // (fallback, mesmo comportamento de antes desta mudança).
 const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, conteudoAtual, observacoesRevisor, melhorias, metodologia, bnccContext }) => ({
-  model: MODEL_RESEARCH,
-  web_search_options: { search_context_size: 'medium' },
+  model: MODEL_ECONOMY,
   system:
     'Você é um especialista técnico e educador sênior. Revise e melhore o ' +
-    'conteúdo didático de uma aula aplicando as melhorias indicadas e buscando ' +
-    'referências atualizadas na web quando necessário. Responda em português.',
+    'conteúdo didático de uma aula aplicando as melhorias indicadas. Responda em português.',
   user:
     `Revise e melhore o conteúdo técnico da Aula ${aulaIndex + 1} do curso "${config?.nome || '?'}", ` +
-    `aplicando as melhorias indicadas pelo revisor humano e complementando com pesquisa ` +
-    `na web quando necessário para enriquecer o conteúdo.\n\n` +
+    `aplicando as melhorias indicadas pelo revisor humano.\n\n` +
     `## Dados da Aula\n` +
     `Título: ${aulaTitulo}\nObjetivos: ${aulaObjetivos || 'não especificados'}\n` +
     (config?.modalidade
@@ -550,7 +559,7 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
     `## Observações e Melhorias Indicadas\n` +
     (Array.isArray(melhorias) && melhorias.length
       ? melhorias.map((m, n) => `${n + 1}. ${m}`).join('\n')
-      : (observacoesRevisor || 'Nenhuma observação específica. Melhore o conteúdo com base em boas práticas e pesquisa web.')) + `\n\n` +
+      : (observacoesRevisor || 'Nenhuma observação específica. Melhore o conteúdo com base em boas práticas de ensino.')) + `\n\n` +
     `## Conteúdo Atual da Aula\n${conteudoAtual}\n\n` +
     `FORMATO DE RESPOSTA — PATCH POR SEÇÃO (MUITO IMPORTANTE):\n` +
     `NÃO reescreva a aula inteira. Produza APENAS as seções que precisam mudar para ` +

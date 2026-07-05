@@ -49,7 +49,7 @@ O sistema SHALL aceitar o upload de um arquivo `.docx` contendo o relatório de 
 ---
 
 ### Requirement: Aplicação de melhorias por aula com confirmação
-Após o upload, o sistema SHALL exibir ao usuário um resumo das melhorias encontradas (com contagem por aula quando extraídas da seção estruturada) e aguardar confirmação explícita antes de iniciar o processamento. Somente após a confirmação o sistema SHALL: (1) criar snapshot do conteúdo atual, (2) revisar cada aula individualmente aplicando as melhorias, (3) calcular métricas de mudança por aula, (4) avisar sobre aulas pouco alteradas. O sistema SHALL restaurar automaticamente `sess.conteudoPorAula` a partir do disco antes de iniciar o processamento, caso a sessão em memória esteja vazia. O sistema SHALL passar o conteúdo integral de cada aula (sem truncamento) para `aplicarMelhoriasSkill` — o parâmetro `conteudoAtual` SHALL receber `aula.texto` sem limitação de caracteres. Quando as melhorias vierem da seção estruturada, elas SHALL ser passadas à `aplicarMelhoriasSkill` como **lista numerada**, e a seção `### Melhorias Aplicadas` do resultado SHALL referenciar cada item pelo número (ação tomada ou `Não aplicado: <motivo>`). A resposta do modelo SHALL ser preferencialmente um **patch por seção** (ver requisito "Aplicação de melhorias como patch por seção"), com fallback para reescrita integral quando o patch não for identificável.
+Após o upload, o sistema SHALL exibir ao usuário um resumo das melhorias encontradas (com contagem por aula quando extraídas da seção estruturada) e aguardar confirmação explícita antes de iniciar o processamento. Somente após a confirmação o sistema SHALL: (1) criar snapshot do conteúdo atual, (2) revisar cada aula individualmente aplicando as melhorias, (3) calcular métricas de mudança por aula, (4) avisar sobre aulas pouco alteradas. O sistema SHALL restaurar automaticamente `sess.conteudoPorAula` a partir do disco antes de iniciar o processamento, caso a sessão em memória esteja vazia. O sistema SHALL passar o conteúdo integral de cada aula (sem truncamento) para `aplicarMelhoriasSkill` — o parâmetro `conteudoAtual` SHALL receber `aula.texto` sem limitação de caracteres. Quando as melhorias vierem da seção estruturada, elas SHALL ser passadas à `aplicarMelhoriasSkill` como **lista numerada**, e a seção `### Melhorias Aplicadas` do resultado SHALL referenciar cada item pelo número (ação tomada ou `Não aplicado: <motivo>`). A resposta do modelo SHALL ser preferencialmente um **patch por seção** (ver requisito "Aplicação de melhorias como patch por seção"), com fallback para reescrita integral quando o patch não for identificável. `aplicarMelhoriasSkill` SHALL usar `gpt-4o-mini` (MODEL_ECONOMY), sem busca web — o teto de tokens-por-minuto de modelos de busca é baixo o suficiente para que uma única requisição com conteúdo integral de aula, metodologia e contexto BNCC o ultrapasse, falha que nenhuma quantidade de retry resolve.
 
 #### Scenario: Confirmação e início do processamento
 - **WHEN** o usuário clica "Aplicar Melhorias" após visualizar o resumo
@@ -67,10 +67,10 @@ Após o upload, o sistema SHALL exibir ao usuário um resumo das melhorias encon
 - **THEN** nenhuma alteração é aplicada ao conteúdo existente
 - **THEN** o usuário pode fazer novo upload ou retornar à Etapa 5★
 
-#### Scenario: Acesso à web durante aplicação
-- **WHEN** as observações do revisor ou as sugestões do relatório indicam necessidade de aprofundamento técnico
-- **THEN** a `aplicarMelhoriasSkill` usa `gpt-4o-search-preview` com `web_search_options` para buscar referências atualizadas
-- **THEN** as fontes consultadas são incluídas no conteúdo revisado da aula correspondente
+#### Scenario: Aplicação de melhorias sem busca web
+- **WHEN** `aplicarMelhoriasSkill` é invocada para qualquer aula
+- **THEN** a chamada usa `gpt-4o-mini`, sem `web_search_options`
+- **THEN** o prompt não instrui nem sugere ao modelo buscar referências na web
 
 #### Scenario: Conteúdo integral passado ao modelo
 - **WHEN** `aplicarMelhoriasSkill` é invocada para qualquer aula
