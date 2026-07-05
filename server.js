@@ -30,8 +30,13 @@ const SEARCH_RETRY_TIMEOUT_MS = 30_000;
 const STALL_TIMEOUT_MS = 45_000;
 const CONTEUDO_SEARCH_TIMEOUT_MS = 90_000;
 // Teto de tokens de saída por aula, uniforme em todas as gerações de conteúdo
-// (streaming e web-search). Definido pelo usuário em 2026-07-04.
-const MAX_TOKENS_AULA = 10_000;
+// (streaming e web-search) — teto prático de saída do gpt-4o-mini. Elevado de
+// 10.000 para 16.000 em 2026-07-05 após aulas densas truncarem mesmo após
+// continuação (ver change aumentar-teto-e-continuacoes-melhorias).
+const MAX_TOKENS_AULA = 16_000;
+// Máximo de tentativas de continuação quando a aplicação de melhorias corta
+// por limite de tokens antes de desistir e preservar o conteúdo anterior.
+const MAX_CONTINUACOES_MELHORIA = 2;
 
 function isRetriable(err) {
   if (err instanceof OpenAI.AuthenticationError) return false;
@@ -2315,10 +2320,15 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       console.log(`[melhorias] aula ${i + 1}: finish=${meta.finishReason || '?'} tokens=${meta.completionTokens ?? '?'}`);
 
       // ── Guarda de integridade: resposta cortada por limite de tokens ───────
-      // 1 tentativa de continuação; se ainda incompleta, preserva o conteúdo
-      // anterior da aula (nunca sobrescrever versão íntegra com truncada).
-      if (!isRespostaMelhoriasCompleta(texto, meta.finishReason)) {
-        send(res, { type: 'progress', message: `Aula ${i + 1}: resposta cortada — solicitando continuação...` });
+      // Até MAX_CONTINUACOES_MELHORIA tentativas de continuação; se ainda
+      // incompleta, preserva o conteúdo anterior da aula (nunca sobrescrever
+      // versão íntegra com truncada).
+      for (
+        let tentativa = 1;
+        tentativa <= MAX_CONTINUACOES_MELHORIA && !isRespostaMelhoriasCompleta(texto, meta.finishReason);
+        tentativa++
+      ) {
+        send(res, { type: 'progress', message: `Aula ${i + 1}: resposta cortada — solicitando continuação (tentativa ${tentativa}/${MAX_CONTINUACOES_MELHORIA})...` });
         try {
           const cont = await openai.chat.completions.create(
             {
@@ -2348,9 +2358,10 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
             texto += '\n' + contTexto;
           }
           meta.finishReason = cont.choices[0]?.finish_reason;
-          console.log(`[melhorias] aula ${i + 1}: continuação finish=${meta.finishReason || '?'}`);
+          console.log(`[melhorias] aula ${i + 1}: continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA} finish=${meta.finishReason || '?'}`);
         } catch (e) {
-          console.error(`[melhorias] aula ${i + 1}: falha na continuação:`, e.message);
+          console.error(`[melhorias] aula ${i + 1}: falha na continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA}:`, e.message);
+          break;
         }
       }
 
