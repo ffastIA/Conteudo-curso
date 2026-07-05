@@ -380,6 +380,108 @@ function textSimilarity(a, b) {
   return common / Math.min(wa.size, wb.size);
 }
 
+// ── Sistema de score de qualidade (ver capability quality-scoring) ─────────
+// Score = 0.7 × RubricaLLM + 0.3 × Determinístico. A rubrica (5 critérios,
+// avaliada por LLM) captura nuance pedagógica; o determinístico (3 funções
+// puras, sem chamada de API) ancora o score contra o ruído de calibração do
+// LLM entre chamadas — é o que torna "score do ciclo N" comparável com
+// "score do ciclo N+1", ao contrário da nota holística anterior.
+const PESOS_RUBRICA = {
+  planoAula: 0.30,
+  planoEnsinoEmenta: 0.25,
+  nivelPublicoModalidade: 0.20,
+  qualidadeDidatica: 0.15,
+  clarezaEstrutura: 0.10
+};
+// Limiar de ganho mínimo para aceitar um candidato revisado (gate do ciclo
+// de melhorias) e para considerar um ciclo "convergido" (early stopping).
+// Mesma ordem de grandeza nos dois contextos — "ganho insignificante" tem
+// o mesmo significado em ambos.
+const EPSILON_ACEITE = 0.02;
+const EPSILON_CONVERGENCIA = 0.02;
+
+// Seções esperadas no conteúdo de uma aula (conteudoSkill) — usadas para
+// medir completude estrutural. Busca tolerante por título (mesmo padrão de
+// normalizeTitulo/mergeSecoesConteudo), não por nível de heading Markdown.
+const SECOES_ESPERADAS_CONTEUDO = [
+  'fundamentacao tecnica',
+  'exemplos praticos',
+  'erros comuns',
+  'sintese'
+];
+
+// Componentes determinísticos do score (0-1 cada, sem chamada de API):
+// (1) cobertura de objetivos — fração dos termos significativos de
+// aula.objetivos presentes no texto; (2) penalidade de sobreposição —
+// 1 - max(0, maiorSimilaridadeComOutraAula - 0.55), mesmo limiar já usado
+// no sistema; (3) completude estrutural — fração das seções esperadas
+// detectáveis por título tolerante no texto.
+function computeScoreDeterministico(texto, aula, sobreposicaoMaxima = 0) {
+  const textoNorm = normalizeTitulo(texto);
+
+  const termosObjetivo = normalizeTitulo(aula?.objetivos)
+    .split(' ')
+    .filter(w => w.length > 3);
+  const cobertura = termosObjetivo.length
+    ? termosObjetivo.filter(t => textoNorm.includes(t)).length / termosObjetivo.length
+    : 1;
+
+  const penalidadeSobreposicao = Math.max(0, 1 - Math.max(0, sobreposicaoMaxima - 0.55));
+
+  const secoesPresentes = SECOES_ESPERADAS_CONTEUDO.filter(s => textoNorm.includes(s)).length;
+  const completudeEstrutural = secoesPresentes / SECOES_ESPERADAS_CONTEUDO.length;
+
+  const determ = (cobertura + penalidadeSobreposicao + completudeEstrutural) / 3;
+  return {
+    determ: Math.max(0, Math.min(1, determ)),
+    componentes: { cobertura, penalidadeSobreposicao, completudeEstrutural }
+  };
+}
+
+// Compõe o score final a partir da rubrica (5 critérios 0-10) e do
+// determinístico (0-1). Retorna também rubricaLLM (0-1) para o relatório.
+function computeScoreComposto(rubrica10, determ0a1, pesos = PESOS_RUBRICA) {
+  const r = rubrica10 || {};
+  const rubricaLLM =
+    ((r.planoAula ?? 0) / 10) * pesos.planoAula +
+    ((r.planoEnsinoEmenta ?? 0) / 10) * pesos.planoEnsinoEmenta +
+    ((r.nivelPublicoModalidade ?? 0) / 10) * pesos.nivelPublicoModalidade +
+    ((r.qualidadeDidatica ?? 0) / 10) * pesos.qualidadeDidatica +
+    ((r.clarezaEstrutura ?? 0) / 10) * pesos.clarezaEstrutura;
+
+  const score = 0.7 * rubricaLLM + 0.3 * (determ0a1 ?? 0);
+  return {
+    score: Math.round(Math.max(0, Math.min(1, score)) * 100) / 100,
+    rubricaLLM: Math.round(Math.max(0, Math.min(1, rubricaLLM)) * 100) / 100
+  };
+}
+
+// Extrai os 5 critérios da rubrica de um texto de revisão (formato pedido em
+// revisaoQualidadeSkill: "Critério: N/10"). Retorna null se nenhum critério
+// for reconhecido — aciona o fallback para o formato antigo de nota única.
+function parseRubricaCriterios(texto) {
+  const t = texto || '';
+  const buscar = (label) => {
+    const re = new RegExp(label + '\\s*:?\\s*(\\d+(?:\\.\\d+)?)\\s*/\\s*10', 'i');
+    const m = t.match(re);
+    return m ? Math.max(0, Math.min(10, parseFloat(m[1]))) : null;
+  };
+  const criterios = {
+    planoAula: buscar('Ader[êe]ncia ao Plano de Aula'),
+    planoEnsinoEmenta: buscar('Ader[êe]ncia ao Plano de Ensino e Ementa'),
+    nivelPublicoModalidade: buscar('Adequa[çc][ãa]o a N[íi]vel[/,]P[úu]blico[/,]Modalidade'),
+    qualidadeDidatica: buscar('Qualidade Did[áa]tica'),
+    clarezaEstrutura: buscar('Clareza e Estrutura')
+  };
+  const valores = Object.values(criterios);
+  if (valores.some(v => v === null)) return null;
+  // determ=0 aqui é só para reaproveitar o cálculo da média ponderada da
+  // rubrica dentro de computeScoreComposto — o campo `rubricaLLM` retornado
+  // já é o valor puro (0-1), sem o fator de composição 0.7/0.3.
+  const { rubricaLLM } = computeScoreComposto(criterios, 0);
+  return { criterios, rubricaLLM };
+}
+
 // ── Diretório "saídas" — memória persistente entre etapas ──────────────────
 const SAIDAS_ROOT = path.join(__dirname, 'saídas');
 
@@ -642,6 +744,29 @@ function persistTokenUsage(sess, usage) {
     fs.writeFileSync(path.join(courseScrDir(sess), 'token_usage.json'), JSON.stringify(dados, null, 2), 'utf-8');
   } catch (e) {
     console.error('Erro ao persistir token_usage.json:', e.message);
+  }
+}
+
+// ── Histórico de scores por ciclo de melhorias (scr/score_historico.json) ──
+// Alimenta o aviso de convergência (early stopping) no upload da próxima
+// revisão anotada. Tolerante a arquivo ausente/corrompido (nunca bloqueia o
+// ciclo de melhorias).
+function readScoreHistorico(sess) {
+  try {
+    const dados = JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'score_historico.json'), 'utf-8'));
+    return Array.isArray(dados?.ciclos) ? dados : { ciclos: [] };
+  } catch {
+    return { ciclos: [] };
+  }
+}
+
+function persistScoreHistorico(sess, registroCiclo) {
+  try {
+    const dados = readScoreHistorico(sess);
+    dados.ciclos.push(registroCiclo);
+    fs.writeFileSync(path.join(courseScrDir(sess), 'score_historico.json'), JSON.stringify(dados, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Erro ao persistir score_historico.json:', e.message);
   }
 }
 
@@ -2065,8 +2190,21 @@ app.get('/api/revisao-qualidade', async (req, res) => {
       const texto = await streamSkillToClient(res, skill, sess);
       fullText += texto;
 
-      const notaMatch = texto.match(/Nota:\s*([01](?:\.\d+)?)/i);
-      const nota = notaMatch ? Math.max(0, Math.min(1, parseFloat(notaMatch[1]))) : null;
+      // Nota calculada pela fórmula de score (quality-scoring): rubrica de 5
+      // critérios (LLM) + determinístico (cobertura/sobreposição/estrutura).
+      // Fallback para o formato antigo de nota holística "Nota: X.XX" se o
+      // modelo não seguir o formato de rubrica pedido.
+      const rubrica = parseRubricaCriterios(texto);
+      let nota = null;
+      if (rubrica) {
+        const sobreposicaoMaxima = (sobreposicoesPorAula[i] || [])
+          .reduce((max, o) => Math.max(max, o.similaridade / 100), 0);
+        const { determ } = computeScoreDeterministico(aula.texto, aula, sobreposicaoMaxima);
+        nota = computeScoreComposto(rubrica.criterios, determ).score;
+      } else {
+        const notaMatch = texto.match(/Nota:\s*([01](?:\.\d+)?)/i);
+        nota = notaMatch ? Math.max(0, Math.min(1, parseFloat(notaMatch[1]))) : null;
+      }
       notasPorAula.push({ numero: i + 1, titulo: aula.titulo, nota });
       resumosMelhoriasPorAula.push(extractResumoMelhorias(texto));
     }
@@ -2205,6 +2343,20 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
     } catch (e) { console.error('Erro ao gravar observacoes_pendentes.json:', e.message); }
     const comObservacoes = observacoesPorAula.filter(o => o.observacoes.length > 0);
     const totalMelhorias = observacoesPorAula.reduce((s, o) => s + (o.melhorias?.length || 0), 0);
+
+    // Aviso de convergência (early stopping): se o último ciclo elevou pouco
+    // o score médio, avisa antes de rodar mais um ciclo de ganho marginal.
+    let avisoConvergencia = null;
+    const historico = readScoreHistorico(sess);
+    const ultimoCiclo = historico.ciclos[historico.ciclos.length - 1];
+    if (ultimoCiclo && ultimoCiclo.ganhoMedio < EPSILON_CONVERGENCIA) {
+      avisoConvergencia = {
+        ciclo: ultimoCiclo.ciclo,
+        ganhoMedio: ultimoCiclo.ganhoMedio,
+        porAula: ultimoCiclo.porAula
+      };
+    }
+
     res.json({
       ok: true,
       aulas: observacoesPorAula,
@@ -2212,6 +2364,7 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
       totalMelhorias,
       modoLegado,
       avisosParser: estruturado?.avisos || [],
+      ...(avisoConvergencia ? { avisoConvergencia } : {}),
       ...avisoResposta
     });
   } catch (err) {
@@ -2258,6 +2411,14 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
   const novasPorAula = [];
   let fullText = '';
   const bnccContext = buildPedagogicalContext(sess);
+
+  // Referências para o gate de score (julgamento pareado) — hoistadas para
+  // antes do loop principal; antes só eram lidas na fase de realinhamento,
+  // mais tarde no fluxo.
+  const ementaScoreRef = truncate(sess.ementa || readMemory(sess, 'ementa'), 1200);
+  const planoEnsinoScoreRef = truncate(sess.planoEnsino || readMemory(sess, 'plano_de_ensino'), 1200);
+  const planoAulaScoreRef = sess.planoAula || readMemory(sess, 'plano_de_aula');
+  const scoresPorAula = [];
 
   // ── Snapshot do ciclo: preserva estado anterior antes de sobrescrever ────────
   const scrDir = courseScrDir(sess);
@@ -2381,6 +2542,66 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       suspeitas.forEach(s => inconsistenciasVerificacao.push(
         `Aula ${i + 1} (${aula.titulo}) — seção "${s.titulo}" do conteúdo: substituída, mas ${Math.round(s.similaridade * 100)}% similar ao texto anterior — possivelmente sem mudança real.`
       ));
+
+      // ── Gate de aceite por score: julgamento pareado original × candidato ──
+      // Só persiste o candidato se ele elevar o score o suficiente (ver
+      // capability quality-scoring). Nunca persiste uma "melhoria" que piora
+      // ou não muda de fato a qualidade da aula.
+      const outrasAulasOriginais = aulas.filter((_, idx) => idx !== i).map(a => a.texto);
+      const maiorSobreposicao = (texto1) => outrasAulasOriginais.reduce(
+        (max, outro) => Math.max(max, textSimilarity(texto1, outro)), 0
+      );
+
+      let aceita = true;
+      let scoreOriginal = null;
+      let scoreCandidato = null;
+      try {
+        const skillScore = skills.scoreAulaSkill({
+          aulaTitulo: aula.titulo,
+          aulaObjetivos: aula.objetivos,
+          textoOriginal: truncate(textoAntigo, 4000),
+          textoCandidato: truncate(textoMesclado, 4000),
+          planoAulaTrecho: truncate(extractLessonBlock(planoAulaScoreRef, i), 800),
+          ementa: ementaScoreRef,
+          planoEnsino: planoEnsinoScoreRef,
+          nivel: sess.config.nivel,
+          publico: sess.config.publico,
+          modalidade: sess.config.modalidade
+        });
+        const completionScore = await openai.chat.completions.create({
+          model: skillScore.model,
+          response_format: skillScore.response_format,
+          messages: [
+            { role: 'system', content: skillScore.system },
+            { role: 'user', content: skillScore.user }
+          ]
+        });
+        addUsage(completionScore.usage, sess);
+        const julgamento = JSON.parse(completionScore.choices[0]?.message?.content || '{}');
+
+        const determOriginal = computeScoreDeterministico(textoAntigo, aula, maiorSobreposicao(textoAntigo)).determ;
+        const determCandidato = computeScoreDeterministico(textoMesclado, aula, maiorSobreposicao(textoMesclado)).determ;
+        scoreOriginal = computeScoreComposto(julgamento.original, determOriginal).score;
+        scoreCandidato = computeScoreComposto(julgamento.candidato, determCandidato).score;
+        aceita = scoreCandidato >= scoreOriginal + EPSILON_ACEITE;
+        console.log(`[melhorias] aula ${i + 1}: score original=${scoreOriginal} candidato=${scoreCandidato} aceita=${aceita}`);
+      } catch (e) {
+        console.error(`[melhorias] aula ${i + 1}: falha no julgamento de score:`, e.message);
+        aceita = false; // não avaliada — mesma política de preservação do conteúdo anterior
+      }
+      scoresPorAula.push({ aula: i + 1, titulo: aula.titulo, scoreOriginal, scoreCandidato, aceita });
+
+      if (!aceita) {
+        const motivoScore = scoreOriginal === null
+          ? 'não foi possível avaliar o score (falha técnica no julgamento) — conteúdo anterior preservado por segurança'
+          : `score não melhorou (antes ${scoreOriginal.toFixed(2)} → depois ${scoreCandidato.toFixed(2)})`;
+        send(res, { type: 'progress', message: `Aula ${i + 1}: melhorias descartadas — ${motivoScore}` });
+        reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n_(Melhorias descartadas pelo gate de score — ${motivoScore}.)_`);
+        metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade: 1, rejeitadaPorScore: true });
+        fullText += textoAntigo || '';
+        novasPorAula.push({ ...aula });
+        continue;
+      }
 
       const similaridade = textSimilarity(textoAntigo || '', textoMesclado);
       metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade });
@@ -2555,9 +2776,32 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           totalAulas: aulas.length,
           totalComObservacoes: observacoes.filter(o => o.observacoes?.length > 0).length,
           similaridadeMedia: Math.round(simMedia * 100) / 100,
-          similaridadePorAula: metricasPorAula
+          similaridadePorAula: metricasPorAula,
+          scoresPorAula
         }, null, 2), 'utf-8');
       } catch (e) { console.error('Erro ao gravar meta.json:', e.message); }
+    }
+
+    // Histórico de scores (gate/convergência) — só considera aulas com score
+    // válido nos dois lados (exclui não avaliadas por falha técnica).
+    const avaliadas = scoresPorAula.filter(s => s.scoreOriginal !== null && s.scoreCandidato !== null);
+    if (avaliadas.length) {
+      const ganhoMedio = Math.round(
+        (avaliadas.reduce((s, a) => s + (a.scoreCandidato - a.scoreOriginal), 0) / avaliadas.length) * 100
+      ) / 100;
+      persistScoreHistorico(sess, {
+        ciclo: Number(numeroCiclo),
+        dataHora: new Date().toISOString(),
+        porAula: scoresPorAula,
+        ganhoMedio
+      });
+      reportSections.push(
+        `## Scores do Ciclo\n\n` +
+        scoresPorAula.map(s => {
+          if (s.scoreOriginal === null) return `- Aula ${s.aula} (${s.titulo}): não avaliada (falha técnica no julgamento)`;
+          return `- Aula ${s.aula} (${s.titulo}): ${s.scoreOriginal.toFixed(2)} → ${s.scoreCandidato.toFixed(2)} — ${s.aceita ? '✅ aceita' : '❌ rejeitada'}`;
+        }).join('\n')
+      );
     }
 
     try {
@@ -2896,3 +3140,11 @@ module.exports.mergeSecoesConteudo = mergeSecoesConteudo;
 module.exports.extrairTermosEsperados = extrairTermosEsperados;
 module.exports.termoAusente = termoAusente;
 module.exports.LIMIAR_SECAO_SUSPEITA = LIMIAR_SECAO_SUSPEITA;
+module.exports.computeScoreDeterministico = computeScoreDeterministico;
+module.exports.computeScoreComposto = computeScoreComposto;
+module.exports.parseRubricaCriterios = parseRubricaCriterios;
+module.exports.PESOS_RUBRICA = PESOS_RUBRICA;
+module.exports.EPSILON_ACEITE = EPSILON_ACEITE;
+module.exports.EPSILON_CONVERGENCIA = EPSILON_CONVERGENCIA;
+module.exports.readScoreHistorico = readScoreHistorico;
+module.exports.persistScoreHistorico = persistScoreHistorico;

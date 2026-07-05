@@ -502,11 +502,18 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `### Deficiências e Melhorias Sugeridas\n` +
       `Liste as principais deficiências identificadas e proponha melhorias concretas e objetivas.\n\n` +
       `### Nota de Qualidade\n` +
-      `Com base na aderência desta aula ao plano de aula, ao plano de ensino, à ementa, e na ` +
-      `gravidade das deficiências identificadas acima, atribua uma nota de qualidade de 0 a 1 ` +
-      `(0 = qualidade baixíssima, 1 = qualidade total). Responda com uma frase curta de ` +
-      `justificativa seguida OBRIGATORIAMENTE de uma linha isolada no formato exato: ` +
-      `"Nota: X.XX" (ex.: "Nota: 0.85").\n\n` +
+      `Avalie separadamente CADA um dos 5 critérios abaixo, em escala de 0 a 10, com uma frase ` +
+      `curta de justificativa por critério. Responda com uma linha isolada por critério, no ` +
+      `formato EXATO "Nome do Critério: N/10" (ex.: "Aderência ao Plano de Aula: 8/10"), ` +
+      `podendo incluir a justificativa na mesma linha ou logo abaixo — a nota SEMPRE no formato ` +
+      `"N/10":\n\n` +
+      `- Aderência ao Plano de Aula: 0-10\n` +
+      `- Aderência ao Plano de Ensino e Ementa: 0-10\n` +
+      `- Adequação a Nível/Público/Modalidade: 0-10\n` +
+      `- Qualidade Didática: 0-10\n` +
+      `- Clareza e Estrutura: 0-10\n\n` +
+      `NÃO calcule nem informe uma nota final única — o sistema calcula a nota consolidada a ` +
+      `partir dos 5 critérios acima.\n\n`+
       `### Resumo de Melhorias Propostas\n` +
       `Liste em bullets curtos, UM POR LINHA, cada melhoria concreta proposta nesta revisão — ` +
       `espelho enxuto da seção de Deficiências e Melhorias Sugeridas, contendo apenas a ação a ` +
@@ -589,6 +596,46 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
       : `Liste em bullets curtos cada melhoria aplicada. Um bullet por melhoria. ` +
         `Não inclua texto explicativo — apenas a melhoria em si. ` +
         `Se uma observação não foi aplicada, inclua um bullet indicando "Não aplicado: <motivo em uma frase>".`)
+});
+
+// Julgamento pareado original × candidato — gate de aceite do ciclo de
+// melhorias (ver capability quality-scoring). Compara as duas versões da
+// aula NO MESMO PROMPT, para que o viés de calibração do LLM seja
+// compartilhado pelos dois julgamentos e o que sobre seja o delta real —
+// comparar dois scores de chamadas separadas (uma antes, uma depois) é
+// exatamente o padrão que se mostrou pouco confiável antes desta mudança.
+// Machine-only: sem prosa, JSON estrito, existe só para alimentar o gate.
+const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandidato, planoAulaTrecho, ementa, planoEnsino, nivel, publico, modalidade }) => ({
+  model: MODEL_ECONOMY,
+  response_format: { type: 'json_object' },
+  system:
+    'Você é um avaliador pedagógico técnico. Compare duas versões do conteúdo de uma ' +
+    'aula (original e candidata) nos mesmos 5 critérios, de forma objetiva e consistente ' +
+    'entre as duas. Responda APENAS com JSON válido, sem texto adicional.',
+  user:
+    `Avalie as duas versões abaixo da Aula "${aulaTitulo}" nos mesmos 5 critérios, cada um ` +
+    `em escala de 0 a 10. Seja consistente: se um trecho é igual nas duas versões, atribua ` +
+    `a mesma nota para esse aspecto nas duas.\n\n` +
+    `## Referências\n` +
+    `Objetivos da aula: ${aulaObjetivos || 'não especificados'}\n` +
+    `Trecho do Plano de Aula: ${planoAulaTrecho || 'não disponível'}\n` +
+    `Ementa (resumo): ${ementa || 'não disponível'}\n` +
+    `Plano de Ensino (resumo): ${planoEnsino || 'não disponível'}\n` +
+    `Nível: ${nivel || 'não informado'} | Público: ${publico || 'não informado'} | ` +
+    `Modalidade: ${modalidade || 'não informada'}\n\n` +
+    `## Versão ORIGINAL\n${textoOriginal}\n\n` +
+    `## Versão CANDIDATA (revisada)\n${textoCandidato}\n\n` +
+    `Critérios (0 a 10 cada):\n` +
+    `1. planoAula — aderência aos objetivos e à sequência do plano de aula\n` +
+    `2. planoEnsinoEmenta — aderência ao escopo do módulo, plano de ensino e ementa\n` +
+    `3. nivelPublicoModalidade — adequação a nível, público e modalidade declarados\n` +
+    `4. qualidadeDidatica — fundamentação, exemplos, erros comuns, síntese\n` +
+    `5. clarezaEstrutura — organização, progressão, ausência de redundância\n\n` +
+    `Responda SOMENTE com um JSON no formato exato:\n` +
+    `{"original": {"planoAula": N, "planoEnsinoEmenta": N, "nivelPublicoModalidade": N, ` +
+    `"qualidadeDidatica": N, "clarezaEstrutura": N}, "candidato": {"planoAula": N, ` +
+    `"planoEnsinoEmenta": N, "nivelPublicoModalidade": N, "qualidadeDidatica": N, ` +
+    `"clarezaEstrutura": N}}`
 });
 
 // Realinha a seção do plano de aula de UMA aula com o conteúdo melhorado no
@@ -857,6 +904,7 @@ module.exports = {
   // Ciclo de revisão e melhoria (Etapas 5★ e 6)
   revisaoQualidadeSkill,
   aplicarMelhoriasSkill,
+  scoreAulaSkill,
   realinharPlanoAulaSkill,
   // Base pedagógica e PPC
   metodologiaSkill,

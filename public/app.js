@@ -613,6 +613,8 @@ document.getElementById('btnUploadMelhorias').addEventListener('click', async ()
 
     const bannerDup = document.getElementById('bannerDuplicata');
     bannerDup.style.display = 'none';
+    const bannerConv = document.getElementById('bannerConvergencia');
+    bannerConv.style.display = 'none';
 
     if (data.aviso === 'possivel_duplicata') {
       const pct = Math.round((data.similaridadeObservacoes || 0) * 100);
@@ -634,6 +636,31 @@ document.getElementById('btnUploadMelhorias').addEventListener('click', async ()
       };
       document.getElementById('btnConfirmarDuplicata').onclick = () => {
         bannerDup.style.display = 'none';
+        aplicarBtn.disabled = false;
+      };
+    } else if (data.avisoConvergencia) {
+      // Early stopping: o ciclo anterior elevou pouco o score médio das aulas
+      // — mesmo padrão visual/fluxo do aviso de duplicata acima.
+      const conv = data.avisoConvergencia;
+      const porAulaTxt = (conv.porAula || [])
+        .filter(a => a.scoreOriginal !== null)
+        .map(a => `Aula ${a.aula}: ${a.scoreOriginal.toFixed(2)}→${a.scoreCandidato.toFixed(2)}`)
+        .join('; ');
+      bannerConv.innerHTML =
+        `⚠️ <strong>O ciclo anterior elevou o score médio em apenas +${conv.ganhoMedio.toFixed(2)}.</strong> ` +
+        (porAulaTxt ? `(${escHtml(porAulaTxt)})<br>` : '<br>') +
+        `O conteúdo parece ter convergido — novas melhorias tendem a ganho marginal. Aplicar mesmo assim?<br>` +
+        `<div style="margin-top:8px;display:flex;gap:8px">` +
+          `<button class="btn btn-ghost btn-sm" id="btnCancelarConvergencia">Cancelar</button>` +
+          `<button class="btn btn-primary btn-sm" id="btnConfirmarConvergencia">Aplicar mesmo assim</button>` +
+        `</div>`;
+      bannerConv.style.display = 'block';
+      document.getElementById('btnCancelarConvergencia').onclick = () => {
+        bannerConv.style.display = 'none';
+        resumoEl.style.display = 'none';
+      };
+      document.getElementById('btnConfirmarConvergencia').onclick = () => {
+        bannerConv.style.display = 'none';
         aplicarBtn.disabled = false;
       };
     } else {
