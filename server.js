@@ -303,6 +303,26 @@ function parseSecoesFixas(texto) {
   }));
 }
 
+// Remove, do corpo de uma seção substituída, uma eventual primeira linha
+// (após linhas em branco iniciais) que apenas ecoa o título normalizado da
+// seção-alvo. O modelo às vezes reafirma o título como abertura do próprio
+// corpo, mesmo instruído a não reproduzi-lo — sem esta limpeza, a reconstrução
+// insere esse eco logo após o cabeçalho real, criando uma segunda ocorrência
+// do mesmo título que a rede de segurança de duplicação (corretamente) rejeita
+// como se fosse uma duplicação real. Só remove eco EXATO da linha inteira —
+// nunca uma menção parcial ou diferente.
+function removerEcoTitulo(corpo, tituloNorm) {
+  const linhas = corpo.split('\n');
+  let i = 0;
+  while (i < linhas.length && linhas[i].trim() === '') i++;
+  if (i < linhas.length && normalizeTitulo(linhas[i]) === tituloNorm) {
+    linhas.splice(0, i + 1);
+    while (linhas.length && linhas[0].trim() === '') linhas.shift();
+    return linhas.join('\n');
+  }
+  return corpo;
+}
+
 // Funde um patch por seção ("<<<SECAO: título>>>...<<<FIM_SECAO>>>", um ou mais
 // blocos) no texto original de uma aula. Localiza cada título por igualdade
 // EXATA (normalizada) contra a lista fixa de `parseSecoesFixas(textoOriginal)`
@@ -365,11 +385,12 @@ function mergeSecoesConteudo(textoOriginal, patchTexto) {
     // Nunca adivinha qual ocorrência era a pretendida — aplica sempre à
     // primeira, a opção menos destrutiva possível.
     const idx = secoesFixas.indexOf(ocorrencias[0]);
-    corpoPorSecao.set(idx, corpo);
+    const corpoSanitizado = removerEcoTitulo(corpo, alvo);
+    corpoPorSecao.set(idx, corpoSanitizado);
     substituidas.push(titulo);
 
     const corpoAntigo = linhasOriginais.slice(ocorrencias[0].inicioCorpo, ocorrencias[0].fimCorpo).join('\n').trim();
-    const similaridade = textSimilarity(corpoAntigo, corpo);
+    const similaridade = textSimilarity(corpoAntigo, corpoSanitizado);
     if (similaridade >= LIMIAR_SECAO_SUSPEITA) suspeitas.push({ titulo, similaridade });
   }
 
@@ -2748,15 +2769,15 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         fontePlano = p.stages?.['plano_de_aula']?.fonte || 'ia';
       } catch { /* sem projeto.json — trata como ia */ }
 
-      // Inclui também aulas cujo CONTEÚDO mudou pouco (similaridade > 0.90) mas
-      // que têm melhorias pendentes — uma melhoria pode se referir só ao plano
-      // (ex.: uma atividade incompatível com a modalidade), sem afetar o texto
-      // da aula o suficiente para passar no limiar de similaridade. Sem isso, o
-      // realinhamento (que agora também corrige melhorias do plano) nunca
-      // chegava a rodar para essas aulas.
-      const alteradas = metricasPorAula.filter(m =>
-        m.similaridade <= 0.90 || (observacoes[m.aulaIndex - 1]?.melhorias?.length > 0)
-      );
+      // Elegibilidade depende exclusivamente de mudança real de conteúdo
+      // detectada (similaridade <= 0.90) — ter melhorias pendentes na lista
+      // NÃO basta. Uma versão anterior incluía aulas sem mudança de conteúdo
+      // só por terem melhorias pendentes (pensando em melhorias só-do-plano),
+      // mas isso fazia o plano ser realinhado mesmo quando toda melhoria de
+      // conteúdo foi rejeitada (truncamento, gate de score, rede de segurança
+      // de duplicação) — sem mudança real de conteúdo, o plano deve permanecer
+      // intocado para aquela aula.
+      const alteradas = metricasPorAula.filter(m => m.similaridade <= 0.90);
       const planoAulaBase = sess.planoAula || readMemory(sess, 'plano_de_aula');
 
       if (fontePlano === 'usuario') {
@@ -3242,6 +3263,7 @@ module.exports.isRespostaMelhoriasCompleta = isRespostaMelhoriasCompleta;
 module.exports.acumulaTokenUsage = acumulaTokenUsage;
 module.exports.mergeSecoesConteudo = mergeSecoesConteudo;
 module.exports.parseSecoesFixas = parseSecoesFixas;
+module.exports.removerEcoTitulo = removerEcoTitulo;
 module.exports.buildDocx = buildDocx;
 module.exports.Packer = Packer;
 module.exports.textSimilarity = textSimilarity;

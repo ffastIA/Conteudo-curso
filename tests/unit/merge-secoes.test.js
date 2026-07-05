@@ -1,5 +1,5 @@
 const skills = require('../../skills');
-const { mergeSecoesConteudo, parseSecoesFixas, isRespostaMelhoriasCompleta } = require('../../server');
+const { mergeSecoesConteudo, parseSecoesFixas, removerEcoTitulo, isRespostaMelhoriasCompleta } = require('../../server');
 
 const AULA_ORIGINAL =
   '# Aula 1: Ferramentas Avançadas do CapCut\n\n' +
@@ -187,4 +187,44 @@ describe('aplicarMelhoriasSkill — prompt de patch seccional', () => {
     expect(s.user).toContain('NÃO reescreva a aula inteira');
     expect(s.user).toContain('copie o título EXATAMENTE');
   });
+});
+
+describe('removerEcoTitulo', () => {
+  test('remove a primeira linha quando ela ecoa exatamente o título', () => {
+    const corpo = 'Fundamentação Técnica\n\nConteúdo real da seção aqui.';
+    expect(removerEcoTitulo(corpo, 'fundamentacao tecnica')).toBe('Conteúdo real da seção aqui.');
+  });
+
+  test('tolera linhas em branco antes do eco', () => {
+    const corpo = '\n\nFundamentação Técnica\n\nConteúdo real.';
+    expect(removerEcoTitulo(corpo, 'fundamentacao tecnica')).toBe('Conteúdo real.');
+  });
+
+  test('não remove nada quando a primeira linha não é o título', () => {
+    const corpo = 'Conteúdo direto, sem eco de título.';
+    expect(removerEcoTitulo(corpo, 'fundamentacao tecnica')).toBe(corpo);
+  });
+
+  test('não remove menção parcial ou diferente do título', () => {
+    const corpo = 'Fundamentação Técnica e Conceitos Avançados\n\nConteúdo real.';
+    expect(removerEcoTitulo(corpo, 'fundamentacao tecnica')).toBe(corpo);
+  });
+});
+
+describe('mergeSecoesConteudo — regressão do falso positivo por eco de título', () => {
+  test('corpo que ecoa o título da seção não é rejeitado pela rede de segurança', () => {
+    const patch = '<<<SECAO: Fundamentação Técnica>>>\nFundamentação Técnica\n\nConteúdo revisado e completo.\n<<<FIM_SECAO>>>\n';
+    const { texto, substituidas, suspeitas } = mergeSecoesConteudo(AULA_ORIGINAL, patch);
+    expect(substituidas).toEqual(['Fundamentação Técnica']);
+    expect(suspeitas.some(s => s.motivo === 'merge_rejeitado_duplicacao')).toBe(false);
+    expect(texto).toContain('Conteúdo revisado e completo.');
+    // O eco não sobrevive como um segundo "Fundamentação Técnica" isolado no resultado.
+    const contagem = (texto.match(/Fundamenta[cç][aã]o T[ée]cnica/gi) || []).length;
+    expect(contagem).toBe(1);
+  });
+
+  // A rejeição de um cabeçalho DIFERENTE introduzido por acidente (não um eco
+  // do próprio título) já é coberta por "rede de segurança pós-merge" acima —
+  // continua passando sem alteração, confirmando que a sanitização de eco não
+  // enfraquece essa proteção.
 });
