@@ -1,5 +1,5 @@
 const skills = require('../../skills');
-const { mergeSecoesConteudo, isRespostaMelhoriasCompleta } = require('../../server');
+const { mergeSecoesConteudo, parseSecoesFixas, isRespostaMelhoriasCompleta } = require('../../server');
 
 const AULA_ORIGINAL =
   '# Aula 1: Ferramentas Avançadas do CapCut\n\n' +
@@ -71,6 +71,89 @@ describe('mergeSecoesConteudo — patch por seção', () => {
     const { texto, novas } = mergeSecoesConteudo('', patch);
     expect(novas).toEqual(['Introdução']);
     expect(texto).toContain('Conteúdo.');
+  });
+});
+
+describe('parseSecoesFixas — detecção de cabeçalho isolado por linha em branco', () => {
+  test('reconhece cabeçalhos isolados por linha em branco', () => {
+    const texto = 'Fundamentação Técnica\n\nCorpo da seção.\n\nExemplos Práticos\n\nOutro corpo.\n';
+    const secoes = parseSecoesFixas(texto);
+    expect(secoes.map(s => s.titulo)).toEqual(['Fundamentação Técnica', 'Exemplos Práticos']);
+  });
+
+  test('ignora frase de corpo que menciona o título de outra seção como substring', () => {
+    const texto =
+      'Fundamentação Técnica\n\n' +
+      'Este texto discute os erros comuns e pontos de atenção que os alunos costumam cometer.\n\n' +
+      'Erros Comuns e Pontos de Atenção\n\n' +
+      'Conteúdo real da seção.\n';
+    const secoes = parseSecoesFixas(texto);
+    expect(secoes.map(s => s.titulo)).toEqual(['Fundamentação Técnica', 'Erros Comuns e Pontos de Atenção']);
+  });
+
+  test('ignora linha curta terminada em pontuação, mesmo isolada por linha em branco', () => {
+    const texto = 'Fundamentação Técnica\n\nUma frase curta.\n\nOutra seção\n\nCorpo.\n';
+    const secoes = parseSecoesFixas(texto);
+    expect(secoes.map(s => s.titulo)).toEqual(['Fundamentação Técnica', 'Outra seção']);
+  });
+});
+
+describe('mergeSecoesConteudo — regressão do bug de duplicação (título mencionado em texto corrido)', () => {
+  const AULA_COM_MENCAO =
+    'Objetivos da Aula\n\nObjetivo especial.\n\n' +
+    'Fundamentação Técnica\n\n' +
+    'Este texto discute os erros comuns e pontos de atenção que os alunos costumam cometer, ' +
+    'mas não é o título da seção.\n\n' +
+    'Erros Comuns e Pontos de Atenção\n\n' +
+    'Conteúdo real da seção de erros comuns.\n';
+
+  test('não confunde menção em texto corrido com o cabeçalho real', () => {
+    const patch = '<<<SECAO: Erros Comuns e Pontos de Atenção>>>\nNovo conteúdo de erros comuns.\n<<<FIM_SECAO>>>\n';
+    const { texto, substituidas } = mergeSecoesConteudo(AULA_COM_MENCAO, patch);
+    expect(substituidas).toEqual(['Erros Comuns e Pontos de Atenção']);
+    expect(texto).toContain('Novo conteúdo de erros comuns.');
+    expect(texto).toContain('Este texto discute os erros comuns e pontos de atenção');
+    expect(texto).not.toContain('Conteúdo real da seção de erros comuns.');
+  });
+});
+
+describe('mergeSecoesConteudo — deduplicação de blocos repetidos no mesmo patch', () => {
+  test('mantém só o último bloco quando o mesmo título aparece duas vezes no patch', () => {
+    const patch =
+      '<<<SECAO: Exemplos Práticos>>>\nPrimeira tentativa (truncada e reenviada).\n<<<FIM_SECAO>>>\n' +
+      '<<<SECAO: Exemplos Práticos>>>\nVersão final da continuação.\n<<<FIM_SECAO>>>\n';
+    const { texto, substituidas, suspeitas } = mergeSecoesConteudo(AULA_ORIGINAL, patch);
+    expect(substituidas).toEqual(['Exemplos Práticos']);
+    expect(texto).toContain('Versão final da continuação.');
+    expect(texto).not.toContain('Primeira tentativa');
+    expect(suspeitas.some(s => s.motivo === 'duplicado_no_patch')).toBe(true);
+  });
+});
+
+describe('mergeSecoesConteudo — título ambíguo no original', () => {
+  const AULA_AMBIGUA =
+    'Objetivo 1\n\nFundamentação Técnica\n\nPrimeira fundamentação (objetivo 1).\n\n' +
+    'Objetivo 2\n\nFundamentação Técnica\n\nSegunda fundamentação (objetivo 2).\n';
+
+  test('aplica só à primeira ocorrência e sinaliza a ambiguidade', () => {
+    const patch = '<<<SECAO: Fundamentação Técnica>>>\nFundamentação revisada.\n<<<FIM_SECAO>>>\n';
+    const { texto, suspeitas } = mergeSecoesConteudo(AULA_AMBIGUA, patch);
+    expect(texto).toContain('Fundamentação revisada.');
+    expect(texto).toContain('Segunda fundamentação (objetivo 2).');
+    expect(texto).not.toContain('Primeira fundamentação (objetivo 1).');
+    expect(suspeitas.some(s => s.motivo === 'titulo_ambiguo' && s.ocorrencias === 2)).toBe(true);
+  });
+});
+
+describe('mergeSecoesConteudo — rede de segurança pós-merge', () => {
+  test('rejeita o merge se o corpo novo introduzir um cabeçalho duplicado por acidente', () => {
+    const corpoComCabecalhoAcidental =
+      'Início do novo exemplo.\n\nFundamentação Técnica\n\nEssa frase parece um cabeçalho por acidente.';
+    const patch = `<<<SECAO: Exemplos Práticos>>>\n${corpoComCabecalhoAcidental}\n<<<FIM_SECAO>>>\n`;
+    const { texto, substituidas, suspeitas } = mergeSecoesConteudo(AULA_ORIGINAL, patch);
+    expect(texto).toBe(AULA_ORIGINAL);
+    expect(substituidas).toEqual([]);
+    expect(suspeitas.some(s => s.motivo === 'merge_rejeitado_duplicacao')).toBe(true);
   });
 });
 

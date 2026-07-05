@@ -272,69 +272,148 @@ function normalizeTitulo(s) {
 // aconteceram no texto — esta checagem não corrige isso, só torna visível.
 const LIMIAR_SECAO_SUSPEITA = 0.85;
 
+// Extrai a lista FIXA de seções do texto original — calculada uma única vez,
+// nunca reexaminada depois de alguma alteração. Cabeçalho válido é uma linha
+// não vazia, isolada por linha em branco antes E depois, curta e sem terminar
+// em pontuação de frase. Essa dupla exigência (isolamento + sem pontuação)
+// evita dois falsos positivos reais: uma frase de corpo que MENCIONA o título
+// de outra seção como substring (ex.: "...os erros comuns e pontos de
+// atenção devem ser evitados...") nunca é isolada por linha em branco nos
+// dois lados, e quase sempre termina em ponto — não vira candidata a
+// cabeçalho. Ver design.md do change corrigir-duplicacao-patch-secional para
+// o histórico do bug que isso corrige (duplicação de seções após múltiplos
+// ciclos de melhorias).
+function parseSecoesFixas(texto) {
+  const linhas = (texto || '').split('\n');
+  const candidatos = [];
+  for (let i = 0; i < linhas.length; i++) {
+    const l = linhas[i].trim();
+    if (!l) continue;
+    const antesVazia = i === 0 || linhas[i - 1].trim() === '';
+    const depoisVazia = i === linhas.length - 1 || linhas[i + 1].trim() === '';
+    const pareceTitulo = l.length < 90 && !/[.,:;!?]$/.test(l) && /^[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ0-9#*]/.test(l);
+    if (antesVazia && depoisVazia && pareceTitulo) candidatos.push({ linha: i, titulo: l });
+  }
+  return candidatos.map((c, idx) => ({
+    titulo: c.titulo,
+    tituloNorm: normalizeTitulo(c.titulo),
+    inicioHeading: c.linha,
+    inicioCorpo: c.linha + 1,
+    fimCorpo: idx + 1 < candidatos.length ? candidatos[idx + 1].linha : linhas.length
+  }));
+}
+
 // Funde um patch por seção ("<<<SECAO: título>>>...<<<FIM_SECAO>>>", um ou mais
-// blocos) no texto original de uma aula. Localiza cada título por comparação
-// tolerante a acento/caixa/pontuação (não por nível de heading Markdown —
-// conteudoSkill não usa um vocabulário fixo de seções, o nível/formato varia
-// entre aulas). Título não encontrado no original vira seção nova, acrescentada
-// ao final. Sem nenhum "<<<SECAO:" no patch, devolve o patch como reescrita
-// integral (fallback — mesmo comportamento anterior a esta mudança).
-// Retorna { texto, substituidas: [], novas: [], suspeitas: [{ titulo, similaridade }] }
-// — suspeitas cobre só seções SUBSTITUÍDAS cujo corpo novo mal difere do antigo
-// (nunca seções novas, que por definição são conteúdo adicional).
+// blocos) no texto original de uma aula. Localiza cada título por igualdade
+// EXATA (normalizada) contra a lista fixa de `parseSecoesFixas(textoOriginal)`
+// — nunca por substring contra uma linha qualquer, e nunca reexaminando um
+// texto que já foi parcialmente reconstruído (as duas causas raiz da
+// duplicação de seções corrigida por este change). A reconstrução do
+// resultado é feita em um único passe sobre essa lista fixa. Título não
+// encontrado na lista vira seção nova, acrescentada ao final. Sem nenhum
+// "<<<SECAO:" no patch, devolve o patch como reescrita integral (fallback —
+// mesmo comportamento anterior a esta mudança).
+// Retorna { texto, substituidas: [], novas: [], suspeitas: [...] } — suspeitas
+// cobre: seção substituída cujo corpo novo mal difere do antigo
+// ({titulo, similaridade}); bloco duplicado no mesmo patch, deduplicado
+// ({titulo, motivo: 'duplicado_no_patch'}); título ambíguo no original
+// ({titulo, motivo: 'titulo_ambiguo', ocorrencias}); ou merge inteiro
+// rejeitado pela rede de segurança pós-merge ({titulo, motivo:
+// 'merge_rejeitado_duplicacao'}), caso em que `texto` volta a ser o original.
 function mergeSecoesConteudo(textoOriginal, patchTexto) {
   const blocoRegex = /<<<SECAO:\s*([^\n>]+?)\s*>>>\n?([\s\S]*?)<<<FIM_SECAO>>>/g;
-  const blocos = [...(patchTexto || '').matchAll(blocoRegex)];
-  if (!blocos.length) {
+  const blocosBrutos = [...(patchTexto || '').matchAll(blocoRegex)];
+  if (!blocosBrutos.length) {
     return { texto: patchTexto, substituidas: [], novas: [], suspeitas: [] };
   }
 
-  const substituidas = [];
-  const novas = [];
   const suspeitas = [];
-  let texto = textoOriginal || '';
 
-  for (const [, tituloBruto, corpoBruto] of blocos) {
+  // Deduplica blocos do mesmo título dentro do MESMO patch — cenário real:
+  // uma continuação por truncamento reescreve do zero uma seção que já
+  // tinha sido fechada na tentativa anterior. Mantém o último (versão mais
+  // completa) e sinaliza o(s) descartado(s).
+  const blocosPorTitulo = new Map();
+  for (const [, tituloBruto, corpoBruto] of blocosBrutos) {
     const titulo = tituloBruto.trim();
     const corpo = corpoBruto.trim();
+    const tituloNorm = normalizeTitulo(titulo);
+    if (blocosPorTitulo.has(tituloNorm)) suspeitas.push({ titulo, motivo: 'duplicado_no_patch' });
+    blocosPorTitulo.set(tituloNorm, { titulo, corpo });
+  }
+  const blocos = [...blocosPorTitulo.values()];
+
+  const linhasOriginais = (textoOriginal || '').split('\n');
+  const secoesFixas = parseSecoesFixas(textoOriginal);
+
+  const substituidas = [];
+  const novas = [];
+  const corpoPorSecao = new Map(); // índice em secoesFixas -> corpo novo
+
+  for (const { titulo, corpo } of blocos) {
     const alvo = normalizeTitulo(titulo);
+    const ocorrencias = secoesFixas.filter(s => s.tituloNorm === alvo);
 
-    // Procura, no texto ATUAL (já pode ter sido alterado por blocos anteriores
-    // deste mesmo patch), a linha cujo conteúdo normalizado contém o título —
-    // independente de heading (#, ##, ####) ou negrito.
-    const linhas = texto.split('\n');
-    let inicio = -1;
-    for (let i = 0; i < linhas.length; i++) {
-      const linhaNorm = normalizeTitulo(linhas[i]);
-      if (linhaNorm && (linhaNorm === alvo || linhaNorm.includes(alvo))) { inicio = i; break; }
-    }
-
-    if (inicio === -1) {
-      // Seção nova: acrescenta ao final.
-      texto = texto.replace(/\s*$/, '') + `\n\n${titulo}\n\n${corpo}\n`;
+    if (!ocorrencias.length) {
       novas.push(titulo);
       continue;
     }
-
-    // Fim da seção: próxima linha "que parece título" — curta, sem terminar
-    // em pontuação de frase (janela já delimitada pelo próprio patch, então
-    // essa heurística tem superfície de erro bem menor que no parser antigo).
-    let fim = linhas.length;
-    for (let j = inicio + 1; j < linhas.length; j++) {
-      const l = linhas[j].trim();
-      if (l && l.length < 90 && !/[.,:;!?]$/.test(l) && /^[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ0-9#*]/.test(l)) {
-        fim = j;
-        break;
-      }
+    if (ocorrencias.length > 1) {
+      suspeitas.push({ titulo, motivo: 'titulo_ambiguo', ocorrencias: ocorrencias.length });
     }
-    const corpoAntigo = linhas.slice(inicio + 1, fim).join('\n').trim();
-    const antes = linhas.slice(0, inicio + 1).join('\n');
-    const depois = linhas.slice(fim).join('\n');
-    texto = antes + '\n\n' + corpo + (depois ? '\n\n' + depois : '\n');
+
+    // Nunca adivinha qual ocorrência era a pretendida — aplica sempre à
+    // primeira, a opção menos destrutiva possível.
+    const idx = secoesFixas.indexOf(ocorrencias[0]);
+    corpoPorSecao.set(idx, corpo);
     substituidas.push(titulo);
 
+    const corpoAntigo = linhasOriginais.slice(ocorrencias[0].inicioCorpo, ocorrencias[0].fimCorpo).join('\n').trim();
     const similaridade = textSimilarity(corpoAntigo, corpo);
     if (similaridade >= LIMIAR_SECAO_SUSPEITA) suspeitas.push({ titulo, similaridade });
+  }
+
+  // Reconstrução em um único passe: preâmbulo (texto antes do primeiro
+  // cabeçalho, preservado sempre, mesmo se nenhum cabeçalho for reconhecido)
+  // + cada seção original (corpo novo se substituída, corpo original
+  // byte a byte caso contrário) + seções novas ao final, na ordem do patch.
+  const fimPreambulo = secoesFixas.length ? secoesFixas[0].inicioHeading : linhasOriginais.length;
+  const linhasResultado = linhasOriginais.slice(0, fimPreambulo);
+  secoesFixas.forEach((secao, idx) => {
+    linhasResultado.push(linhasOriginais[secao.inicioHeading]);
+    if (corpoPorSecao.has(idx)) linhasResultado.push('', corpoPorSecao.get(idx), '');
+    else linhasResultado.push(...linhasOriginais.slice(secao.inicioCorpo, secao.fimCorpo));
+  });
+  for (const { titulo, corpo } of blocos) {
+    if (novas.includes(titulo)) linhasResultado.push('', titulo, '', corpo, '');
+  }
+
+  const textoReconstruido = linhasResultado.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const texto = textoReconstruido ? textoReconstruido + '\n' : (textoOriginal || '');
+
+  // Rede de segurança: nenhum título pode aparecer, no resultado, mais vezes
+  // do que o esperado (ocorrências originais + seções genuinamente novas).
+  // Se acontecer, é sinal de que o próprio corpo novo introduziu, por
+  // acidente, algo que parece um cabeçalho duplicado — rejeita o merge
+  // inteiro em vez de arriscar persistir a duplicação.
+  const contagemEsperada = new Map();
+  secoesFixas.forEach(s => contagemEsperada.set(s.tituloNorm, (contagemEsperada.get(s.tituloNorm) || 0) + 1));
+  novas.forEach(t => {
+    const n = normalizeTitulo(t);
+    contagemEsperada.set(n, (contagemEsperada.get(n) || 0) + 1);
+  });
+  const contagemResultado = new Map();
+  parseSecoesFixas(texto).forEach(s => contagemResultado.set(s.tituloNorm, (contagemResultado.get(s.tituloNorm) || 0) + 1));
+
+  for (const [tituloNorm, count] of contagemResultado) {
+    if (count > (contagemEsperada.get(tituloNorm) || 0)) {
+      return {
+        texto: textoOriginal || '',
+        substituidas: [],
+        novas: [],
+        suspeitas: [{ titulo: tituloNorm, motivo: 'merge_rejeitado_duplicacao' }]
+      };
+    }
   }
 
   return { texto, substituidas, novas, suspeitas };
@@ -2505,8 +2584,10 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
                   content:
                     `Sua resposta anterior foi CORTADA no meio. Continue EXATAMENTE de onde parou ` +
                     `(o final do que você escreveu foi: "${texto.slice(-200)}"). NÃO repita nada do que ` +
-                    `já escreveu; apenas continue e conclua, garantindo a seção "### Melhorias Aplicadas" ` +
-                    `completa ao final.`
+                    `já escreveu — em especial, se algum bloco <<<SECAO:>>>...<<<FIM_SECAO>>> já foi ` +
+                    `FECHADO na parte anterior, não o reescreva; continue apenas o bloco que ficou ` +
+                    `incompleto ou comece os que ainda faltam. Conclua garantindo a seção ` +
+                    `"### Melhorias Aplicadas" completa ao final.`
                 }
               ]
             },
@@ -2539,9 +2620,29 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       // não usou o formato <<<SECAO:>>>, é tratada como reescrita integral —
       // mergeSecoesConteudo devolve o texto sem alteração nesse caso).
       const { texto: textoMesclado, substituidas, novas, suspeitas } = mergeSecoesConteudo(textoAntigo, texto);
-      suspeitas.forEach(s => inconsistenciasVerificacao.push(
-        `Aula ${i + 1} (${aula.titulo}) — seção "${s.titulo}" do conteúdo: substituída, mas ${Math.round(s.similaridade * 100)}% similar ao texto anterior — possivelmente sem mudança real.`
-      ));
+      suspeitas.forEach(s => {
+        if (s.motivo === 'duplicado_no_patch') {
+          inconsistenciasVerificacao.push(`Aula ${i + 1} (${aula.titulo}) — seção "${s.titulo}": a resposta continha mais de um bloco para o mesmo título; apenas o último foi aplicado.`);
+        } else if (s.motivo === 'titulo_ambiguo') {
+          inconsistenciasVerificacao.push(`Aula ${i + 1} (${aula.titulo}) — título "${s.titulo}" aparece ${s.ocorrencias}x no conteúdo original; apenas a primeira ocorrência foi atualizada.`);
+        } else if (s.motivo === 'merge_rejeitado_duplicacao') {
+          inconsistenciasVerificacao.push(`Aula ${i + 1} (${aula.titulo}) — fusão do patch rejeitada: o resultado duplicaria a seção "${s.titulo}". Conteúdo anterior preservado.`);
+        } else {
+          inconsistenciasVerificacao.push(`Aula ${i + 1} (${aula.titulo}) — seção "${s.titulo}" do conteúdo: substituída, mas ${Math.round(s.similaridade * 100)}% similar ao texto anterior — possivelmente sem mudança real.`);
+        }
+      });
+
+      // Merge rejeitado pela rede de segurança (produziria duplicação de
+      // cabeçalho): trata como as demais falhas de guarda — preserva o
+      // conteúdo anterior e segue para a próxima aula, sem pagar o custo do
+      // julgamento de score sobre um candidato que já sabemos ser inválido.
+      if (suspeitas.some(s => s.motivo === 'merge_rejeitado_duplicacao')) {
+        reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n_(Fusão do patch rejeitada — duplicaria uma seção existente; conteúdo anterior preservado; melhorias NÃO aplicadas nesta aula.)_`);
+        metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade: 1, mergeRejeitado: true });
+        fullText += textoAntigo || '';
+        novasPorAula.push({ ...aula });
+        continue;
+      }
 
       // ── Gate de aceite por score: julgamento pareado original × candidato ──
       // Só persiste o candidato se ele elevar o score o suficiente (ver
@@ -3137,6 +3238,10 @@ module.exports.parseMelhoriasEstruturadas = parseMelhoriasEstruturadas;
 module.exports.isRespostaMelhoriasCompleta = isRespostaMelhoriasCompleta;
 module.exports.acumulaTokenUsage = acumulaTokenUsage;
 module.exports.mergeSecoesConteudo = mergeSecoesConteudo;
+module.exports.parseSecoesFixas = parseSecoesFixas;
+module.exports.buildDocx = buildDocx;
+module.exports.Packer = Packer;
+module.exports.textSimilarity = textSimilarity;
 module.exports.extrairTermosEsperados = extrairTermosEsperados;
 module.exports.termoAusente = termoAusente;
 module.exports.LIMIAR_SECAO_SUSPEITA = LIMIAR_SECAO_SUSPEITA;
