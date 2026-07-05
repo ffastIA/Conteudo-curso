@@ -550,6 +550,17 @@ document.getElementById('btnBaixarRevisao').addEventListener('click', () => {
   exportDocx('revisao-qualidade');
 });
 
+// Botão "↺ Gerar Nova Revisão" (card de melhorias aplicadas): rola até o
+// card de revisão de qualidade e dispara uma nova geração, que já reflete o
+// conteúdo pós-melhorias em sess.conteudoPorAula — fecha o ciclo iterativo
+// de revisão sem exigir que o usuário navegue manualmente.
+function gerarNovaRevisao() {
+  // A exibição do card (display:block) acontece de forma síncrona logo no
+  // início do handler de clique — por isso o click() vem antes do scroll.
+  document.getElementById('btnRevisaoQualidade').click();
+  document.getElementById('revisaoQualidadeResultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 document.getElementById('btnUploadMelhorias').addEventListener('click', async () => {
   const fileInput = document.getElementById('arquivoMelhorias');
   const btn = document.getElementById('btnUploadMelhorias');
