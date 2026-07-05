@@ -2636,8 +2636,11 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       // cabeçalho): trata como as demais falhas de guarda — preserva o
       // conteúdo anterior e segue para a próxima aula, sem pagar o custo do
       // julgamento de score sobre um candidato que já sabemos ser inválido.
-      if (suspeitas.some(s => s.motivo === 'merge_rejeitado_duplicacao')) {
-        reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n_(Fusão do patch rejeitada — duplicaria uma seção existente; conteúdo anterior preservado; melhorias NÃO aplicadas nesta aula.)_`);
+      const rejeicaoDuplicacao = suspeitas.find(s => s.motivo === 'merge_rejeitado_duplicacao');
+      if (rejeicaoDuplicacao) {
+        console.log(`[melhorias] aula ${i + 1}: merge rejeitado — duplicaria a seção "${rejeicaoDuplicacao.titulo}"`);
+        send(res, { type: 'progress', message: `Aula ${i + 1}: melhorias descartadas — a fusão duplicaria a seção "${rejeicaoDuplicacao.titulo}" — conteúdo anterior preservado` });
+        reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n_(Fusão do patch rejeitada — duplicaria a seção "${rejeicaoDuplicacao.titulo}"; conteúdo anterior preservado; melhorias NÃO aplicadas nesta aula.)_`);
         metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade: 1, mergeRejeitado: true });
         fullText += textoAntigo || '';
         novasPorAula.push({ ...aula });
