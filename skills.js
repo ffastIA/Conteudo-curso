@@ -515,9 +515,15 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `NÃO calcule nem informe uma nota final única — o sistema calcula a nota consolidada a ` +
       `partir dos 5 critérios acima.\n\n`+
       `### Resumo de Melhorias Propostas\n` +
-      `Liste em bullets curtos, UM POR LINHA, cada melhoria concreta proposta nesta revisão — ` +
-      `espelho enxuto da seção de Deficiências e Melhorias Sugeridas, contendo apenas a ação a ` +
-      `executar, sem prosa nem justificativa. Se não houver melhorias, escreva apenas "Nenhuma".\n\n` +
+      `Liste em bullets curtos, UM POR LINHA, cada melhoria concreta proposta nesta revisão, ` +
+      `contendo apenas a ação a executar, sem prosa nem justificativa. REGRA DE PRIORIZAÇÃO ` +
+      `(nivelamento): derive as melhorias EXCLUSIVAMENTE do(s) 1-2 critério(s) com MENOR nota ` +
+      `na sua Nota de Qualidade acima — critérios que já estão altos não geram melhoria aqui ` +
+      `(elevar um critério baixo vale mais que polir um critério já bom). Prefixe CADA melhoria ` +
+      `com o critério-alvo entre colchetes, no formato exato ` +
+      `"[Nome do Critério] ação a executar" (ex.: "[Adequação a Nível/Público/Modalidade] ` +
+      `Reescrever a definição de edição avançada com um exemplo concreto"). ` +
+      `Se TODOS os 5 critérios estiverem com nota 9 ou 10, escreva apenas "Nenhuma".\n\n` +
       `### Observações do Revisor\n`
   };
 };
@@ -583,7 +589,12 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
     `3. Produza um bloco <<<SECAO:>>> para CADA seção afetada; seções não mencionadas ` +
     `permanecem como estão e NÃO devem ser reproduzidas.\n` +
     `4. Só reescreva a aula INTEIRA, sem usar o formato de blocos acima, se a melhoria ` +
-    `pedida genuinamente exigir refazer o texto todo (isso é exceção, não a regra).` +
+    `pedida genuinamente exigir refazer o texto todo (isso é exceção, não a regra).\n` +
+    `5. Se uma melhoria começar com um critério entre colchetes (ex.: "[Qualidade Didática] ..."), ` +
+    `esse é o critério de qualidade que a melhoria visa elevar: concentre as mudanças ` +
+    `EXCLUSIVAMENTE nas seções do conteúdo relacionadas a esse critério e NÃO toque seções ` +
+    `que já atendem bem os demais critérios. Melhoria sem colchetes segue as regras acima ` +
+    `normalmente.` +
     nivelBlock(config?.nivel) +
     pedagCtxBlock(metodologia, bnccContext) +
     `\n\nAo final da resposta (depois do(s) bloco(s) <<<SECAO:>>>, fora deles), adicione ` +

@@ -582,6 +582,28 @@ function parseRubricaCriterios(texto) {
   return { criterios, rubricaLLM };
 }
 
+// Rótulos legíveis dos critérios da rubrica (chave interna → nome exibido).
+const ROTULOS_CRITERIOS = {
+  planoAula: 'Aderência ao Plano de Aula',
+  planoEnsinoEmenta: 'Aderência ao Plano de Ensino e Ementa',
+  nivelPublicoModalidade: 'Adequação a Nível/Público/Modalidade',
+  qualidadeDidatica: 'Qualidade Didática',
+  clarezaEstrutura: 'Clareza e Estrutura'
+};
+
+// Monta a linha "Foco sugerido desta rodada" a partir dos critérios parseados
+// da rubrica — o critério de menor nota é onde uma melhoria tem mais espaço
+// de ganho (nivelamento) e, pelos pesos do score composto, é a única direção
+// com chance sistemática de passar no gate de aceite (+0.02). Retorna '' se
+// todos os critérios estiverem ≥ 9 (sem foco: sinal de convergência).
+function buildFocoSugerido(criterios) {
+  const entradas = Object.entries(criterios || {}).filter(([, v]) => typeof v === 'number');
+  if (!entradas.length) return '';
+  const [chaveMin, notaMin] = entradas.reduce((min, e) => (e[1] < min[1] ? e : min));
+  if (notaMin >= 9) return '';
+  return `\n\n**Foco sugerido desta rodada:** ${ROTULOS_CRITERIOS[chaveMin] || chaveMin} (${notaMin}/10)\n`;
+}
+
 // ── Diretório "saídas" — memória persistente entre etapas ──────────────────
 const SAIDAS_ROOT = path.join(__dirname, 'saídas');
 
@@ -2301,6 +2323,15 @@ app.get('/api/revisao-qualidade', async (req, res) => {
           .reduce((max, o) => Math.max(max, o.similaridade / 100), 0);
         const { determ } = computeScoreDeterministico(aula.texto, aula, sobreposicaoMaxima);
         nota = computeScoreComposto(rubrica.criterios, determ).score;
+
+        // Âncora mecânica do nivelamento: aponta o critério de menor nota,
+        // independente de o modelo ter respeitado a priorização pedida no
+        // Resumo de Melhorias Propostas.
+        const focoLinha = buildFocoSugerido(rubrica.criterios);
+        if (focoLinha) {
+          send(res, { type: 'token', text: focoLinha });
+          fullText += focoLinha;
+        }
       } else {
         const notaMatch = texto.match(/Nota:\s*([01](?:\.\d+)?)/i);
         nota = notaMatch ? Math.max(0, Math.min(1, parseFloat(notaMatch[1]))) : null;
@@ -3273,6 +3304,7 @@ module.exports.LIMIAR_SECAO_SUSPEITA = LIMIAR_SECAO_SUSPEITA;
 module.exports.computeScoreDeterministico = computeScoreDeterministico;
 module.exports.computeScoreComposto = computeScoreComposto;
 module.exports.parseRubricaCriterios = parseRubricaCriterios;
+module.exports.buildFocoSugerido = buildFocoSugerido;
 module.exports.PESOS_RUBRICA = PESOS_RUBRICA;
 module.exports.EPSILON_ACEITE = EPSILON_ACEITE;
 module.exports.EPSILON_CONVERGENCIA = EPSILON_CONVERGENCIA;

@@ -3,6 +3,8 @@ const {
   computeScoreDeterministico,
   computeScoreComposto,
   parseRubricaCriterios,
+  buildFocoSugerido,
+  parseMelhoriasEstruturadas,
   PESOS_RUBRICA,
   EPSILON_ACEITE,
   EPSILON_CONVERGENCIA
@@ -181,5 +183,65 @@ describe('revisaoQualidadeSkill — nota por rubrica decomposta', () => {
     expect(s.user).toContain('Clareza e Estrutura');
     expect(s.user).toContain('N/10');
     expect(s.user).toContain('NÃO calcule nem informe uma nota final única');
+  });
+
+  test('resumo de melhorias prioriza os critérios de menor nota com tag [Critério]', () => {
+    const s = skills.revisaoQualidadeSkill({
+      config: { nome: 'X' }, aulaIndex: 0, aulaTitulo: 'A', aulaConteudo: 'c'
+    });
+    expect(s.user).toContain('MENOR nota');
+    expect(s.user).toContain('[Nome do Critério]');
+    expect(s.user).toContain('nota 9 ou 10, escreva apenas "Nenhuma"');
+  });
+});
+
+describe('buildFocoSugerido — critério de menor nota para nivelamento', () => {
+  test('aponta o critério mais baixo com rótulo legível e nota', () => {
+    const linha = buildFocoSugerido({
+      planoAula: 8, planoEnsinoEmenta: 9, nivelPublicoModalidade: 7,
+      qualidadeDidatica: 8, clarezaEstrutura: 8
+    });
+    expect(linha).toContain('Foco sugerido desta rodada');
+    expect(linha).toContain('Adequação a Nível/Público/Modalidade');
+    expect(linha).toContain('(7/10)');
+  });
+
+  test('sem foco quando todos os critérios estão >= 9 (convergência)', () => {
+    const linha = buildFocoSugerido({
+      planoAula: 9, planoEnsinoEmenta: 10, nivelPublicoModalidade: 9,
+      qualidadeDidatica: 9, clarezaEstrutura: 9
+    });
+    expect(linha).toBe('');
+  });
+
+  test('entrada vazia ou inválida retorna string vazia sem erro', () => {
+    expect(buildFocoSugerido(null)).toBe('');
+    expect(buildFocoSugerido({})).toBe('');
+  });
+});
+
+describe('aplicarMelhoriasSkill — foco pela tag [Critério]', () => {
+  test('prompt instrui a concentrar o patch no critério-alvo quando a tag está presente', () => {
+    const s = skills.aplicarMelhoriasSkill({
+      config: { nome: 'X' }, aulaIndex: 0, aulaTitulo: 'A', conteudoAtual: 'c',
+      melhorias: ['[Qualidade Didática] Adicionar exercício prático']
+    });
+    expect(s.user).toContain('critério entre colchetes');
+    expect(s.user).toContain('Melhoria sem colchetes');
+  });
+});
+
+describe('tag [Critério] é transparente para o parser estruturado', () => {
+  test('itens com e sem tag são extraídos igualmente', () => {
+    const doc =
+      'Melhorias a serem Aplicadas\n\n' +
+      'Aula 01\n' +
+      '[Qualidade Didática] Adicionar exercício prático sobre keyframes\n' +
+      'Melhoria manual sem tag adicionada pelo revisor\n';
+    const r = parseMelhoriasEstruturadas(doc, 1);
+    expect(r).not.toBeNull();
+    expect(r.porAula[0]).toHaveLength(2);
+    expect(r.porAula[0][0]).toContain('[Qualidade Didática]');
+    expect(r.porAula[0][1]).toBe('Melhoria manual sem tag adicionada pelo revisor');
   });
 });
