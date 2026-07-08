@@ -5,6 +5,7 @@ jest.mock('openai');
 const request = require('supertest');
 const os = require('os');
 const path = require('path');
+const fs = require('fs');
 const app = require('../../server');
 
 const VALID_CONFIG = {
@@ -138,6 +139,90 @@ describe('POST /api/export/ementa', () => {
       .post('/api/export/ementa')
       .send({});
     expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/export/:step — gera .docx válido em disco ──────────────────────
+describe('POST /api/export/plano-ensino', () => {
+  test('com conteúdo gera .docx válido (assinatura ZIP) na pastaProjeto', async () => {
+    const pastaProjeto = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-export-'));
+    const ag = request.agent(app);
+    await ag.post('/api/config').send({ ...VALID_CONFIG, pastaProjeto });
+    await ag.post('/api/importar/confirmar').send({
+      stage: 'plano_de_ensino',
+      texto: 'Conteúdo de teste do plano de ensino, usado para validar a exportação em .docx.'
+    });
+
+    const res = await ag.post('/api/export/plano-ensino').send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, saved: true });
+    expect(typeof res.body.path).toBe('string');
+
+    const buffer = fs.readFileSync(res.body.path);
+    expect(buffer.length).toBeGreaterThan(1000);
+    expect(buffer.slice(0, 2).toString('latin1')).toBe('PK'); // assinatura ZIP (.docx)
+  });
+
+  test('sem conteúdo na sessão retorna 400 com error', async () => {
+    const res = await request(app)
+      .post('/api/export/plano-ensino')
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('error');
+  });
+});
+
+// ── POST /api/carregar-projeto — reconstrói sessão a partir do disco ─────────
+describe('POST /api/carregar-projeto', () => {
+  test('pasta com projeto.json válido e ementa.txt carrega a etapa', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-carregar-'));
+    const scrDir = path.join(baseDir, 'scr');
+    fs.mkdirSync(scrDir, { recursive: true });
+    fs.writeFileSync(path.join(scrDir, 'projeto.json'), JSON.stringify({
+      config: { nome: 'Curso Carregado', pastaProjeto: baseDir },
+      bncc: { ativo: false, publico: null, nivel: null, itens: [] },
+      metodologia: '',
+      aulas: [],
+      inputs: {},
+      estiloVisual: null,
+      stages: {}
+    }), 'utf-8');
+    fs.writeFileSync(path.join(scrDir, 'ementa.txt'), 'Ementa de teste do curso carregado.', 'utf-8');
+
+    const res = await request(app)
+      .post('/api/carregar-projeto')
+      .send({ pasta: baseDir });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.etapasCarregadas).toContain('ementa');
+    expect(res.body.config).toMatchObject({ nome: 'Curso Carregado' });
+  });
+
+  test('pasta inexistente retorna 404', async () => {
+    const pastaInexistente = path.join(os.tmpdir(), 'gc-carregar-inexistente-' + Date.now());
+    const res = await request(app)
+      .post('/api/carregar-projeto')
+      .send({ pasta: pastaInexistente });
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty('error');
+  });
+
+  test('projeto.json corrompido retorna 200 com aviso de corrupção', async () => {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-carregar-corrompido-'));
+    const scrDir = path.join(baseDir, 'scr');
+    fs.mkdirSync(scrDir, { recursive: true });
+    fs.writeFileSync(path.join(scrDir, 'projeto.json'), '{{{ isso não é JSON válido', 'utf-8');
+
+    const res = await request(app)
+      .post('/api/carregar-projeto')
+      .send({ pasta: baseDir });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body).toHaveProperty('aviso');
+    expect(res.body.aviso).toMatch(/corrompido/i);
   });
 });
 

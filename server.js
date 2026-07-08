@@ -51,7 +51,32 @@ function makeAbortSignal(ms) {
   return ac.signal;
 }
 
-async function tentarPesquisaWeb(skill, timeoutMs) {
+// Rastreia desconexão prematura do cliente numa rota SSE e expõe um signal
+// combinável com timeouts. 'close' com writableEnded=false = cliente sumiu.
+function clientAbort(res) {
+  const ac = new AbortController();
+  res.on('close', () => {
+    if (!res.writableEnded) ac.abort();
+  });
+  return {
+    signal: ac.signal,
+    get disconnected() { return ac.signal.aborted; }
+  };
+}
+
+// Combina o signal de desconexão com um timeout (AbortSignal.any existe no
+// Node 20+; fallback manual para Node 18).
+function combineSignals(a, b) {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([a, b]);
+  const ac = new AbortController();
+  const onAbort = () => ac.abort();
+  a.addEventListener('abort', onAbort, { once: true });
+  b.addEventListener('abort', onAbort, { once: true });
+  return ac.signal;
+}
+
+async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null) {
+  const timeoutSignal = makeAbortSignal(timeoutMs);
   return openai.chat.completions.create(
     {
       model: skill.model,
@@ -62,7 +87,7 @@ async function tentarPesquisaWeb(skill, timeoutMs) {
         { role: 'user', content: skill.user }
       ]
     },
-    { signal: makeAbortSignal(timeoutMs) }
+    { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
   );
 }
 
@@ -817,6 +842,14 @@ function send(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
+// Erro de pré-condição em rota SSE: EventSource não lê corpo de resposta
+// não-200, então a recusa precisa chegar como evento SSE.
+function sseError(res, message) {
+  sseHeaders(res);
+  send(res, { type: 'error', message });
+  res.end();
+}
+
 // ── Contador global de tokens utilizados (todas as etapas/sessões) ─────────
 // "images" conta chamadas à API de imagens (Etapa 8) à parte — essa API não
 // expõe prompt/completion tokens no mesmo formato da chat completions, então
@@ -927,6 +960,7 @@ app.post('/api/bncc/pular', (req, res) => {
 // ── GET /api/metodologia ─────────────────────────────────────────────────────
 app.get('/api/metodologia', async (req, res) => {
   const sess = getSession(req, res);
+  const client = clientAbort(res);
   const { nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade } = sess.config;
   try {
     const skill = skills.metodologiaSkill({ nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade });
@@ -936,11 +970,15 @@ app.get('/api/metodologia', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    });
+    }, { signal: client.signal });
     addUsage(completion.usage, sess);
     sess.metodologia = completion.choices[0]?.message?.content?.trim() || '';
     res.json({ ok: true, metodologia: getMetodologia(sess) });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração da metodologia — interrompendo /api/metodologia');
+      return;
+    }
     console.error('Erro ao gerar metodologia:', err.message);
     res.status(500).json({ error: err.message });
   }
@@ -988,9 +1026,10 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
 app.get('/api/qualidade', async (req, res) => {
   const sess = getSession(req, res);
   if (!sess.conteudo && !sess.conteudoPorAula?.length) {
-    return res.status(400).json({ error: 'Conclua ao menos a Etapa 5 antes de gerar o relatório de qualidade.' });
+    return sseError(res, 'Conclua ao menos a Etapa 5 antes de gerar o relatório de qualidade.');
   }
   sseHeaders(res);
+  const client = clientAbort(res);
   send(res, { type: 'progress', message: 'Iniciando análise pedagógica...' });
 
   const resumosAulas = (sess.conteudoPorAula || [])
@@ -1017,7 +1056,7 @@ app.get('/api/qualidade', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    });
+    }, { signal: client.signal });
 
     let fullText = '';
     for await (const chunk of stream) {
@@ -1028,12 +1067,17 @@ app.get('/api/qualidade', async (req, res) => {
       }
       if (chunk.usage) addUsage(chunk.usage, sess);
     }
+    if (client.disconnected) return;
 
     sess.relatorioQualidade = fullText;
     await persistStage(sess, 'relatorio_qualidade', 'Relatório Técnico-Pedagógico', fullText);
     send(res, { type: 'progress', message: 'Relatório concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração do relatório de qualidade — interrompendo /api/qualidade');
+      return;
+    }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar relatório de qualidade' });
   } finally {
@@ -1045,36 +1089,41 @@ app.get('/api/qualidade', async (req, res) => {
 app.get('/api/ppc', async (req, res) => {
   const sess = getSession(req, res);
   if (!sess.conteudo) {
-    return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar o PPC.' });
+    return sseError(res, 'Conclua a Etapa 5 antes de gerar o PPC.');
   }
   sseHeaders(res);
+  const client = clientAbort(res);
   send(res, { type: 'progress', message: 'Gerando PPC — Perfil do Egresso...' });
 
   const pedagCtx = buildPedagogicalContext(sess);
 
   try {
     const perfilEgressoSkill = skills.perfilEgressoSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino });
-    const perfilEgressoResp = await openai.chat.completions.create({ model: perfilEgressoSkill.model, messages: [{ role: 'system', content: perfilEgressoSkill.system }, { role: 'user', content: perfilEgressoSkill.user }] });
+    const perfilEgressoResp = await openai.chat.completions.create({ model: perfilEgressoSkill.model, messages: [{ role: 'system', content: perfilEgressoSkill.system }, { role: 'user', content: perfilEgressoSkill.user }] }, { signal: client.signal });
     addUsage(perfilEgressoResp.usage, sess);
     const perfilEgresso = perfilEgressoResp.choices[0]?.message?.content?.trim() || '';
+    if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Competências e Habilidades...' });
 
     const competenciasSkill = skills.competenciasSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino, bncc: sess.bncc });
-    const competenciasResp = await openai.chat.completions.create({ model: competenciasSkill.model, messages: [{ role: 'system', content: competenciasSkill.system }, { role: 'user', content: competenciasSkill.user }] });
+    const competenciasResp = await openai.chat.completions.create({ model: competenciasSkill.model, messages: [{ role: 'system', content: competenciasSkill.system }, { role: 'user', content: competenciasSkill.user }] }, { signal: client.signal });
     addUsage(competenciasResp.usage, sess);
     const competencias = competenciasResp.choices[0]?.message?.content?.trim() || '';
+    if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Perfil Docente...' });
 
     const perfilDocenteSkill = skills.perfilDocenteSkill({ config: sess.config, ementa: sess.ementa });
-    const perfilDocenteResp = await openai.chat.completions.create({ model: perfilDocenteSkill.model, messages: [{ role: 'system', content: perfilDocenteSkill.system }, { role: 'user', content: perfilDocenteSkill.user }] });
+    const perfilDocenteResp = await openai.chat.completions.create({ model: perfilDocenteSkill.model, messages: [{ role: 'system', content: perfilDocenteSkill.system }, { role: 'user', content: perfilDocenteSkill.user }] }, { signal: client.signal });
     addUsage(perfilDocenteResp.usage, sess);
     const perfilDocente = perfilDocenteResp.choices[0]?.message?.content?.trim() || '';
+    if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Infraestrutura...' });
 
     const infraestruturaSkill = skills.infraestruturaSkill({ config: sess.config, conteudo: truncate(sess.conteudo, 3000) });
-    const infraestruturaResp = await openai.chat.completions.create({ model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] });
+    const infraestruturaResp = await openai.chat.completions.create({ model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] }, { signal: client.signal });
     addUsage(infraestruturaResp.usage, sess);
     const infraestrutura = infraestruturaResp.choices[0]?.message?.content?.trim() || '';
+    if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Montando documento PPC...' });
 
     const assemblySkill = skills.ppcAssemblySkill({
@@ -1087,7 +1136,7 @@ app.get('/api/ppc', async (req, res) => {
     const stream = await openai.chat.completions.create({
       model: assemblySkill.model, stream: true, stream_options: { include_usage: true },
       messages: [{ role: 'system', content: assemblySkill.system }, { role: 'user', content: assemblySkill.user }]
-    });
+    }, { signal: client.signal });
 
     let fullText = '';
     for await (const chunk of stream) {
@@ -1095,11 +1144,16 @@ app.get('/api/ppc', async (req, res) => {
       if (text) { fullText += text; send(res, { type: 'token', text }); }
       if (chunk.usage) addUsage(chunk.usage, sess);
     }
+    if (client.disconnected) return;
 
     await persistStage(sess, 'ppc_completo', 'Projeto Pedagógico de Curso', fullText);
     send(res, { type: 'progress', message: 'PPC concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração do PPC — interrompendo /api/ppc');
+      return;
+    }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar PPC' });
   } finally {
@@ -1156,18 +1210,21 @@ app.get('/api/slides', async (req, res) => {
   const sess = getSession(req, res);
   restoreConteudoPorAula(sess);
   if (!sess.conteudo && !sess.conteudoPorAula?.length) {
-    return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar os slides.' });
+    return sseError(res, 'Conclua a Etapa 5 antes de gerar os slides.');
   }
   if (!sess.estiloVisual) {
-    return res.status(400).json({ error: 'Escolha um estilo visual antes de gerar os slides.' });
+    return sseError(res, 'Escolha um estilo visual antes de gerar os slides.');
   }
   sseHeaders(res);
+  const client = clientAbort(res);
 
   try {
     const aulas = sess.conteudoPorAula;
     const arquivos = [];
 
     for (let i = 0; i < aulas.length; i++) {
+      if (client.disconnected) break;
+
       const aula = aulas[i];
       const numero = String(i + 1).padStart(2, '0');
       send(res, {
@@ -1183,7 +1240,7 @@ app.get('/api/slides', async (req, res) => {
           { role: 'system', content: skill.system },
           { role: 'user', content: skill.user }
         ]
-      });
+      }, { signal: client.signal });
       addUsage(completion.usage, sess);
 
       let slidePlan = { slides: [] };
@@ -1197,6 +1254,7 @@ app.get('/api/slides', async (req, res) => {
       // correspondente cai no layout sem imagem (buildPptx).
       const slidesComImagem = (slidePlan.slides || []).filter(s => s?.imagem?.promptCena);
       for (let j = 0; j < slidesComImagem.length; j++) {
+        if (client.disconnected) break;
         const slide = slidesComImagem[j];
         send(res, {
           type: 'progress',
@@ -1204,9 +1262,10 @@ app.get('/api/slides', async (req, res) => {
         });
         try {
           if (j > 0) await new Promise(r => setTimeout(r, 2000));
-          slide._imageData = await gerarImagemSlide(slide.imagem.promptCena, sess.estiloVisual.housePrompt);
+          slide._imageData = await gerarImagemSlide(slide.imagem.promptCena, sess.estiloVisual.housePrompt, client);
           if (slide._imageData) tokenUsage.images += 1;
         } catch (imgErr) {
+          if (client.disconnected) throw imgErr;
           console.error(`[slides] Falha ao gerar imagem da aula ${i + 1}:`, imgErr.message);
           send(res, {
             type: 'progress',
@@ -1214,6 +1273,7 @@ app.get('/api/slides', async (req, res) => {
           });
         }
       }
+      if (client.disconnected) break;
 
       const baseName = `aula${numero}_slides`;
       const fullPath = await persistPptxStage(sess, baseName, aula, slidePlan);
@@ -1221,10 +1281,15 @@ app.get('/api/slides', async (req, res) => {
 
       if (i < aulas.length - 1) await new Promise(r => setTimeout(r, 4000));
     }
+    if (client.disconnected) return;
 
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', arquivos });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração dos slides — interrompendo /api/slides');
+      return;
+    }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar slides' });
   } finally {
@@ -1293,6 +1358,7 @@ app.post('/api/config', async (req, res) => {
 app.get('/api/search', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
+  const client = clientAbort(res);
   const { topicos = '', limite = 3 } = req.query;
   sess.inputs.topicos = topicos;
   sess.inputs.limite = Number(limite);
@@ -1312,13 +1378,13 @@ app.get('/api/search', async (req, res) => {
 
     // Tentativa 1 com timeout completo
     try {
-      completion = await tentarPesquisaWeb(skill, SEARCH_TIMEOUT_MS);
+      completion = await tentarPesquisaWeb(skill, SEARCH_TIMEOUT_MS, client);
     } catch (err1) {
       if (!isRetriable(err1)) throw err1;
       // Retry com timeout reduzido
       send(res, { type: 'progress', message: 'Reconectando...' });
       try {
-        completion = await tentarPesquisaWeb(skill, SEARCH_RETRY_TIMEOUT_MS);
+        completion = await tentarPesquisaWeb(skill, SEARCH_RETRY_TIMEOUT_MS, client);
       } catch (err2) {
         if (!isRetriable(err2)) throw err2;
         // Fallback sem web search
@@ -1332,9 +1398,10 @@ app.get('/api/search', async (req, res) => {
             { role: 'system', content: fbSkill.system },
             { role: 'user', content: fbSkill.user }
           ]
-        });
+        }, { signal: client.signal });
       }
     }
+    if (client.disconnected) return;
 
     addUsage(completion.usage, sess);
 
@@ -1368,9 +1435,11 @@ app.get('/api/search', async (req, res) => {
     // Simula streaming progressivo do texto para manter a UX em tempo real
     const CHUNK_SIZE = 24;
     for (let i = 0; i < fullText.length; i += CHUNK_SIZE) {
+      if (client.disconnected) break;
       send(res, { type: 'token', text: fullText.slice(i, i + CHUNK_SIZE) });
       await new Promise(r => setTimeout(r, 15));
     }
+    if (client.disconnected) return;
 
     send(res, { type: 'progress', message: 'Sintetizando...' });
     sess.pesquisa = fullText;
@@ -1378,6 +1447,10 @@ app.get('/api/search', async (req, res) => {
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a pesquisa web — interrompendo /api/search');
+      return;
+    }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro na pesquisa' });
   } finally {
@@ -1389,6 +1462,7 @@ app.get('/api/search', async (req, res) => {
 app.get('/api/plano-ensino', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
+  const client = clientAbort(res);
   const { ajustes = '' } = req.query;
   sess.inputs.ajustesEnsino = ajustes;
   const { nome, publico, carga, duracao, nivel, objetivos, modalidade } = sess.config;
@@ -1414,7 +1488,7 @@ app.get('/api/plano-ensino', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    });
+    }, { signal: client.signal });
 
     let fullText = '';
     let firstChunk = true;
@@ -1431,12 +1505,17 @@ app.get('/api/plano-ensino', async (req, res) => {
       }
       if (chunk.usage) addUsage(chunk.usage, sess);
     }
+    if (client.disconnected) return;
 
     sess.planoEnsino = fullText;
     await persistStage(sess, 'plano_de_ensino', 'Plano de Ensino', fullText);
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração do plano de ensino — interrompendo /api/plano-ensino');
+      return;
+    }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar plano de ensino' });
   } finally {
@@ -1448,6 +1527,7 @@ app.get('/api/plano-ensino', async (req, res) => {
 app.get('/api/plano-aula', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
+  const client = clientAbort(res);
   const { observacoes = '' } = req.query;
   sess.inputs.observacoesAula = observacoes;
   const { nome, duracao, nivel, publico, modalidade } = sess.config;
@@ -1469,6 +1549,8 @@ app.get('/api/plano-aula', async (req, res) => {
     let fullText = '';
 
     for (let i = 0; i < aulas.length; i++) {
+      if (client.disconnected) break;
+
       const aula = aulas[i];
       const titulo = aula.titulo || `Aula ${i + 1}`;
 
@@ -1501,7 +1583,7 @@ app.get('/api/plano-aula', async (req, res) => {
           { role: 'system', content: skill.system },
           { role: 'user', content: skill.user }
         ]
-      });
+      }, { signal: client.signal });
 
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;
@@ -1512,12 +1594,17 @@ app.get('/api/plano-aula', async (req, res) => {
         if (chunk.usage) addUsage(chunk.usage, sess);
       }
     }
+    if (client.disconnected) return;
 
     sess.planoAula = fullText;
     await persistStage(sess, 'plano_de_aula', 'Plano de Aula', fullText);
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração do plano de aula — interrompendo /api/plano-aula');
+      return;
+    }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar plano de aula' });
   } finally {
@@ -1579,8 +1666,9 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
 // Executa uma chamada em streaming para uma skill de conteúdo e devolve o texto
 // completo gerado, repassando os tokens via SSE para o cliente.
 // Se a skill usa web_search_options, simula streaming por chunks (sem SSE nativo).
-async function streamSkillToClient(res, skill, sess, meta = {}) {
+async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null) {
   if (skill.web_search_options) {
+    const timeoutSignal = makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS);
     const completion = await openai.chat.completions.create(
       {
         model: skill.model,
@@ -1591,7 +1679,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}) {
           { role: 'user', content: skill.user }
         ]
       },
-      { signal: makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS) }
+      { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
     );
     addUsage(completion.usage, sess);
     const finishReason = completion.choices[0]?.finish_reason;
@@ -1604,6 +1692,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}) {
     }
     const CHUNK = 60;
     for (let c = 0; c < text.length; c += CHUNK) {
+      if (clientCtx?.disconnected) break;
       send(res, { type: 'token', text: text.slice(c, c + CHUNK) });
       await new Promise(r => setTimeout(r, 8));
     }
@@ -1613,6 +1702,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}) {
   // STALL_TIMEOUT_MS, sem limitar a duração total de uma geração legítima
   // que continua recebendo dados normalmente.
   const controller = new AbortController();
+  if (clientCtx) clientCtx.signal.addEventListener('abort', () => controller.abort(), { once: true });
   let stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
   const resetStallTimer = () => {
     clearTimeout(stallTimer);
@@ -1661,6 +1751,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}) {
 app.get('/api/conteudo', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
+  const client = clientAbort(res);
   const { nome, nivel, publico, duracao, modalidade } = sess.config;
 
   send(res, { type: 'progress', message: 'Analisando os objetivos das aulas do curso...' });
@@ -1682,11 +1773,14 @@ app.get('/api/conteudo', async (req, res) => {
     const conteudoPorAula = []; // { titulo, modulo, objetivos, texto }
 
     for (let i = 0; i < aulas.length; i++) {
+      if (client.disconnected) break;
+
       const aula = aulas[i];
       const titulo = aula.titulo || `Aula ${i + 1}`;
       const numero = String(i + 1).padStart(2, '0');
 
       if (i > 0) await new Promise(r => setTimeout(r, 4000));
+      if (client.disconnected) break;
 
       send(res, {
         type: 'progress',
@@ -1711,8 +1805,12 @@ app.get('/api/conteudo', async (req, res) => {
 
       let texto;
       try {
-        texto = await streamSkillToClient(res, baseSkill, sess);
+        texto = await streamSkillToClient(res, baseSkill, sess, {}, client);
       } catch (err) {
+        if (client.disconnected) {
+          console.warn(`[sse] cliente desconectou durante a geração da aula ${i + 1} — interrompendo /api/conteudo`);
+          return;
+        }
         if (err instanceof OpenAI.APIUserAbortError) {
           send(res, { type: 'error', message: `Tempo limite excedido ao gerar a aula ${i + 1}: ${titulo}. Tente novamente.` });
           err.alreadyReported = true;
@@ -2235,7 +2333,8 @@ function buildPptx(config, aula, slidePlan, geradoEm) {
 // (housePrompt) e as restrições técnicas de layout sempre aplicadas
 // (IMAGE_LAYOUT_CONSTRAINTS). Retorna null em caso de falha — o slide cai no
 // layout sem imagem em buildPptx, sem interromper a geração da aula/curso.
-async function gerarImagemSlide(promptCena, housePrompt) {
+async function gerarImagemSlide(promptCena, housePrompt, clientCtx = null) {
+  const timeoutSignal = makeAbortSignal(90000);
   const response = await openai.images.generate(
     {
       model: skills.MODEL_IMAGE,
@@ -2244,7 +2343,7 @@ async function gerarImagemSlide(promptCena, housePrompt) {
       quality: skills.IMAGE_QUALITY,
       n: 1
     },
-    { signal: makeAbortSignal(90000) }
+    { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
   );
   const b64 = response.data[0]?.b64_json;
   return b64 ? `image/png;base64,${b64}` : null;
@@ -2257,9 +2356,10 @@ app.get('/api/revisao-qualidade', async (req, res) => {
   const sess = getSession(req, res);
   restoreConteudoPorAula(sess);
   if (!sess.conteudoPorAula?.length) {
-    return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar a revisão de qualidade.' });
+    return sseError(res, 'Conclua a Etapa 5 antes de gerar a revisão de qualidade.');
   }
   sseHeaders(res);
+  const client = clientAbort(res);
   send(res, { type: 'progress', message: 'Calculando sobreposições entre aulas (Jaccard)...' });
 
   const aulas = sess.conteudoPorAula;
@@ -2285,6 +2385,8 @@ app.get('/api/revisao-qualidade', async (req, res) => {
 
   try {
     for (let i = 0; i < aulas.length; i++) {
+      if (client.disconnected) break;
+
       const aula = aulas[i];
       send(res, {
         type: 'progress',
@@ -2309,7 +2411,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
         bnccContext
       });
 
-      const texto = await streamSkillToClient(res, skill, sess);
+      const texto = await streamSkillToClient(res, skill, sess, {}, client);
       fullText += texto;
 
       // Nota calculada pela fórmula de score (quality-scoring): rubrica de 5
@@ -2339,6 +2441,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
       notasPorAula.push({ numero: i + 1, titulo: aula.titulo, nota });
       resumosMelhoriasPorAula.push(extractResumoMelhorias(texto));
     }
+    if (client.disconnected) return;
 
     notasPorAula.sort((a, b) => a.numero - b.numero);
     let resumoNotas = '\n\n<!--PAGEBREAK-->\n\n# Notas de Qualidade por Aula\n\n';
@@ -2369,6 +2472,10 @@ app.get('/api/revisao-qualidade', async (req, res) => {
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a revisão de qualidade — interrompendo /api/revisao-qualidade');
+      return;
+    }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar revisão de qualidade' });
   } finally {
@@ -2530,10 +2637,11 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
 
   restoreConteudoPorAula(sess);
   if (!sess.conteudoPorAula?.length) {
-    return res.status(400).json({ error: 'Sem conteúdo para melhorar. Conclua a Etapa 5.' });
+    return sseError(res, 'Sem conteúdo para melhorar. Conclua a Etapa 5.');
   }
 
   sseHeaders(res);
+  const client = clientAbort(res);
   send(res, { type: 'progress', message: 'Iniciando aplicação de melhorias...' });
 
   const observacoes = sess.observacoesMelhorias ||
@@ -2580,10 +2688,13 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
 
   try {
     for (let i = 0; i < aulas.length; i++) {
+      if (client.disconnected) break;
+
       const aula = aulas[i];
       const obs = observacoes[i]?.observacoes || '';
 
       if (i > 0) await new Promise(r => setTimeout(r, 4000));
+      if (client.disconnected) break;
 
       send(res, {
         type: 'progress',
@@ -2608,7 +2719,16 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
 
       const textoAntigo = aula.texto;
       const meta = {};
-      let texto = await streamSkillToClient(res, skill, sess, meta);
+      let texto;
+      try {
+        texto = await streamSkillToClient(res, skill, sess, meta, client);
+      } catch (err) {
+        if (client.disconnected) {
+          console.warn(`[sse] cliente desconectou durante melhorias da aula ${i + 1} — interrompendo /api/aplicar-melhorias/confirmar`);
+          return;
+        }
+        throw err;
+      }
       console.log(`[melhorias] aula ${i + 1}: finish=${meta.finishReason || '?'} tokens=${meta.completionTokens ?? '?'}`);
 
       // ── Guarda de integridade: resposta cortada por limite de tokens ───────
@@ -2643,7 +2763,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
                 }
               ]
             },
-            { signal: makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS) }
+            { signal: combineSignals(client.signal, makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS)) }
           );
           addUsage(cont.usage, sess);
           const contTexto = cont.choices[0]?.message?.content?.trim() || '';
@@ -3283,6 +3403,10 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports.slugify = slugify;
+module.exports.clientAbort = clientAbort;
+module.exports.combineSignals = combineSignals;
+module.exports.streamSkillToClient = streamSkillToClient;
 module.exports.detectStage = detectStage;
 module.exports.buildPedagogicalContext = buildPedagogicalContext;
 module.exports.replaceLessonBlock = replaceLessonBlock;
