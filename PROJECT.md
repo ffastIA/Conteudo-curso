@@ -62,7 +62,7 @@ Sessão:    cookie HttpOnly (sid) → objeto in-memory `sessions[sid]`
 ### 3.3 Mapa de arquivos
 
 ```
-server.js          — Express + 17 endpoints REST/SSE + DOCX builder + persistência
+server.js          — Express + 24 endpoints REST/SSE + DOCX builder + persistência
 skills.js          — 16 skills de prompt ({model, system, user})
 bncc-data.js       — 400+ competências/habilidades BNCC (EF1, EF2, EM)
 mcp-server.js      — MCP server para Claude Desktop (7 tools, JSON-RPC via stdin/stdout)
