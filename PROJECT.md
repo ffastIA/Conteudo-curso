@@ -65,7 +65,6 @@ Sessão:    cookie HttpOnly (sid) → objeto in-memory `sessions[sid]`
 server.js          — Express + 24 endpoints REST/SSE + DOCX builder + persistência
 skills.js          — 16 skills de prompt ({model, system, user})
 bncc-data.js       — 400+ competências/habilidades BNCC (EF1, EF2, EM)
-mcp-server.js      — MCP server para Claude Desktop (7 tools, JSON-RPC via stdin/stdout)
 public/index.html  — Frontend HTML (Etapas 0–7, formulários, log panels)
 public/app.js      — Frontend JS (SSE streaming, BNCC UI, navegação entre etapas)
 public/style.css   — Estilos (card-based, responsivo)
