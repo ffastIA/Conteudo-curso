@@ -119,6 +119,7 @@ function getSession(req, res) {
       // Ciclo de revisão e melhoria (Etapas 5★ e 6)
       revisaoQualidade: '',
       observacoesMelhorias: null,
+      modoLegadoMelhorias: false,
       conteudoFinal: '',
       // Agente de qualidade e PPC
       relatorioQualidade: '',
@@ -224,7 +225,15 @@ function extractResumoMelhorias(textoAula) {
 // estruturada): âncora = ÚLTIMA linha que inicia com o título (tolerante a
 // acentos/caixa/#); blocos por linha "Aula NN" mapeados PELO NÚMERO; cada
 // linha não vazia = 1 melhoria (mammoth descarta marcadores de lista do Word
-// — prefixos são removidos, nunca exigidos); "Nenhuma" pula a aula.
+// — prefixos são removidos, nunca exigidos); "Nenhuma" pula a aula. O
+// marcador `[user]` sinaliza itens forçados (ver change marcador-user-forca-
+// aplicacao-e-filtro-aulas-listadas), aceito em duas formas — sozinho numa
+// linha (força todos os itens do bloco a partir dali) ou como prefixo de um
+// item (`[user] texto`, mesmo padrão já usado pela tag `[Critério]` deste
+// projeto — força só aquele item, com o prefixo removido do texto antes de
+// seguir para o modelo). Essas melhorias entram na mesma lista de itens, mas
+// a aula é sinalizada em `forcadoPorAula` para que o gate de score seja
+// ignorado por completo.
 function parseMelhoriasEstruturadas(texto, totalAulas) {
   if (!texto) return null;
   const normLine = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -237,8 +246,10 @@ function parseMelhoriasEstruturadas(texto, totalAulas) {
   if (anchor === -1) return null;
 
   const porAula = Array.from({ length: totalAulas }, () => []);
+  const forcadoPorAula = Array.from({ length: totalAulas }, () => false);
   const avisos = [];
   let atual = -1;
+  let apósMarcador = false;
 
   for (let i = anchor + 1; i < lines.length; i++) {
     const bruta = lines[i].trim();
@@ -252,19 +263,35 @@ function parseMelhoriasEstruturadas(texto, totalAulas) {
         atual = -1;
         avisos.push(`Bloco "Aula ${num}" ignorado — o curso tem ${totalAulas} aula(s).`);
       }
+      apósMarcador = false;
       continue;
     }
     if (atual === -1) continue;
+    if (normLine(bruta).replace(/\.$/, '') === '[user]') {
+      apósMarcador = true;
+      continue;
+    }
     const item = bruta.replace(/^(?:[-*•]|\d+[.)])\s*/, '').trim();
     if (!item) continue;
     if (/^nenhuma\.?$/i.test(item)) {
       porAula[atual] = [];
+      forcadoPorAula[atual] = false;
       atual = -1; // trava o bloco: linhas seguintes até a próxima "Aula NN" são ignoradas
       continue;
     }
+    const mInline = item.match(/^\[user\]\.?\s*(.*)$/i);
+    if (mInline) {
+      const textoForcado = mInline[1].trim();
+      if (textoForcado) {
+        porAula[atual].push(textoForcado);
+        forcadoPorAula[atual] = true;
+      }
+      continue;
+    }
     porAula[atual].push(item);
+    if (apósMarcador) forcadoPorAula[atual] = true;
   }
-  return { porAula, avisos };
+  return { porAula, avisos, forcadoPorAula };
 }
 
 // Uma resposta de melhorias é completa quando não foi cortada por limite de
@@ -2457,11 +2484,14 @@ app.get('/api/revisao-qualidade', async (req, res) => {
     let secaoMelhorias =
       '\n\n<!--PAGEBREAK-->\n\n' +
       'Edite apenas os itens abaixo — uma melhoria por linha. O sistema aplicará ' +
-      'exclusivamente o que estiver nesta seção.\n\n' +
+      'exclusivamente o que estiver nesta seção. Itens escritos abaixo da linha ' +
+      '"[user]" de cada aula serão aplicados mesmo que a avaliação automática de ' +
+      'qualidade não aponte melhora.\n\n' +
       '## Melhorias a serem Aplicadas\n\n';
     resumosMelhoriasPorAula.forEach((itens, i) => {
       secaoMelhorias += `Aula ${String(i + 1).padStart(2, '0')}\n`;
-      secaoMelhorias += itens.length ? itens.map(t => `- ${t}`).join('\n') : '';
+      secaoMelhorias += itens.length ? itens.map(t => `- ${t}`).join('\n') + '\n' : '';
+      secaoMelhorias += '[user]\n';
       secaoMelhorias += '\n\n';
     });
     send(res, { type: 'token', text: secaoMelhorias });
@@ -2516,7 +2546,7 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
     if (estruturado) {
       observacoesPorAula = aulas.map((aula, i) => {
         const melhorias = estruturado.porAula[i] || [];
-        return { titulo: aula.titulo, observacoes: melhorias.join('\n'), melhorias };
+        return { titulo: aula.titulo, observacoes: melhorias.join('\n'), melhorias, forcado: estruturado.forcadoPorAula[i] };
       });
     } else {
       // Fallback legado: parser de "Observações do Revisor" por aula
@@ -2542,11 +2572,12 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
           observacoes = (nextSection !== -1 ? rawObs.slice(0, nextSection) : rawObs).trim();
         }
 
-        return { titulo: aula.titulo, observacoes, melhorias: [] };
+        return { titulo: aula.titulo, observacoes, melhorias: [], forcado: false };
       });
     }
 
     sess.observacoesMelhorias = observacoesPorAula;
+    sess.modoLegadoMelhorias = modoLegado;
 
     // ── Check de duplicata: comparar observações novas com o último upload ────
     let avisoResposta = null;
@@ -2693,6 +2724,28 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       const aula = aulas[i];
       const obs = observacoes[i]?.observacoes || '';
 
+      // Restrição à seção estruturada: aula sem nenhuma melhoria listada
+      // (bloco ausente, vazio, ou "Nenhuma") não é tocada — sem chamada de
+      // API, sem pausa de rate-limit, conteúdo mantido byte a byte. Só se
+      // aplica quando um upload real populou `sess.observacoesMelhorias` em
+      // modo estruturado — sem upload (sessão nunca passou por
+      // /api/aplicar-melhorias), todas as aulas continuam sendo processadas.
+      const semMelhoriasNaSecao = !!sess.observacoesMelhorias && !sess.modoLegadoMelhorias &&
+        (observacoes[i]?.melhorias?.length || 0) === 0;
+      if (semMelhoriasNaSecao) {
+        send(res, {
+          type: 'progress',
+          message: `Aula ${i + 1} de ${aulas.length}: sem melhorias na seção — mantida sem alteração`
+        });
+        const headingSemMelhorias = `${i === 0 ? '' : '\n\n'}# Aula ${i + 1}: ${aula.titulo}\n\n`;
+        send(res, { type: 'token', text: headingSemMelhorias });
+        fullText += headingSemMelhorias + (aula.texto || '');
+        reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n_(Sem melhorias listadas na seção "Melhorias a serem Aplicadas" — aula mantida sem alteração.)_`);
+        metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade: 1, semMelhorias: true });
+        novasPorAula.push({ ...aula });
+        continue;
+      }
+
       if (i > 0) await new Promise(r => setTimeout(r, 4000));
       if (client.disconnected) break;
 
@@ -2831,41 +2884,51 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       let aceita = true;
       let scoreOriginal = null;
       let scoreCandidato = null;
-      try {
-        const skillScore = skills.scoreAulaSkill({
-          aulaTitulo: aula.titulo,
-          aulaObjetivos: aula.objetivos,
-          textoOriginal: truncate(textoAntigo, 4000),
-          textoCandidato: truncate(textoMesclado, 4000),
-          planoAulaTrecho: truncate(extractLessonBlock(planoAulaScoreRef, i), 800),
-          ementa: ementaScoreRef,
-          planoEnsino: planoEnsinoScoreRef,
-          nivel: sess.config.nivel,
-          publico: sess.config.publico,
-          modalidade: sess.config.modalidade
-        });
-        const completionScore = await openai.chat.completions.create({
-          model: skillScore.model,
-          response_format: skillScore.response_format,
-          messages: [
-            { role: 'system', content: skillScore.system },
-            { role: 'user', content: skillScore.user }
-          ]
-        });
-        addUsage(completionScore.usage, sess);
-        const julgamento = JSON.parse(completionScore.choices[0]?.message?.content || '{}');
+      // Item forçado por [user]: revisor pediu aplicação incondicional —
+      // ignora o gate de score inteiramente (sem chamar o julgamento
+      // pareado), mas mantém as demais redes de segurança já checadas acima
+      // (truncamento/continuação e rejeição por duplicação).
+      const forcadaPorUser = !sess.modoLegadoMelhorias && !!observacoes[i]?.forcado;
+      if (forcadaPorUser) {
+        aceita = true;
+        console.log(`[melhorias] aula ${i + 1}: aceite forçado por [user] — gate de score ignorado`);
+      } else {
+        try {
+          const skillScore = skills.scoreAulaSkill({
+            aulaTitulo: aula.titulo,
+            aulaObjetivos: aula.objetivos,
+            textoOriginal: truncate(textoAntigo, 4000),
+            textoCandidato: truncate(textoMesclado, 4000),
+            planoAulaTrecho: truncate(extractLessonBlock(planoAulaScoreRef, i), 800),
+            ementa: ementaScoreRef,
+            planoEnsino: planoEnsinoScoreRef,
+            nivel: sess.config.nivel,
+            publico: sess.config.publico,
+            modalidade: sess.config.modalidade
+          });
+          const completionScore = await openai.chat.completions.create({
+            model: skillScore.model,
+            response_format: skillScore.response_format,
+            messages: [
+              { role: 'system', content: skillScore.system },
+              { role: 'user', content: skillScore.user }
+            ]
+          });
+          addUsage(completionScore.usage, sess);
+          const julgamento = JSON.parse(completionScore.choices[0]?.message?.content || '{}');
 
-        const determOriginal = computeScoreDeterministico(textoAntigo, aula, maiorSobreposicao(textoAntigo)).determ;
-        const determCandidato = computeScoreDeterministico(textoMesclado, aula, maiorSobreposicao(textoMesclado)).determ;
-        scoreOriginal = computeScoreComposto(julgamento.original, determOriginal).score;
-        scoreCandidato = computeScoreComposto(julgamento.candidato, determCandidato).score;
-        aceita = scoreCandidato >= scoreOriginal + EPSILON_ACEITE;
-        console.log(`[melhorias] aula ${i + 1}: score original=${scoreOriginal} candidato=${scoreCandidato} aceita=${aceita}`);
-      } catch (e) {
-        console.error(`[melhorias] aula ${i + 1}: falha no julgamento de score:`, e.message);
-        aceita = false; // não avaliada — mesma política de preservação do conteúdo anterior
+          const determOriginal = computeScoreDeterministico(textoAntigo, aula, maiorSobreposicao(textoAntigo)).determ;
+          const determCandidato = computeScoreDeterministico(textoMesclado, aula, maiorSobreposicao(textoMesclado)).determ;
+          scoreOriginal = computeScoreComposto(julgamento.original, determOriginal).score;
+          scoreCandidato = computeScoreComposto(julgamento.candidato, determCandidato).score;
+          aceita = scoreCandidato >= scoreOriginal + EPSILON_ACEITE;
+          console.log(`[melhorias] aula ${i + 1}: score original=${scoreOriginal} candidato=${scoreCandidato} aceita=${aceita}`);
+        } catch (e) {
+          console.error(`[melhorias] aula ${i + 1}: falha no julgamento de score:`, e.message);
+          aceita = false; // não avaliada — mesma política de preservação do conteúdo anterior
+        }
       }
-      scoresPorAula.push({ aula: i + 1, titulo: aula.titulo, scoreOriginal, scoreCandidato, aceita });
+      scoresPorAula.push({ aula: i + 1, titulo: aula.titulo, scoreOriginal, scoreCandidato, aceita, forcada: forcadaPorUser });
 
       if (!aceita) {
         const motivoScore = scoreOriginal === null
@@ -3059,7 +3122,8 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
     }
 
     // Histórico de scores (gate/convergência) — só considera aulas com score
-    // válido nos dois lados (exclui não avaliadas por falha técnica).
+    // válido nos dois lados (exclui não avaliadas por falha técnica e aulas
+    // aceitas por força do marcador [user], que não têm score computado).
     const avaliadas = scoresPorAula.filter(s => s.scoreOriginal !== null && s.scoreCandidato !== null);
     if (avaliadas.length) {
       const ganhoMedio = Math.round(
@@ -3071,9 +3135,12 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         porAula: scoresPorAula,
         ganhoMedio
       });
+    }
+    if (scoresPorAula.length) {
       reportSections.push(
         `## Scores do Ciclo\n\n` +
         scoresPorAula.map(s => {
+          if (s.forcada) return `- Aula ${s.aula} (${s.titulo}): aceita (forçada por [user])`;
           if (s.scoreOriginal === null) return `- Aula ${s.aula} (${s.titulo}): não avaliada (falha técnica no julgamento)`;
           return `- Aula ${s.aula} (${s.titulo}): ${s.scoreOriginal.toFixed(2)} → ${s.scoreCandidato.toFixed(2)} — ${s.aceita ? '✅ aceita' : '❌ rejeitada'}`;
         }).join('\n')

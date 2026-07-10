@@ -67,6 +67,73 @@ describe('parseMelhoriasEstruturadas — seção "Melhorias a serem Aplicadas"',
     const doc = 'Melhorias a serem Aplicadas\nAula 1: Introdução\nitem um\n';
     expect(parseMelhoriasEstruturadas(doc, 1).porAula[0]).toEqual(['item um']);
   });
+
+  test('itens após o marcador [user] entram na lista e sinalizam a aula como forçada', () => {
+    const doc =
+      'Melhorias a serem Aplicadas\n' +
+      'Aula 01\nsugestão da IA\n[user]\nitem do revisor\n\n' +
+      'Aula 02\noutra sugestão\n[user]\n';
+    const r = parseMelhoriasEstruturadas(doc, 2);
+    expect(r.porAula[0]).toEqual(['sugestão da IA', 'item do revisor']);
+    expect(r.forcadoPorAula[0]).toBe(true);
+  });
+
+  test('marcador [user] sem itens preenchidos não força nada', () => {
+    const doc = 'Melhorias a serem Aplicadas\nAula 01\nsugestão da IA\n[user]\n';
+    const r = parseMelhoriasEstruturadas(doc, 1);
+    expect(r.porAula[0]).toEqual(['sugestão da IA']);
+    expect(r.forcadoPorAula[0]).toBe(false);
+  });
+
+  test('aula sem nenhum bloco ou marcador não é sinalizada como forçada', () => {
+    const doc = 'Melhorias a serem Aplicadas\nAula 01\nsugestão da IA\n';
+    const r = parseMelhoriasEstruturadas(doc, 2);
+    expect(r.forcadoPorAula).toEqual([false, false]);
+  });
+
+  test('marcador tolerante a variações de grafia ([User], [USER], [user].)', () => {
+    expect(parseMelhoriasEstruturadas('Melhorias a serem Aplicadas\nAula 01\n[User]\nitem\n', 1).forcadoPorAula[0]).toBe(true);
+    expect(parseMelhoriasEstruturadas('Melhorias a serem Aplicadas\nAula 01\n[USER]\nitem\n', 1).forcadoPorAula[0]).toBe(true);
+    expect(parseMelhoriasEstruturadas('Melhorias a serem Aplicadas\nAula 01\n[user].\nitem\n', 1).forcadoPorAula[0]).toBe(true);
+  });
+
+  test('Nenhuma após itens [user] no mesmo bloco reseta a lista e a sinalização de forçada', () => {
+    const doc = 'Melhorias a serem Aplicadas\nAula 01\n[user]\nitem forçado\nNenhuma\n';
+    const r = parseMelhoriasEstruturadas(doc, 1);
+    expect(r.porAula[0]).toEqual([]);
+    expect(r.forcadoPorAula[0]).toBe(false);
+  });
+
+  // Caso real observado em produção: revisor escreveu "[user] texto" na mesma
+  // linha (mesmo padrão já usado pela tag [Critério] deste app), não o
+  // marcador sozinho numa linha separada. O prefixo precisa ser removido do
+  // texto (senão "[user]" vaza literalmente para o prompt do modelo) e a
+  // aula sinalizada como forçada mesmo assim.
+  test('[user] como prefixo do item (mesma linha) força só aquele item e remove o prefixo do texto', () => {
+    const doc =
+      'Melhorias a serem Aplicadas\n' +
+      'Aula 01\n[user] Incluir conceitos mais modernos dos tipos de memória ROM\n';
+    const r = parseMelhoriasEstruturadas(doc, 1);
+    expect(r.porAula[0]).toEqual(['Incluir conceitos mais modernos dos tipos de memória ROM']);
+    expect(r.forcadoPorAula[0]).toBe(true);
+  });
+
+  test('[user] inline misturado com itens normais no mesmo bloco', () => {
+    const doc =
+      'Melhorias a serem Aplicadas\n' +
+      'Aula 01\nsugestão da IA\n[user] item forçado do revisor\noutra sugestão da IA\n';
+    const r = parseMelhoriasEstruturadas(doc, 1);
+    expect(r.porAula[0]).toEqual(['sugestão da IA', 'item forçado do revisor', 'outra sugestão da IA']);
+    expect(r.forcadoPorAula[0]).toBe(true);
+  });
+
+  test('[user] inline tolerante a variações de grafia e sem texto após não gera item vazio', () => {
+    expect(parseMelhoriasEstruturadas('Melhorias a serem Aplicadas\nAula 01\n[User] texto\n', 1).porAula[0]).toEqual(['texto']);
+    expect(parseMelhoriasEstruturadas('Melhorias a serem Aplicadas\nAula 01\n[user]. texto\n', 1).porAula[0]).toEqual(['texto']);
+    const semTexto = parseMelhoriasEstruturadas('Melhorias a serem Aplicadas\nAula 01\n[user] \n', 1);
+    expect(semTexto.porAula[0]).toEqual([]);
+    expect(semTexto.forcadoPorAula[0]).toBe(false);
+  });
 });
 
 describe('extractResumoMelhorias — bullets da revisão de uma aula', () => {
