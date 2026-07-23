@@ -375,6 +375,20 @@ const IMAGE_LAYOUT_CONSTRAINTS =
 const MODEL_IMAGE = 'gpt-image-1.5';
 const IMAGE_QUALITY = 'medium';
 
+// Gera o roteiro de vídeo com avatar de uma aula (Etapa 9) a partir do prompt já
+// montado (template PromptRoteiro.docx preenchido) e revisado/aprovado pelo
+// usuário — diferente das demais skills, o corpo principal do "user" já vem
+// pronto, a skill só envelopa com um "system" apropriado e anexa o contexto
+// pedagógico ao final, como em todas as outras skills geradoras.
+const roteiroSkill = ({ promptPreenchido, metodologia, bnccContext }) => ({
+  model: MODEL_ECONOMY,
+  system:
+    'Você é roteirista especializado em vídeos educacionais com avatar digital. ' +
+    'Siga rigorosamente a estrutura, as regras de blocos e o formato pedido no ' +
+    'prompt do usuário, sem adicionar seções fora do solicitado. Responda em português.',
+  user: promptPreenchido + pedagCtxBlock(metodologia, bnccContext)
+});
+
 const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
@@ -912,6 +926,7 @@ module.exports = {
   IMAGE_LAYOUT_CONSTRAINTS,
   MODEL_IMAGE,
   IMAGE_QUALITY,
+  roteiroSkill,
   // Ciclo de revisão e melhoria (Etapas 5★ e 6)
   revisaoQualidadeSkill,
   aplicarMelhoriasSkill,

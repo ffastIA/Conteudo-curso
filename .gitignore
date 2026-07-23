@@ -24,6 +24,10 @@ coverage/
 *.docx
 scripts/revisao_anotada_teste.docx
 
+# Exceção: template de origem lido em runtime pela Etapa 9 (Roteiros), não é
+# um artefato gerado — precisa ser versionado.
+!PromptRoteiro.docx
+
 # OS
 .DS_Store
 Thumbs.db

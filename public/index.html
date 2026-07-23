@@ -34,6 +34,7 @@
     <button class="step-pill" data-step="6">6 · Revisão e Melhorias</button>
     <button class="step-pill" data-step="7">7 · Qualidade</button>
     <button class="step-pill" data-step="8">8 · Slides</button>
+    <button class="step-pill" data-step="9">9 · Roteiros</button>
   </nav>
 
   <!-- ── STEP 0 ── -->
@@ -493,6 +494,62 @@
       <h2>Slides Gerados</h2>
       <div class="log-panel" id="logSlides"></div>
       <div id="slidesArquivos" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
+    </div>
+  </section>
+
+  <!-- ── STEP 9 ── -->
+  <section class="step-section" id="step9">
+    <div class="card">
+      <h2>Roteiros de Vídeo com Avatar</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Gera um roteiro de vídeo em blocos, formato copia-e-cola para avatar digital,
+        a partir do tema e dos objetivos específicos de cada aula do plano de aula.
+        Um arquivo <strong>roteiroNN.docx</strong> por aula — o total de arquivos é
+        sempre igual ao número de aulas do curso.
+      </p>
+      <p class="field-hint">
+        Requer a conclusão da Etapa 4 (Plano de Aula). Etapa opcional e independente.
+        O número de blocos é escolhido uma única vez e aplicado a todas as aulas.
+      </p>
+
+      <!-- Escolha de blocos (1x por curso) -->
+      <div id="roteiroBlocosContainer" style="display:none">
+        <h3 style="font-size:1rem;margin-bottom:8px">Quantos blocos por roteiro?</h3>
+        <p style="font-size:.82rem;color:#777;margin-bottom:12px">Selecione uma opção — será aplicada a todas as aulas.</p>
+        <select id="roteiroBlocosSelect" style="width:auto">
+          <option value="1">1 bloco</option>
+          <option value="2">2 blocos</option>
+          <option value="3">3 blocos</option>
+          <option value="4">4 blocos</option>
+          <option value="5">5 blocos</option>
+          <option value="6">6 blocos</option>
+        </select>
+        <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
+          <button id="btnConfirmarRoteiroBlocos" class="btn btn-primary">Confirmar e montar prompt →</button>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="btnRoteiros" class="btn btn-primary" disabled>🎬 Gerar Roteiros</button>
+      </div>
+    </div>
+
+    <!-- Caixa tipo chat editável -->
+    <div class="card" id="roteiroPromptCard" style="display:none">
+      <h2>Roteiro da Aula <span id="roteiroAulaProgresso"></span></h2>
+      <p class="field-hint">Confira e edite o prompt abaixo antes de gerar.</p>
+      <textarea id="roteiroPromptTexto" rows="18" style="width:100%"></textarea>
+      <div class="btn-row" style="margin-top:14px">
+        <button id="btnGerarRoteiroAula" class="btn btn-primary">Gerar →</button>
+      </div>
+      <div class="log-panel" id="logRoteiro" style="margin-top:14px"></div>
+      <div class="result-area" id="resultRoteiro"></div>
+    </div>
+
+    <!-- Resumo final -->
+    <div class="card" id="roteiroResultCard" style="display:none">
+      <h2>Roteiros Gerados</h2>
+      <div id="roteiroArquivos" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
     </div>
   </section>
 

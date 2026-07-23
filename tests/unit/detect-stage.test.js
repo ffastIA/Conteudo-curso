@@ -31,6 +31,11 @@ describe('detectStage — detecção de etapa pelo nome do arquivo', () => {
       .toEqual({ stage: 'aula03_conteudo', detectadoPor: 'nome' });
   });
 
+  test('nome de roteiro de vídeo (Etapa 9), exato', () => {
+    expect(detectStage('roteiro03.docx', null, sessVazia))
+      .toEqual({ stage: 'roteiro03', detectadoPor: 'nome' });
+  });
+
   test('stage sem separador _ no prefixo não casa (evita falso positivo)', () => {
     expect(detectStage('minhametodologia.docx', null, sessVazia)).toBeNull();
   });

@@ -4,7 +4,9 @@ const state = {
   doneSteps: new Set(),
   sites: [],
   bncc: { ativo: false, publico: null, nivel: null, itens: [] },
-  estiloVisual: null
+  estiloVisual: null,
+  roteiroBlocos: null,
+  roteiroIndex: 0
 };
 
 // ── Contador global de tokens ────────────────────────────────────────────────
@@ -36,6 +38,14 @@ function atualizarBotoesDependentesDaEtapa5() {
   document.getElementById('btnSlides').disabled = false;
 }
 
+// Habilita o botão de Roteiros (Etapa 9) assim que a Etapa 4 (Plano de Aula)
+// estiver concluída — é dela que vem sess.aulas (título+objetivos por aula),
+// único pré-requisito real da geração de roteiros.
+function atualizarBotaoRoteiros() {
+  if (!state.doneSteps.has(4)) return;
+  document.getElementById('btnRoteiros').disabled = false;
+}
+
 function goStep(n) {
   state.currentStep = n;
   document.querySelectorAll('.step-section').forEach(s => s.classList.remove('active'));
@@ -48,6 +58,7 @@ function goStep(n) {
   });
 
   atualizarBotoesDependentesDaEtapa5();
+  atualizarBotaoRoteiros();
 }
 
 document.getElementById('stepsNav').addEventListener('click', e => {
@@ -60,6 +71,7 @@ function markDone(step) {
   const pill = document.querySelector(`.step-pill[data-step="${step}"]`);
   if (pill) pill.classList.add('done');
   if (step === 5) atualizarBotoesDependentesDaEtapa5();
+  if (step === 4) atualizarBotaoRoteiros();
 }
 
 // ── Log panel helpers ────────────────────────────────────────────────────────
@@ -887,6 +899,112 @@ function iniciarGeracaoSlides() {
   };
 }
 
+// ── STEP 9 — Roteiros ───────────────────────────────────────────────────────
+// Diferente das demais etapas, o fluxo aqui não é um loop automático único:
+// cada aula exige revisão/edição humana do prompt antes de chamar a IA, então
+// o cliente pede um prompt por vez (GET /api/roteiro/prompt), deixa o usuário
+// aprovar (POST /api/roteiro/aprovar) e só então gera via SSE
+// (GET /api/roteiro/gerar), avançando automaticamente para a próxima aula ao
+// receber "proximoIndex" no evento "done" — até esgotar sess.aulas.length.
+
+document.getElementById('btnRoteiros').addEventListener('click', async () => {
+  if (!state.doneSteps.has(4)) {
+    alert('Conclua a Etapa 4 (Plano de Aula) antes de gerar roteiros.');
+    return;
+  }
+  if (state.roteiroBlocos) {
+    await abrirPromptRoteiro(0);
+    return;
+  }
+  document.getElementById('roteiroBlocosContainer').style.display = 'block';
+});
+
+document.getElementById('btnConfirmarRoteiroBlocos').addEventListener('click', async () => {
+  const blocos = Number(document.getElementById('roteiroBlocosSelect').value);
+  try {
+    const r = await fetch('/api/roteiro/blocos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocos })
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao salvar número de blocos.'); return; }
+    state.roteiroBlocos = blocos;
+    document.getElementById('roteiroBlocosContainer').style.display = 'none';
+    await abrirPromptRoteiro(0);
+  } catch (err) {
+    alert('Erro ao salvar número de blocos: ' + err.message);
+  }
+});
+
+// Monta (sem IA) e exibe o prompt da aula de índice `index` para revisão.
+async function abrirPromptRoteiro(index) {
+  const btn = document.getElementById('btnRoteiros');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/roteiro/prompt?index=${index}`);
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao montar prompt do roteiro.'); return; }
+
+    state.roteiroIndex = index;
+    document.getElementById('roteiroAulaProgresso').textContent = `${data.index + 1} de ${data.total} — ${data.titulo}`;
+    document.getElementById('roteiroPromptTexto').value = data.prompt;
+    document.getElementById('roteiroPromptCard').style.display = 'block';
+    document.getElementById('logRoteiro').innerHTML = '';
+    document.getElementById('resultRoteiro').innerHTML = '';
+    document.getElementById('resultRoteiro').classList.remove('active');
+  } catch (err) {
+    alert('Erro ao montar prompt do roteiro: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnGerarRoteiroAula').addEventListener('click', async () => {
+  const texto = document.getElementById('roteiroPromptTexto').value;
+  const index = state.roteiroIndex;
+  const gerarBtn = document.getElementById('btnGerarRoteiroAula');
+  gerarBtn.disabled = true;
+
+  try {
+    const r = await fetch('/api/roteiro/aprovar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index, texto })
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao aprovar prompt.'); gerarBtn.disabled = false; return; }
+
+    const logPanel = initLog('logRoteiro');
+    streamSSE('/api/roteiro/gerar', {
+      logPanel,
+      resultEl: 'resultRoteiro',
+      async onDone(fullText, msg) {
+        registrarArquivoRoteiroGerado(msg);
+        markDone(9);
+        gerarBtn.disabled = false;
+        if (msg.proximoIndex !== null && msg.proximoIndex !== undefined) {
+          await abrirPromptRoteiro(msg.proximoIndex);
+        } else {
+          document.getElementById('roteiroPromptCard').style.display = 'none';
+          document.getElementById('roteiroResultCard').style.display = 'block';
+        }
+      },
+      onError() { gerarBtn.disabled = false; }
+    });
+  } catch (err) {
+    alert('Erro ao aprovar prompt: ' + err.message);
+    gerarBtn.disabled = false;
+  }
+});
+
+function registrarArquivoRoteiroGerado(msg) {
+  const container = document.getElementById('roteiroArquivos');
+  container.style.display = 'flex';
+  container.insertAdjacentHTML('beforeend',
+    `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🎬 Roteiro ${escHtml(msg.numero)}: ${escHtml(msg.titulo)}</span>`);
+}
+
 // ── Copiar ───────────────────────────────────────────────────────────────────
 function copyResult(elId) {
   const el = document.getElementById(elId);
@@ -999,6 +1117,18 @@ async function carregarProjetoPorPasta(pasta) {
     // Restaura o estilo visual escolhido (Etapa 8) — evita pedir de novo se já
     // salvo no projeto.json de uma sessão anterior.
     if (data.estiloVisual) state.estiloVisual = data.estiloVisual;
+
+    // Restaura o número de blocos (Etapa 9) e os roteiros já gerados, evitando
+    // pedir a escolha de blocos de novo e repopulando os badges de arquivos.
+    if (data.roteiroBlocos) state.roteiroBlocos = data.roteiroBlocos;
+    if (data.roteirosGerados?.length) {
+      const container = document.getElementById('roteiroArquivos');
+      container.style.display = 'flex';
+      container.innerHTML = data.roteirosGerados.map(a =>
+        `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🎬 Roteiro ${escHtml(a.numero)}: ${escHtml(a.titulo)}</span>`
+      ).join('');
+      document.getElementById('roteiroResultCard').style.display = 'block';
+    }
 
     // Restaura metodologia no painel da Etapa 0
     if (data.metodologia) {

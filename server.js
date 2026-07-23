@@ -197,6 +197,52 @@ function replaceLessonBlock(fullText, index, novoCorpo) {
   return antes + headingLine + '\n\n' + (novoCorpo || '').trim() + (depois ? '\n\n' + depois : '\n');
 }
 
+// ── Template do roteiro de vídeo (Etapa 9) ──────────────────────────────────
+// Lido uma única vez (lazy) e cacheado em memória — PromptRoteiro.docx é
+// estático no repo, não muda em runtime. Leitura lazy (não no boot) para que
+// um arquivo ausente/corrompido só falhe no primeiro uso, sem derrubar o servidor.
+let _roteiroTemplateCache = null;
+async function getRoteiroTemplate() {
+  if (_roteiroTemplateCache) return _roteiroTemplateCache;
+  const buffer = fs.readFileSync(path.join(__dirname, 'PromptRoteiro.docx'));
+  _roteiroTemplateCache = (await mammoth.extractRawText({ buffer })).value;
+  return _roteiroTemplateCache;
+}
+
+// Substitui os placeholders do template do roteiro. Tolerante a espaço interno
+// (o template real tem "[%% TEMA%%]", com um espaço espúrio entre %% e TEMA) —
+// os colchetes ao redor são texto literal do template e não são tocados aqui.
+// Depois da substituição, remove as anotações "(tema da aula + objetivos
+// especificos)" e "(já vem do sistema)" — são notas de orientação de quem
+// preencheu o template, não fazem parte do prompt a enviar para a IA.
+function preencherTemplateRoteiro(template, { temaObjetivos, idade, blocos }) {
+  return template
+    .replace(/%%\s*TEMA\s*%%/g, temaObjetivos)
+    .replace(/%%\s*IDADE\s*%%/g, idade)
+    .replace(/%%\s*BLOCOS\s*%%/g, String(blocos))
+    .replace(/[ \t]*\(tema da aula \+ objetivos espec[ií]ficos\)/gi, '')
+    .replace(/[ \t]*\(j[áa] vem do sistema\)/gi, '');
+}
+
+// Extrai o texto do bloco "VOZ DO AVATAR (OBRIGATÓRIA EM TODOS OS BLOCOS):"
+// do template (entre esse cabeçalho e o próximo, "FALAS:") — é o texto que
+// o prompt instrui a IA a repetir literalmente em cada bloco do roteiro.
+function extrairBlocoVozAvatar(template) {
+  const match = template.match(/VOZ DO AVATAR[^:]*:\s*([\s\S]*?)\n\s*FALAS:/i);
+  if (!match) return '';
+  return match[1].trim().replace(/\n{3,}/g, '\n\n');
+}
+
+// Substitui, no roteiro já gerado pela IA, o placeholder literal que o
+// template instrui a repetir ("[REPETIR EXATAMENTE O BLOCO DE VOZ ACIMA]")
+// pelo texto de fato do bloco de voz — modelos como o gpt-4o-mini às vezes
+// copiam essa instrução ao pé da letra em vez de expandi-la, então o
+// preenchimento é garantido aqui de forma determinística, não só via prompt.
+function preencherBlocoVozNoRoteiro(texto, blocoVoz) {
+  if (!blocoVoz) return texto;
+  return texto.replace(/\[?REPETIR EXATAMENTE O BLOCO DE VOZ ACIMA\]?/gi, blocoVoz);
+}
+
 // Extrai (e remove) as linhas "> ⚠️ ALERTA DE ESCOPO:" de uma seção realinhada —
 // os alertas vão apenas para o relatório de melhorias, nunca para o plano persistido.
 function extractScopeAlerts(texto) {
@@ -813,6 +859,8 @@ function saveProject(sess, stageInfo = null) {
   projeto.aulas = sess.aulas || [];
   projeto.inputs = sess.inputs || {};
   projeto.estiloVisual = sess.estiloVisual || null;
+  projeto.roteiroBlocos = sess.roteiroBlocos || null;
+  projeto.roteirosGerados = sess.roteirosGerados || [];
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -1319,6 +1367,152 @@ app.get('/api/slides', async (req, res) => {
     }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar slides' });
+  } finally {
+    res.end();
+  }
+});
+
+// ── Etapa 9 — Roteiros de vídeo com avatar, opcional e independente ────────
+// Requer apenas a Etapa 4 (Plano de Aula) concluída — fonte de sess.aulas
+// (título + objetivos por aula). Gera exatamente um roteiro por aula do curso
+// (quantidade = sess.aulas.length, nunca um número fixo), com revisão humana
+// do prompt antes de cada chamada à IA — por isso o fluxo é dividido em
+// operações locais (sem IA) e uma chamada de geração em SSE por aula, em vez
+// de um loop server-side único como em Slides/Conteúdo.
+
+// POST /api/roteiro/blocos — escolha do nº de blocos (1-6), uma única vez por
+// curso, reaplicada a todas as aulas.
+app.post('/api/roteiro/blocos', (req, res) => {
+  const sess = getSession(req, res);
+  const { blocos } = req.body || {};
+  const n = Number(blocos);
+  if (!Number.isInteger(n) || n < 1 || n > 6) {
+    return res.status(400).json({ error: 'Escolha um número de blocos entre 1 e 6.' });
+  }
+  sess.roteiroBlocos = n;
+  saveProject(sess);
+  res.json({ ok: true, blocos: n });
+});
+
+// GET /api/roteiro/prompt?index=N — monta o prompt da aula N a partir do
+// template + tema/objetivos/público-alvo/blocos. Não chama a IA.
+app.get('/api/roteiro/prompt', async (req, res) => {
+  const sess = getSession(req, res);
+  const index = Number(req.query.index);
+
+  if (!sess.aulas?.length) {
+    return res.status(400).json({ error: 'Conclua a Etapa 4 (Plano de Aula) antes de gerar roteiros.' });
+  }
+  if (!Number.isInteger(index) || index < 0 || index >= sess.aulas.length) {
+    return res.status(400).json({ error: 'Índice de aula inválido.' });
+  }
+  if (!sess.roteiroBlocos) {
+    return res.status(400).json({ error: 'Escolha o número de blocos antes de gerar o roteiro.' });
+  }
+
+  const aula = sess.aulas[index];
+  const tema = aula.titulo || `Aula ${index + 1}`;
+  const objetivos = aula.objetivos || '';
+  const temaObjetivos = objetivos ? `${tema}. Objetivos específicos: ${objetivos}` : tema;
+  const idade = sess.config?.publico?.trim() || 'não especificado';
+
+  try {
+    const template = await getRoteiroTemplate();
+    const prompt = preencherTemplateRoteiro(template, { temaObjetivos, idade, blocos: sess.roteiroBlocos });
+    res.json({
+      ok: true,
+      index,
+      numero: String(index + 1).padStart(2, '0'),
+      titulo: aula.titulo,
+      total: sess.aulas.length,
+      prompt
+    });
+  } catch (err) {
+    console.error('[roteiro] Erro ao montar prompt:', err.message);
+    res.status(500).json({ error: 'Erro ao montar o prompt do roteiro: ' + err.message });
+  }
+});
+
+// POST /api/roteiro/aprovar — guarda o prompt (possivelmente editado pelo
+// usuário) aprovado para geração, lido em seguida por GET /api/roteiro/gerar.
+app.post('/api/roteiro/aprovar', (req, res) => {
+  const sess = getSession(req, res);
+  const { index, texto } = req.body || {};
+  const i = Number(index);
+  if (!Number.isInteger(i) || !sess.aulas?.[i]) {
+    return res.status(400).json({ error: 'Índice de aula inválido.' });
+  }
+  if (!texto?.trim()) {
+    return res.status(400).json({ error: 'O prompt não pode ficar vazio.' });
+  }
+  sess.roteiroPendente = { index: i, texto: texto.trim() };
+  res.json({ ok: true });
+});
+
+// GET /api/roteiro/gerar (SSE) — chama a IA com o prompt aprovado, persiste
+// roteiro{NN}.txt/.docx, e indica a próxima aula pendente (se houver) para o
+// cliente avançar automaticamente.
+app.get('/api/roteiro/gerar', async (req, res) => {
+  const sess = getSession(req, res);
+  if (!sess.roteiroPendente) {
+    return sseError(res, 'Nenhum prompt de roteiro aprovado. Monte e aprove o prompt antes de gerar.');
+  }
+  sseHeaders(res);
+  const client = clientAbort(res);
+  const { index, texto } = sess.roteiroPendente;
+  const aula = sess.aulas[index];
+  const numero = String(index + 1).padStart(2, '0');
+
+  try {
+    send(res, { type: 'progress', message: `Gerando roteiro da aula ${index + 1} de ${sess.aulas.length}: ${aula.titulo}` });
+
+    const skill = skills.roteiroSkill({
+      promptPreenchido: texto,
+      metodologia: getMetodologia(sess),
+      bnccContext: buildPedagogicalContext(sess)
+    });
+
+    const stream = await openai.chat.completions.create({
+      model: skill.model,
+      stream: true,
+      stream_options: { include_usage: true },
+      messages: [
+        { role: 'system', content: skill.system },
+        { role: 'user', content: skill.user }
+      ]
+    }, { signal: client.signal });
+
+    let fullText = '';
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content;
+      if (text) { fullText += text; send(res, { type: 'token', text }); }
+      if (chunk.usage) addUsage(chunk.usage, sess);
+    }
+    if (client.disconnected) return;
+
+    // A IA às vezes deixa "[REPETIR EXATAMENTE O BLOCO DE VOZ ACIMA]" literal
+    // no texto em vez de repetir a descrição de voz do avatar — garantido de
+    // forma determinística aqui, não só via instrução no prompt.
+    const template = await getRoteiroTemplate();
+    fullText = preencherBlocoVozNoRoteiro(fullText, extrairBlocoVozAvatar(template));
+
+    const baseName = `roteiro${numero}`;
+    await persistStage(sess, baseName, `Roteiro de Vídeo — Aula ${index + 1}: ${aula.titulo}`, fullText);
+
+    sess.roteirosGerados = sess.roteirosGerados || [];
+    sess.roteirosGerados.push({ index, numero, titulo: aula.titulo, baseName });
+    sess.roteiroPendente = null;
+
+    const proximoIndex = index + 1 < sess.aulas.length ? index + 1 : null;
+    send(res, { type: 'progress', message: `Roteiro da aula ${index + 1} concluído` });
+    send(res, { type: 'done', fullText, index, numero, baseName, titulo: aula.titulo, proximoIndex });
+  } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração do roteiro — interrompendo /api/roteiro/gerar');
+      return;
+    }
+    console.error(err);
+    send(res, { type: 'error', message: err.message || 'Erro ao gerar roteiro' });
   } finally {
     res.end();
   }
@@ -1967,6 +2161,8 @@ app.post('/api/carregar-projeto', (req, res) => {
       sess.aulas = p.aulas || [];
       sess.inputs = p.inputs || {};
       sess.estiloVisual = p.estiloVisual || null;
+      sess.roteiroBlocos = p.roteiroBlocos || null;
+      sess.roteirosGerados = p.roteirosGerados || [];
       stages = p.stages || {};
     } catch {
       sess.config = {};
@@ -2028,7 +2224,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null });
+  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [] });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────
@@ -2047,6 +2243,8 @@ function detectStage(filename, firstH1, sess) {
   if (STAGES_FIXOS[base]) return { stage: base, detectadoPor: 'nome' };
   // aula03_conteudo → aula03_conteudo
   if (/^aula\d{2}_conteudo$/.test(base)) return { stage: base, detectadoPor: 'nome' };
+  // roteiro03 → roteiro03 (Etapa 9 — Roteiros de vídeo)
+  if (/^roteiro\d{2}$/.test(base)) return { stage: base, detectadoPor: 'nome' };
   // O export gera "<nome_do_curso>_<stage>.docx" — casa pelo sufixo _<stage>
   const baseLower = base.toLowerCase();
   for (const key of Object.keys(STAGES_FIXOS)) {
@@ -3475,6 +3673,9 @@ module.exports.clientAbort = clientAbort;
 module.exports.combineSignals = combineSignals;
 module.exports.streamSkillToClient = streamSkillToClient;
 module.exports.detectStage = detectStage;
+module.exports.preencherTemplateRoteiro = preencherTemplateRoteiro;
+module.exports.extrairBlocoVozAvatar = extrairBlocoVozAvatar;
+module.exports.preencherBlocoVozNoRoteiro = preencherBlocoVozNoRoteiro;
 module.exports.buildPedagogicalContext = buildPedagogicalContext;
 module.exports.replaceLessonBlock = replaceLessonBlock;
 module.exports.extractLessonBlock = extractLessonBlock;
