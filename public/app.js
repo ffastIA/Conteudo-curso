@@ -6,7 +6,8 @@ const state = {
   bncc: { ativo: false, publico: null, nivel: null, itens: [] },
   estiloVisual: null,
   roteiroBlocos: null,
-  roteiroIndex: 0
+  roteiroIndex: 0,
+  slidesIndex: 0
 };
 
 // ── Contador global de tokens ────────────────────────────────────────────────
@@ -788,10 +789,12 @@ document.getElementById('btnPpc').addEventListener('click', () => {
   });
 });
 
-// ── STEP 8 — Slides (PowerPoint) ─────────────────────────────────────────────
-// Não usa streamSSE(): o evento "done" aqui carrega uma lista de arquivos
-// .pptx gerados (binários, um por aula), não um texto para renderizar como
-// markdown — por isso um handler de EventSource dedicado, mais enxuto.
+// ── STEP 8 — Slides (PowerPoint, via API do Gamma) ──────────────────────────
+// Pausa a cada aula para revisão de quantidade de slides (1-5) e observações
+// complementares, mesmo padrão de duas fases já usado na Etapa 9 (Roteiros):
+// monta parâmetros (sem IA) → aprova → gera via SSE, com avanço automático.
+// Não usa streamSSE() genérico: o evento "done" aqui carrega metadado de um
+// arquivo .pptx binário, não texto para renderizar como markdown.
 document.getElementById('btnSlides').addEventListener('click', async () => {
   if (!state.doneSteps.has(5)) {
     alert('Conclua as Etapas 1–5 antes de gerar os slides.');
@@ -799,9 +802,9 @@ document.getElementById('btnSlides').addEventListener('click', async () => {
   }
 
   // Estilo visual já escolhido nesta sessão (ou restaurado de um projeto
-  // carregado) — pula direto para a geração, sem pedir de novo.
+  // carregado) — pula direto para os parâmetros da primeira aula.
   if (state.estiloVisual) {
-    iniciarGeracaoSlides();
+    await abrirParametrosSlides(0);
     return;
   }
 
@@ -851,52 +854,97 @@ document.getElementById('btnConfirmarEstiloVisual').addEventListener('click', as
     if (!r.ok) { alert(data.error || 'Erro ao salvar o estilo escolhido.'); return; }
     state.estiloVisual = escolha;
     document.getElementById('estiloVisualContainer').style.display = 'none';
-    iniciarGeracaoSlides();
+    await abrirParametrosSlides(0);
   } catch (err) {
     alert('Erro ao salvar o estilo escolhido: ' + err.message);
   }
 });
 
-function iniciarGeracaoSlides() {
-  const resultCard = document.getElementById('slidesResultCard');
-  const arquivosEl = document.getElementById('slidesArquivos');
+// Monta (sem IA) e exibe os parâmetros da aula de índice `index` para revisão.
+async function abrirParametrosSlides(index) {
   const btn = document.getElementById('btnSlides');
-  resultCard.style.display = 'block';
-  arquivosEl.innerHTML = '';
   btn.disabled = true;
+  try {
+    const r = await fetch(`/api/slides/parametros?index=${index}`);
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao montar parâmetros dos slides.'); return; }
 
-  const logPanel = initLog('logSlides');
-  addLog(logPanel, 'Iniciando geração dos slides...');
-
-  const es = new EventSource('/api/slides');
-
-  es.onmessage = e => {
-    const msg = JSON.parse(e.data);
-
-    if (msg.type === 'progress') {
-      if (msg.message === 'Concluído') finishLog(logPanel, msg.message);
-      else addLog(logPanel, msg.message);
-    } else if (msg.type === 'done') {
-      arquivosEl.innerHTML = (msg.arquivos || []).map(a =>
-        `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem" title="${escHtml(a.path)}">🖥️ ${escHtml(a.titulo)}</span>`
-      ).join('');
-      es.close();
-      refreshTokenCounter();
-      btn.disabled = false;
-    } else if (msg.type === 'error') {
-      errLog(logPanel, msg.message);
-      es.close();
-      refreshTokenCounter();
-      btn.disabled = false;
-    }
-  };
-
-  es.onerror = () => {
-    errLog(logPanel, 'Erro de conexão com o servidor.');
-    es.close();
-    refreshTokenCounter();
+    state.slidesIndex = index;
+    document.getElementById('slidesAulaProgresso').textContent = `${data.index + 1} de ${data.total} — ${data.titulo}`;
+    document.getElementById('slidesQuantidadeSelect').value = String(data.quantidadePadrao);
+    document.getElementById('slidesObservacaoTexto').value = data.observacaoPadrao;
+    document.getElementById('slidesParametrosCard').style.display = 'block';
+    document.getElementById('logSlides').innerHTML = '';
+  } catch (err) {
+    alert('Erro ao montar parâmetros dos slides: ' + err.message);
+  } finally {
     btn.disabled = false;
-  };
+  }
+}
+
+document.getElementById('btnGerarSlidesAula').addEventListener('click', async () => {
+  const index = state.slidesIndex;
+  const texto = document.getElementById('slidesObservacaoTexto').value;
+  const quantidade = Number(document.getElementById('slidesQuantidadeSelect').value);
+  const gerarBtn = document.getElementById('btnGerarSlidesAula');
+  gerarBtn.disabled = true;
+
+  try {
+    const r = await fetch('/api/slides/parametros', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index, texto, quantidade })
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao aprovar os parâmetros.'); gerarBtn.disabled = false; return; }
+
+    const logPanel = initLog('logSlides');
+    addLog(logPanel, 'Iniciando geração dos slides desta aula...');
+
+    const es = new EventSource('/api/slides/gerar');
+
+    es.onmessage = e => {
+      const msg = JSON.parse(e.data);
+
+      if (msg.type === 'progress') {
+        if (msg.message.includes('concluídos')) finishLog(logPanel, msg.message);
+        else addLog(logPanel, msg.message);
+      } else if (msg.type === 'done') {
+        registrarArquivoSlideGerado(msg);
+        es.close();
+        refreshTokenCounter();
+        gerarBtn.disabled = false;
+        if (msg.proximoIndex !== null && msg.proximoIndex !== undefined) {
+          abrirParametrosSlides(msg.proximoIndex);
+        } else {
+          document.getElementById('slidesParametrosCard').style.display = 'none';
+          document.getElementById('slidesResultCard').style.display = 'block';
+        }
+      } else if (msg.type === 'error') {
+        errLog(logPanel, msg.message);
+        es.close();
+        refreshTokenCounter();
+        gerarBtn.disabled = false;
+      }
+    };
+
+    es.onerror = () => {
+      errLog(logPanel, 'Erro de conexão com o servidor.');
+      es.close();
+      refreshTokenCounter();
+      gerarBtn.disabled = false;
+    };
+  } catch (err) {
+    alert('Erro ao aprovar os parâmetros: ' + err.message);
+    gerarBtn.disabled = false;
+  }
+});
+
+function registrarArquivoSlideGerado(msg) {
+  const container = document.getElementById('slidesArquivos');
+  container.style.display = 'flex';
+  container.insertAdjacentHTML('beforeend',
+    `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🖥️ ${escHtml(msg.titulo)}</span>`);
 }
 
 // ── STEP 9 — Roteiros ───────────────────────────────────────────────────────
@@ -1128,6 +1176,18 @@ async function carregarProjetoPorPasta(pasta) {
         `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🎬 Roteiro ${escHtml(a.numero)}: ${escHtml(a.titulo)}</span>`
       ).join('');
       document.getElementById('roteiroResultCard').style.display = 'block';
+    }
+
+    // Restaura os arquivos de slides já gerados (Etapa 8) — os valores sticky
+    // de observação/quantidade já ficam no lado servidor (sess), devolvidos a
+    // cada GET /api/slides/parametros, sem precisar de espelho no client state.
+    if (data.slidesGerados?.length) {
+      const container = document.getElementById('slidesArquivos');
+      container.style.display = 'flex';
+      container.innerHTML = data.slidesGerados.map(a =>
+        `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🖥️ ${escHtml(a.titulo)}</span>`
+      ).join('');
+      document.getElementById('slidesResultCard').style.display = 'block';
     }
 
     // Restaura metodologia no painel da Etapa 0

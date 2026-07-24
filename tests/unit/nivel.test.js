@@ -60,15 +60,6 @@ describe('skills — nível nos prompts', () => {
     expect(skills.planoAulaSkill({ ...base, aula, index: 0, total: 1 }).user).toContain(', Nível)');
   });
 
-  test('slidesSkill recebe e usa o nível', () => {
-    const s = skills.slidesSkill({ nomeCurso: 'Curso X', aula, nivel: 'Avançado' });
-    expect(s.user).toContain('Nível do curso: Avançado');
-    expect(s.user).toContain('## Diretrizes de Nível — Avançado');
-    // Sem nível, comportamento anterior preservado
-    const sem = skills.slidesSkill({ nomeCurso: 'Curso X', aula });
-    expect(sem.user).not.toContain('Nível do curso:');
-  });
-
   test('revisão avalia adequação ao nível e melhorias o preservam', () => {
     const config = { nome: 'X', publico: 'Y', nivel: 'Básico' };
     const rev = skills.revisaoQualidadeSkill({ config, aulaIndex: 0, aulaTitulo: 'A', aulaConteudo: 'c' });

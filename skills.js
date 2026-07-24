@@ -289,48 +289,10 @@ const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, n
     `existente no plano de ensino (permite auditar a aderência ao currículo).`
 });
 
-// Estrutura o conteúdo já gerado de uma aula em slides — usada pela Etapa 8
-// (Geração de Slides), que só reorganiza/resume o que já existe, sem gerar
-// conteúdo pedagógico novo. Também decide, por slide, se uma imagem ajuda —
-// no mesmo call, para não divergir da segmentação e não gastar uma chamada extra.
-const slidesSkill = ({ nomeCurso, aula, nivel }) => ({
-  model: MODEL_ECONOMY,
-  system:
-    'Você é especialista em design instrucional e comunicação visual. Extraia ' +
-    'os tópicos principais de um conteúdo de aula e organize-os em slides ' +
-    'autoexplicativos, sem depender de um apresentador. Responda apenas com ' +
-    'JSON válido, sem texto adicional.',
-  user:
-    `Analise o conteúdo da aula abaixo e organize-o em uma sequência de 6 a 10 ` +
-    `slides, conforme a densidade do conteúdo (menos slides para conteúdo mais ` +
-    `enxuto, mais slides para conteúdo mais denso). Cada slide deve ter um ` +
-    `título curto e de 2 a 5 bullets concisos e autoexplicativos (sem precisar ` +
-    `de um professor explicando ao lado). NÃO misture tópicos de módulos ou ` +
-    `disciplinas distintos no mesmo slide — mantenha cada slide coeso em torno ` +
-    `de um só assunto. NÃO inclua notas do apresentador.\n\n` +
-    `Para cada slide, decida também se uma imagem de apoio ajudaria a compreensão: ` +
-    `conceitos concretos, processos, ferramentas ou comparações se beneficiam de ` +
-    `ilustração; definições abstratas ou listas de termos geralmente não. Como ` +
-    `orientação (não regra fixa), a maioria das aulas deve ter entre 3 e 6 slides ` +
-    `ilustrados — nem toda aula precisa do máximo, a quantidade deve refletir quais ` +
-    `tópicos realmente se beneficiam de imagem. Quando decidir por uma imagem, ` +
-    `descreva SOMENTE a cena em inglês, sem palavras de estilo (nada de "cartoon", ` +
-    `"flat illustration", cores, etc. — isso é definido à parte); quando não, use null.\n\n` +
-    `Curso: ${nomeCurso}\nAula: ${aula.titulo}\nMódulo: ${aula.modulo || 'não especificado'}\n` +
-    (nivel ? `Nível do curso: ${nivel} — adeque a densidade de informação por slide e o vocabulário a esse nível.\n` : '') +
-    `Objetivos: ${aula.objetivos || 'não especificados'}` +
-    nivelBlock(nivel) + `\n\n` +
-    `Conteúdo completo da aula:\n${aula.texto}\n\n` +
-    `Responda SOMENTE com um JSON no formato exato:\n` +
-    `{"slides": [{"titulo": "string", "bullets": ["string", ...], ` +
-    `"imagem": {"promptCena": "string em inglês, só a cena"} | null}]}`
-});
-
 // Propõe um menu de estilos visuais coerentes com o perfil do curso, para o
-// usuário escolher antes da geração de imagens da Etapa 8. Cada opção traz
-// título/descrição em português (para o usuário) e um prompt de estilo em
-// inglês (para o gerador de imagens) — não inclui restrições técnicas de
-// composição/ausência de texto, isso é sempre aplicado à parte (IMAGE_LAYOUT_CONSTRAINTS).
+// usuário escolher antes da geração dos slides da Etapa 8 (API do Gamma).
+// Cada opção traz título/descrição em português (para o usuário) e um prompt
+// de estilo em inglês, repassado como imageOptions.style na chamada ao Gamma.
 const ARQUETIPOS_ESTILO_VISUAL =
   'playful/cartoon, dynamic/modern, Pixar-style 3D animated, minimalist/geometric, ' +
   'corporate/muted, watercolor/handcrafted';
@@ -364,16 +326,6 @@ const estiloVisualSkill = ({ nome, publico, nivel, objetivos, modalidade }) => (
     `{"estilos": [{"id": "string-slug", "titulo": "string", "descricao": "string", ` +
     `"housePrompt": "string em inglês"}]}`
 });
-
-// Restrições técnicas de layout sempre aplicadas a toda imagem gerada,
-// independente do estilo estético escolhido pelo usuário — a caixa de imagem
-// no pptx é quadrada (buildPptx) e não pode ter texto embutido pela própria imagem.
-const IMAGE_LAYOUT_CONSTRAINTS =
-  'Centered composition within a square frame, subject fully visible with generous margin on ' +
-  'all sides (the image will sit in a square box beside text, not full-bleed). No text, letters, ' +
-  'numbers, or logos anywhere in the image. No watermarks, no borders.';
-const MODEL_IMAGE = 'gpt-image-1.5';
-const IMAGE_QUALITY = 'medium';
 
 // Gera o roteiro de vídeo com avatar de uma aula (Etapa 9) a partir do prompt já
 // montado (template PromptRoteiro.docx preenchido) e revisado/aprovado pelo
@@ -921,11 +873,7 @@ module.exports = {
   planLessonsSkill,
   planoAulaSkill,
   conteudoSkill,
-  slidesSkill,
   estiloVisualSkill,
-  IMAGE_LAYOUT_CONSTRAINTS,
-  MODEL_IMAGE,
-  IMAGE_QUALITY,
   roteiroSkill,
   // Ciclo de revisão e melhoria (Etapas 5★ e 6)
   revisaoQualidadeSkill,

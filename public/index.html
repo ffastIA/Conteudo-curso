@@ -464,15 +464,14 @@
     <div class="card">
       <h2>Geração de Slides (PowerPoint)</h2>
       <p style="font-size:.85rem;color:#555;line-height:1.6">
-        Gera automaticamente um arquivo <strong>.pptx por aula</strong>, a partir do conteúdo
-        já produzido na Etapa 5 — a IA extrai os tópicos principais de cada aula, organiza
-        em 6 a 10 slides autoexplicativos e ilustra os slides que se beneficiam de imagem,
-        no estilo visual que você escolher abaixo. Prontos para projeção ou edição posterior
-        no PowerPoint/Canva.
+        Gera um arquivo <strong>.pptx por aula</strong>, a partir do conteúdo já produzido
+        na Etapa 5, usando a API do Gamma — você escolhe a quantidade de slides (1 a 5) e
+        pode adicionar observações complementares antes de cada aula. Os slides trazem
+        tópicos explicativos e imagens no estilo visual que você escolher abaixo.
       </p>
       <p class="field-hint">
-        Requer a conclusão da Etapa 5 (Conteúdo). Etapa opcional e independente. A geração de
-        imagens para várias aulas pode levar alguns minutos.
+        Requer a conclusão da Etapa 5 (Conteúdo). Etapa opcional e independente. A geração
+        pausa aula a aula para revisão antes de cada uma.
       </p>
 
       <!-- Seleção de estilo visual (exibida antes da primeira geração) -->
@@ -481,7 +480,7 @@
         <p style="font-size:.82rem;color:#777;margin-bottom:12px">Selecione uma opção — será aplicada a todas as aulas.</p>
         <div id="estilosVisuaisList" class="bncc-checklist"></div>
         <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
-          <button id="btnConfirmarEstiloVisual" class="btn btn-primary">Confirmar estilo e gerar →</button>
+          <button id="btnConfirmarEstiloVisual" class="btn btn-primary">Confirmar estilo →</button>
         </div>
       </div>
 
@@ -490,9 +489,32 @@
       </div>
     </div>
 
+    <!-- Parâmetros por aula (quantidade de slides + observações complementares) -->
+    <div class="card" id="slidesParametrosCard" style="display:none">
+      <h2>Slides da Aula <span id="slidesAulaProgresso"></span></h2>
+      <div class="form-group" style="max-width:220px">
+        <label for="slidesQuantidadeSelect">Quantidade de slides</label>
+        <select id="slidesQuantidadeSelect">
+          <option value="1">1 slide</option>
+          <option value="2">2 slides</option>
+          <option value="3">3 slides</option>
+          <option value="4">4 slides</option>
+          <option value="5">5 slides</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label for="slidesObservacaoTexto">Observações complementares (opcional)</label>
+        <textarea id="slidesObservacaoTexto" placeholder="Algum ajuste ou ênfase para os slides desta aula?"></textarea>
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button id="btnGerarSlidesAula" class="btn btn-primary">Gerar →</button>
+      </div>
+      <div class="log-panel" id="logSlides" style="margin-top:14px"></div>
+    </div>
+
+    <!-- Resumo final -->
     <div class="card" id="slidesResultCard" style="display:none">
       <h2>Slides Gerados</h2>
-      <div class="log-panel" id="logSlides"></div>
       <div id="slidesArquivos" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
     </div>
   </section>

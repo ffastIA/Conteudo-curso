@@ -19,11 +19,18 @@ const {
   AlignmentType, PageNumber, Header, Footer, Table,
   TableRow, TableCell, WidthType, BorderStyle, NumberFormat
 } = require('docx');
-const PptxGenJS = require('pptxgenjs');
 
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 6 });
 const upload = multer({ storage: multer.memoryStorage() });
+
+// ── Gamma (Etapa 8 — Slides) ────────────────────────────────────────────────
+// Único motor externo além da OpenAI neste projeto — mesmo padrão de chave
+// (.env, nunca commitada) usado para OPENAI_API_KEY.
+const GAMMA_API_KEY = process.env.GAMMA_API_KEY;
+const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
+const GAMMA_POLL_INTERVAL_MS = 5_000;
+const GAMMA_POLL_TIMEOUT_MS = 5 * 60_000;
 
 const SEARCH_TIMEOUT_MS = 45_000;
 const SEARCH_RETRY_TIMEOUT_MS = 30_000;
@@ -861,6 +868,9 @@ function saveProject(sess, stageInfo = null) {
   projeto.estiloVisual = sess.estiloVisual || null;
   projeto.roteiroBlocos = sess.roteiroBlocos || null;
   projeto.roteirosGerados = sess.roteirosGerados || [];
+  projeto.slidesObservacaoDefault = sess.slidesObservacaoDefault || '';
+  projeto.slidesQuantidadeDefault = sess.slidesQuantidadeDefault || null;
+  projeto.slidesGerados = sess.slidesGerados || [];
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -892,13 +902,63 @@ async function persistStage(sess, baseName, label, content, sites = []) {
   }
 }
 
-// Persiste um plano de slides como .pptx na raiz do projeto (Etapa 8). Ao
-// contrário de persistStage, não grava nenhum .txt em /scr — slides não são
-// lidos de volta como "memória" por nenhuma etapa posterior.
-async function persistPptxStage(sess, baseName, aula, slidePlan) {
+// ── Integração com a API do Gamma (Etapa 8 — Slides) ────────────────────────
+// Cria uma geração no Gamma (POST /generations) — primeiro passo do fluxo
+// assíncrono create → poll → download. Nenhum SDK oficial é usado: é uma API
+// REST simples, chamada via fetch nativo do Node (sem dependência nova).
+async function criarGeracaoGamma(payload, client = null) {
+  const timeoutSignal = makeAbortSignal(30_000);
+  const resp = await fetch(`${GAMMA_API_BASE}/generations`, {
+    method: 'POST',
+    headers: { 'X-API-KEY': GAMMA_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: client ? combineSignals(client.signal, timeoutSignal) : timeoutSignal
+  });
+  if (!resp.ok) {
+    const detalhe = await resp.text().catch(() => '');
+    throw new Error(`Gamma retornou ${resp.status} ao criar a geração dos slides.${detalhe ? ' ' + detalhe : ''}`);
+  }
+  return resp.json();
+}
+
+// Aguarda a conclusão de uma geração do Gamma via polling (a API não oferece
+// webhook). Respeita a desconexão do cliente SSE e um teto de tempo total —
+// a maioria das gerações conclui em 1-3 min, segundo a documentação do Gamma.
+async function aguardarGeracaoGamma(generationId, client) {
+  const prazo = Date.now() + GAMMA_POLL_TIMEOUT_MS;
+  while (Date.now() < prazo) {
+    if (client.disconnected) throw new Error('Cliente desconectado durante a geração dos slides.');
+
+    const timeoutSignal = makeAbortSignal(30_000);
+    const resp = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
+      headers: { 'X-API-KEY': GAMMA_API_KEY },
+      signal: combineSignals(client.signal, timeoutSignal)
+    });
+    if (!resp.ok) {
+      throw new Error(`Gamma retornou ${resp.status} ao consultar o andamento da geração.`);
+    }
+    const data = await resp.json();
+    if (data.status === 'completed') return data;
+    if (data.status === 'failed') {
+      throw new Error(data.error?.message || 'A geração dos slides falhou no Gamma.');
+    }
+    await new Promise(r => setTimeout(r, GAMMA_POLL_INTERVAL_MS));
+  }
+  throw new Error('Tempo limite excedido aguardando a geração dos slides no Gamma.');
+}
+
+// Baixa o .pptx pronto a partir do exportUrl retornado pelo Gamma e grava no
+// mesmo local/nome de sempre (aula{NN}_slides.pptx em courseRootDir) — mesmo
+// contrato de saída do antigo persistPptxStage, só a origem do arquivo muda.
+// exportUrl é um link de download efêmero (~1 semana) sem controle de acesso;
+// nunca é logado nem devolvido ao cliente — o download acontece só aqui.
+async function persistGammaSlidesStage(sess, baseName, exportUrl) {
+  const resp = await fetch(exportUrl);
+  if (!resp.ok) {
+    throw new Error(`Falha ao baixar o .pptx gerado pelo Gamma (status ${resp.status}).`);
+  }
+  const buffer = Buffer.from(await resp.arrayBuffer());
   const rootDir = courseRootDir(sess);
-  const pptx = buildPptx(sess.config, aula, slidePlan, new Date());
-  const buffer = await pptx.write({ outputType: 'nodebuffer' });
   const fullPath = path.join(rootDir, `${baseName}.pptx`);
   fs.writeFileSync(fullPath, buffer);
   saveProject(sess, { baseName, fonte: 'ia' });
@@ -926,10 +986,7 @@ function sseError(res, message) {
 }
 
 // ── Contador global de tokens utilizados (todas as etapas/sessões) ─────────
-// "images" conta chamadas à API de imagens (Etapa 8) à parte — essa API não
-// expõe prompt/completion tokens no mesmo formato da chat completions, então
-// não faz sentido forçar esse mapeamento; só a contagem de chamadas bem-sucedidas.
-const tokenUsage = { prompt: 0, completion: 0, total: 0, images: 0 };
+const tokenUsage = { prompt: 0, completion: 0, total: 0 };
 
 function addUsage(usage, sess) {
   if (!usage) return;
@@ -1278,91 +1335,123 @@ app.post('/api/estilos-visuais/selecionar', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── GET /api/slides (SSE) — Etapa 8, opcional e independente ───────────────
+// ── Etapa 8 — Slides, via API do Gamma, opcional e independente ────────────
 // Reorganiza o conteúdo JÁ gerado de cada aula em slides — não gera conteúdo
-// pedagógico novo, apenas estrutura/resume o que já existe.
-app.get('/api/slides', async (req, res) => {
+// pedagógico novo, apenas estrutura/resume o que já existe. Pausa para
+// revisão humana (quantidade de slides + observações) antes de cada aula,
+// mesmo padrão de duas fases já usado na Etapa 9 (Roteiros): monta parâmetros
+// (sem IA) → aprova → gera via SSE, com avanço automático entre aulas.
+
+// GET /api/slides/parametros?index=N — metadados da aula + valores sticky
+// atuais (quantidade/observação), sem chamar IA nenhuma.
+app.get('/api/slides/parametros', (req, res) => {
   const sess = getSession(req, res);
   restoreConteudoPorAula(sess);
   if (!sess.conteudo && !sess.conteudoPorAula?.length) {
-    return sseError(res, 'Conclua a Etapa 5 antes de gerar os slides.');
+    return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar os slides.' });
   }
   if (!sess.estiloVisual) {
-    return sseError(res, 'Escolha um estilo visual antes de gerar os slides.');
+    return res.status(400).json({ error: 'Escolha um estilo visual antes de gerar os slides.' });
+  }
+
+  const aulas = sess.conteudoPorAula;
+  const index = Number(req.query.index);
+  if (!Number.isInteger(index) || index < 0 || index >= aulas.length) {
+    return res.status(400).json({ error: 'Índice de aula inválido.' });
+  }
+
+  const aula = aulas[index];
+  res.json({
+    index,
+    numero: String(index + 1).padStart(2, '0'),
+    titulo: aula.titulo,
+    total: aulas.length,
+    observacaoPadrao: sess.slidesObservacaoDefault || '',
+    quantidadePadrao: sess.slidesQuantidadeDefault || 3
+  });
+});
+
+// POST /api/slides/parametros — aprova quantidade (1-5) e observação da aula,
+// guardadas para a próxima chamada a GET /api/slides/gerar.
+app.post('/api/slides/parametros', (req, res) => {
+  const sess = getSession(req, res);
+  const { index, texto, quantidade } = req.body || {};
+  const i = Number(index);
+  const q = Number(quantidade);
+  if (!Number.isInteger(i) || !sess.conteudoPorAula?.[i]) {
+    return res.status(400).json({ error: 'Índice de aula inválido.' });
+  }
+  if (!Number.isInteger(q) || q < 1 || q > 5) {
+    return res.status(400).json({ error: 'Escolha uma quantidade de slides entre 1 e 5.' });
+  }
+  sess.slidesPendente = { index: i, texto: texto?.trim() || '', quantidade: q };
+  res.json({ ok: true });
+});
+
+// GET /api/slides/gerar (SSE) — chama o Gamma para a aula pendente, persiste
+// o .pptx e indica a próxima aula pendente (se houver) para avanço automático.
+app.get('/api/slides/gerar', async (req, res) => {
+  const sess = getSession(req, res);
+  if (!sess.slidesPendente) {
+    return sseError(res, 'Nenhum parâmetro de slides aprovado. Monte e confirme os parâmetros da aula antes de gerar.');
   }
   sseHeaders(res);
   const client = clientAbort(res);
+  const { index, texto, quantidade } = sess.slidesPendente;
+  const aulas = sess.conteudoPorAula;
+  const aula = aulas[index];
+  const numero = String(index + 1).padStart(2, '0');
 
   try {
-    const aulas = sess.conteudoPorAula;
-    const arquivos = [];
+    send(res, { type: 'progress', message: `Gerando slides da aula ${index + 1} de ${aulas.length}: ${aula.titulo}` });
 
-    for (let i = 0; i < aulas.length; i++) {
-      if (client.disconnected) break;
+    const payload = {
+      inputText: aula.texto,
+      textMode: 'condense',
+      format: 'presentation',
+      numCards: quantidade,
+      textOptions: {
+        amount: 'brief',
+        audience: sess.config.publico || '',
+        tone: `Tom leve, descontraído e acolhedor, adequado à faixa etária do público-alvo. ` +
+          `Nível do curso: ${sess.config.nivel || 'não especificado'} — adeque a densidade de informação e o vocabulário a esse nível.`,
+        language: 'pt-br'
+      },
+      imageOptions: {
+        source: 'aiGenerated',
+        style: `${sess.estiloVisual.housePrompt} A cena deve remeter ao tema desta aula: ${aula.titulo}.`
+      },
+      cardOptions: { dimensions: '16x9' },
+      ...(texto ? { additionalInstructions: texto } : {}),
+      exportAs: 'pptx'
+    };
 
-      const aula = aulas[i];
-      const numero = String(i + 1).padStart(2, '0');
-      send(res, {
-        type: 'progress',
-        message: `Gerando slides da aula ${i + 1} de ${aulas.length}: ${aula.titulo}`
-      });
+    const criacao = await criarGeracaoGamma(payload, client);
+    send(res, { type: 'progress', message: `Aguardando o Gamma concluir a geração da aula ${index + 1}...` });
 
-      const skill = skills.slidesSkill({ nomeCurso: sess.config.nome, aula, nivel: sess.config.nivel });
-      const completion = await openai.chat.completions.create({
-        model: skill.model,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: skill.system },
-          { role: 'user', content: skill.user }
-        ]
-      }, { signal: client.signal });
-      addUsage(completion.usage, sess);
-
-      let slidePlan = { slides: [] };
-      try {
-        slidePlan = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      } catch {
-        slidePlan = { slides: [] };
-      }
-
-      // Falha isolada por imagem não interrompe a aula nem o curso — o slide
-      // correspondente cai no layout sem imagem (buildPptx).
-      const slidesComImagem = (slidePlan.slides || []).filter(s => s?.imagem?.promptCena);
-      for (let j = 0; j < slidesComImagem.length; j++) {
-        if (client.disconnected) break;
-        const slide = slidesComImagem[j];
-        send(res, {
-          type: 'progress',
-          message: `Gerando imagem ${j + 1} de ${slidesComImagem.length} da aula ${i + 1}...`
-        });
-        try {
-          if (j > 0) await new Promise(r => setTimeout(r, 2000));
-          slide._imageData = await gerarImagemSlide(slide.imagem.promptCena, sess.estiloVisual.housePrompt, client);
-          if (slide._imageData) tokenUsage.images += 1;
-        } catch (imgErr) {
-          if (client.disconnected) throw imgErr;
-          console.error(`[slides] Falha ao gerar imagem da aula ${i + 1}:`, imgErr.message);
-          send(res, {
-            type: 'progress',
-            message: `Aviso: não foi possível gerar uma imagem da aula ${i + 1}, o slide seguirá sem ilustração.`
-          });
-        }
-      }
-      if (client.disconnected) break;
-
-      const baseName = `aula${numero}_slides`;
-      const fullPath = await persistPptxStage(sess, baseName, aula, slidePlan);
-      arquivos.push({ baseName, titulo: aula.titulo, path: fullPath });
-
-      if (i < aulas.length - 1) await new Promise(r => setTimeout(r, 4000));
-    }
+    const resultado = await aguardarGeracaoGamma(criacao.generationId, client);
     if (client.disconnected) return;
 
-    send(res, { type: 'progress', message: 'Concluído' });
-    send(res, { type: 'done', arquivos });
+    const baseName = `aula${numero}_slides`;
+
+    // Atualiza os campos sticky/histórico ANTES de persistir — saveProject()
+    // (chamado dentro de persistGammaSlidesStage) serializa o sess atual para
+    // projeto.json, então a ordem importa: se fosse depois, a entrada desta
+    // aula só apareceria em disco na próxima geração (nunca, se for a última).
+    sess.slidesObservacaoDefault = texto;
+    sess.slidesQuantidadeDefault = quantidade;
+    sess.slidesGerados = sess.slidesGerados || [];
+    sess.slidesGerados.push({ index, numero, titulo: aula.titulo, baseName, observacao: texto, quantidade, geradoEm: new Date().toISOString() });
+    sess.slidesPendente = null;
+
+    await persistGammaSlidesStage(sess, baseName, resultado.exportUrl);
+
+    const proximoIndex = index + 1 < aulas.length ? index + 1 : null;
+    send(res, { type: 'progress', message: `Slides da aula ${index + 1} concluídos` });
+    send(res, { type: 'done', index, numero, baseName, titulo: aula.titulo, proximoIndex });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração dos slides — interrompendo /api/slides');
+      console.warn('[sse] cliente desconectou durante a geração dos slides — interrompendo /api/slides/gerar');
       return;
     }
     console.error(err);
@@ -1497,11 +1586,16 @@ app.get('/api/roteiro/gerar', async (req, res) => {
     fullText = preencherBlocoVozNoRoteiro(fullText, extrairBlocoVozAvatar(template));
 
     const baseName = `roteiro${numero}`;
-    await persistStage(sess, baseName, `Roteiro de Vídeo — Aula ${index + 1}: ${aula.titulo}`, fullText);
 
+    // Atualiza o histórico ANTES de persistir — saveProject() (chamado dentro
+    // de persistStage) serializa o sess atual para projeto.json; se fosse
+    // depois, a entrada desta aula só apareceria em disco na próxima geração
+    // (nunca, se for a última aula do curso).
     sess.roteirosGerados = sess.roteirosGerados || [];
     sess.roteirosGerados.push({ index, numero, titulo: aula.titulo, baseName });
     sess.roteiroPendente = null;
+
+    await persistStage(sess, baseName, `Roteiro de Vídeo — Aula ${index + 1}: ${aula.titulo}`, fullText);
 
     const proximoIndex = index + 1 < sess.aulas.length ? index + 1 : null;
     send(res, { type: 'progress', message: `Roteiro da aula ${index + 1} concluído` });
@@ -2163,6 +2257,9 @@ app.post('/api/carregar-projeto', (req, res) => {
       sess.estiloVisual = p.estiloVisual || null;
       sess.roteiroBlocos = p.roteiroBlocos || null;
       sess.roteirosGerados = p.roteirosGerados || [];
+      sess.slidesObservacaoDefault = p.slidesObservacaoDefault || '';
+      sess.slidesQuantidadeDefault = p.slidesQuantidadeDefault || null;
+      sess.slidesGerados = p.slidesGerados || [];
       stages = p.stages || {};
     } catch {
       sess.config = {};
@@ -2224,7 +2321,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [] });
+  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [] });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────
@@ -2493,85 +2590,6 @@ function buildDocx(config, stepLabel, content, sites = []) {
       children
     }]
   });
-}
-
-// ── PPTX builder (Etapa 8 — Slides) ─────────────────────────────────────────
-// Diferente de buildDocx, consome um slidePlan já estruturado em slides (não
-// texto corrido), já que uma apresentação é organizada por slide desde o início.
-function buildPptx(config, aula, slidePlan, geradoEm) {
-  const pptx = new PptxGenJS();
-  pptx.defineLayout({ name: 'WIDESCREEN', width: 13.33, height: 7.5 });
-  pptx.layout = 'WIDESCREEN';
-
-  const FONT = 'Calibri';
-  const rodape = `${aula.titulo} · ${config.nome || 'Curso'} · ` +
-    `${geradoEm.toLocaleDateString('pt-BR')} ${geradoEm.toLocaleTimeString('pt-BR')}`;
-
-  // Slide de capa — identificação simples, não conta na faixa de 6-10 slides de conteúdo.
-  const capa = pptx.addSlide();
-  capa.addText(aula.titulo, {
-    x: 0.6, y: 2.6, w: 12, h: 1.2, fontFace: FONT, fontSize: 36, bold: true, color: '4A3B8C'
-  });
-  capa.addText(config.nome || 'Curso', {
-    x: 0.6, y: 3.8, w: 12, h: 0.6, fontFace: FONT, fontSize: 20, color: '555555'
-  });
-
-  const slides = Array.isArray(slidePlan?.slides) ? slidePlan.slides : [];
-  for (const slide of slides) {
-    const s = pptx.addSlide();
-    s.addText(slide.titulo || '', {
-      x: 0.6, y: 0.4, w: 12, h: 0.9, fontFace: FONT, fontSize: 32, bold: true, color: '4A3B8C'
-    });
-    const bullets = Array.isArray(slide.bullets) ? slide.bullets : [];
-    const bulletsFormatted = bullets.map(b => ({ text: b, options: { bullet: true, breakLine: true } }));
-
-    // Slide com imagem gerada com sucesso: bullets ficam numa coluna mais
-    // estreita à esquerda, imagem numa caixa quadrada à direita. Slide sem
-    // imagem (IA não indicou, ou a geração falhou) mantém o layout original
-    // em largura total — nenhuma mudança visual para quem não ganha ilustração.
-    if (slide.imagem && slide._imageData) {
-      s.addText(bulletsFormatted, {
-        x: 0.8, y: 1.6, w: 6.6, h: 5, fontFace: FONT, fontSize: 22, color: '222222', valign: 'top'
-      });
-      s.addImage({
-        data: slide._imageData,
-        x: 7.7, y: 1.6, w: 4.9, h: 4.9,
-        sizing: { type: 'contain', w: 4.9, h: 4.9 },
-        altText: slide.titulo || 'Ilustração'
-      });
-    } else {
-      s.addText(bulletsFormatted, {
-        x: 0.8, y: 1.6, w: 11.5, h: 5, fontFace: FONT, fontSize: 24, color: '222222', valign: 'top'
-      });
-    }
-
-    s.addText(rodape, {
-      x: 0.4, y: 7.05, w: 8, h: 0.35, fontFace: FONT, fontSize: 11, color: '888888', align: 'left'
-    });
-  }
-
-  return pptx;
-}
-
-// Gera uma imagem para um slide via API de imagens da OpenAI, combinando a
-// cena decidida pela IA (promptCena), o estilo escolhido pelo usuário
-// (housePrompt) e as restrições técnicas de layout sempre aplicadas
-// (IMAGE_LAYOUT_CONSTRAINTS). Retorna null em caso de falha — o slide cai no
-// layout sem imagem em buildPptx, sem interromper a geração da aula/curso.
-async function gerarImagemSlide(promptCena, housePrompt, clientCtx = null) {
-  const timeoutSignal = makeAbortSignal(90000);
-  const response = await openai.images.generate(
-    {
-      model: skills.MODEL_IMAGE,
-      prompt: `${promptCena}. ${housePrompt}. ${skills.IMAGE_LAYOUT_CONSTRAINTS}`,
-      size: '1024x1024',
-      quality: skills.IMAGE_QUALITY,
-      n: 1
-    },
-    { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
-  );
-  const b64 = response.data[0]?.b64_json;
-  return b64 ? `image/png;base64,${b64}` : null;
 }
 
 // ── GET /api/revisao-qualidade (SSE) — Etapa 5★ ─────────────────────────────

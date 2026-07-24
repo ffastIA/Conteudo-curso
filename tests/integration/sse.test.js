@@ -141,32 +141,6 @@ describe('pré-condições SSE', () => {
     });
   });
 
-  test('GET /api/slides sem conteudo emite evento error', async () => {
-    const res = await collectSSE(request(app), '/api/slides');
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
-    const events = parseSSE(res.body);
-    expect(events).toContainEqual({
-      type: 'error',
-      message: 'Conclua a Etapa 5 antes de gerar os slides.'
-    });
-  });
-
-  test('GET /api/slides com conteudo mas sem estilo visual emite evento error', async () => {
-    const ag = agent();
-    await ag.post('/api/config').send(VALID_CONFIG);
-    OpenAI.__setResponse('conteudo gerado');
-    await collectSSE(ag, '/api/conteudo');
-
-    const res = await collectSSE(ag, '/api/slides');
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
-    const events = parseSSE(res.body);
-    expect(events).toContainEqual({
-      type: 'error',
-      message: 'Escolha um estilo visual antes de gerar os slides.'
-    });
-  });
 });
 
 // ── Extra: /api/plano-aula streaming ─────────────────────────────────────────
