@@ -1,3 +1,11 @@
+## Purpose
+
+Gerar, a partir do plano de aula já concluído, um roteiro de vídeo por aula
+do curso (Etapa 9), com revisão humana do prompt antes da geração e avanço
+automático entre aulas.
+
+## Requirements
+
 ### Requirement: Um roteiro por aula, quantidade sempre igual ao número de aulas do curso
 O sistema SHALL gerar exatamente um arquivo de roteiro por aula do curso. O número
 total de arquivos gerados SHALL ser sempre igual a `sess.aulas.length` no momento da
@@ -160,9 +168,7 @@ o fim do ciclo em vez de indicar uma próxima aula.
 ---
 
 ### Requirement: Restauração ao recarregar um projeto existente
-Ao recarregar um projeto que já teve roteiros gerados anteriormente, o sistema
-SHALL restaurar a escolha de blocos e a lista de roteiros já gerados a partir do
-`projeto.json`, sem exigir que o usuário escolha o número de blocos novamente.
+O sistema SHALL restaurar a escolha de blocos e a lista de roteiros já gerados a partir do `projeto.json` ao recarregar um projeto que já teve roteiros gerados anteriormente, sem exigir que o usuário escolha o número de blocos novamente.
 
 #### Scenario: Blocos restaurados ao recarregar o projeto
 - **WHEN** o usuário recarrega um projeto (`POST /api/carregar-projeto`) que já teve um número de blocos selecionado anteriormente

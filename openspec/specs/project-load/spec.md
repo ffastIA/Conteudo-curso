@@ -1,3 +1,9 @@
+## Purpose
+
+Permitir que o usuário retome um projeto existente reconstruindo a sessão
+inteira a partir do `projeto.json` e dos arquivos `.txt` em disco, sem
+nenhuma chamada à OpenAI.
+
 ## Requirements
 
 ### Requirement: Carregar projeto existente na sessão

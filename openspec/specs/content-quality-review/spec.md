@@ -1,4 +1,12 @@
-## ADDED Requirements
+## Purpose
+
+Gerar um relatório de revisão de qualidade (Etapa 5★) sobre o conteúdo já
+produzido na Etapa 5, avaliando cada aula por aderência aos artefatos do
+curso, adequação ao público/nível/modalidade, sobreposição entre aulas e nota
+de qualidade — servindo de insumo estruturado para o ciclo de aplicação de
+melhorias.
+
+## Requirements
 
 ### Requirement: Geração do relatório de revisão de qualidade
 O sistema SHALL gerar um relatório de revisão de qualidade para o conteúdo da Etapa 5, analisando cada aula individualmente contra os artefatos do curso (ementa, plano de ensino, plano de aula) e, quando BNCC ativo, contra as competências/habilidades selecionadas. O sistema SHALL restaurar automaticamente `sess.conteudoPorAula` a partir do disco antes de validar a pré-condição, caso a sessão em memória esteja vazia. O relatório SHALL incluir para cada aula uma seção "Adequação à Faixa Etária e Perfil de Público" que avalia se linguagem, complexidade, exemplos e abordagem didática são adequados ao `config.publico` informado, com justificativa pedagógica explícita e sugestões de ajuste quando inadequações forem identificadas. O relatório SHALL ser entregue via SSE streaming e persistido em disco.

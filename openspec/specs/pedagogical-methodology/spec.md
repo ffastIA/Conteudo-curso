@@ -1,3 +1,12 @@
+## Purpose
+
+Gerar, revisar e confirmar a metodologia pedagógica do curso ao final da
+Etapa 1, garantindo que ela seja compatível com a modalidade escolhida e
+injetada como contexto pedagógico em todas as skills de geração
+subsequentes.
+
+## Requirements
+
 ### Requirement: Geração da metodologia pedagógica ao final da Etapa 1
 O sistema SHALL oferecer a geração da metodologia pedagógica como a última ação da Etapa 1 (Configuração), acionada pelo botão "Gerar Metodologia", que primeiro salva a configuração do curso (`POST /api/config`) e em seguida deriva a metodologia via `metodologiaSkill` (gpt-4o-mini) com base no perfil recém-salvo, **incluindo a modalidade do curso**. O prompt da `metodologiaSkill` SHALL conter a modalidade e a instrução explícita de que a metodologia recomendada DEVE ser compatível e operacionalizável na modalidade escolhida. O resultado SHALL ser exibido para revisão antes de qualquer avanço para a Etapa 2.
 

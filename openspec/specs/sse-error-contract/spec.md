@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Padronizar rotas consumidas via `EventSource` para entregar recusas de
+pré-condição como um evento SSE de erro (sempre HTTP 200), em vez de um
+status HTTP 4xx, preservando as mensagens já existentes.
+
+## Requirements
 
 ### Requirement: Recusa de pré-condição em rota SSE é entregue como evento SSE
 Toda rota consumida via `EventSource` que recuse a requisição por pré-condição não satisfeita SHALL responder com status 200, `Content-Type: text/event-stream`, um único evento `{"type":"error","message":"<motivo>"}` e o encerramento do stream. A rota SHALL NOT responder com status HTTP 4xx nesse caso.

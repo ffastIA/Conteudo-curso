@@ -1,3 +1,12 @@
+## Purpose
+
+Permitir que o usuário aplique, de forma iterativa e supervisionada, as
+melhorias anotadas manualmente em um relatório de revisão de qualidade ao
+conteúdo já gerado (Etapa 6) — com snapshot por ciclo, gate de qualidade por
+score, patch seccional e realinhamento automático do plano de aula.
+
+## Requirements
+
 ### Requirement: Upload do documento de revisão anotado
 O sistema SHALL aceitar o upload de um arquivo `.docx` contendo o relatório de revisão anotado pelo revisor humano. O arquivo SHALL ser enviado via `multipart/form-data` ao endpoint `POST /api/aplicar-melhorias`. O sistema SHALL extrair o texto do `.docx` e apresentar ao usuário um resumo das anotações detectadas antes de aplicar qualquer alteração. O sistema SHALL restaurar automaticamente `sess.conteudoPorAula` a partir do disco antes de processar o arquivo, caso a sessão em memória esteja vazia. O sistema SHALL persistir as observações extraídas em `scr/observacoes_pendentes.json` imediatamente após a extração. O sistema SHALL verificar a similaridade Jaccard entre as novas observações e as observações do upload anterior (lidas de `scr/observacoes_pendentes.json`) antes de sobrescrever o arquivo; se a similaridade exceder `DUPLICATE_OBS_THRESHOLD` (0.85) e ambas as partes tiverem conteúdo substantivo, a resposta SHALL incluir `aviso: 'possivel_duplicata'` com o percentual e a data do upload anterior.
 

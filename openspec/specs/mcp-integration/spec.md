@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Documentar a decisão de não manter um servidor MCP próprio no repositório,
+usando o Claude Code diretamente para integração agêntica com o projeto.
+
+## Requirements
 
 ### Requirement: Repositório sem servidor MCP próprio
 O repositório SHALL NOT conter servidor MCP próprio nem referências vivas a `mcp-server` em código, configuração ou documentação corrente (registro histórico em `openspec/changes/archive/` é permitido). Integração agêntica com o projeto usa o Claude Code diretamente. A reintrodução de um MCP server SHALL passar por nova change OpenSpec e usar o SDK oficial `@modelcontextprotocol/sdk`, sem tool de execução arbitrária de shell.

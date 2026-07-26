@@ -1,3 +1,11 @@
+## Purpose
+
+Fornecer um seletor nativo de pasta no Windows (via PowerShell) para que o
+usuário escolha visualmente o caminho da pasta do projeto, sem exigir novas
+dependências npm.
+
+## Requirements
+
 ### Requirement: Seletor nativo de pasta via servidor local
 O sistema SHALL fornecer um endpoint `GET /api/escolher-pasta` que abre um diálogo nativo de seleção de pasta do Windows no processo do servidor e retorna ao cliente o caminho absoluto escolhido pelo usuário. Este mecanismo SHALL depender apenas de ferramentas já presentes no Windows (PowerShell e `System.Windows.Forms`), sem exigir novas dependências npm. O diálogo SHALL ser exibido sempre acima de qualquer outra janela (incluindo o navegador), e não SHALL abrir de forma invisível atrás de outras janelas.
 

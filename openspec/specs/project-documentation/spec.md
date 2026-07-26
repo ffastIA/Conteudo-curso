@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Manter a documentação do repositório (`README.md`, `.env.example`,
+`CLAUDE.md`) fiel ao sistema realmente implementado.
+
+## Requirements
 
 ### Requirement: README fiel ao sistema real
 O `README.md` SHALL descrever o pipeline com as etapas realmente implementadas (0–8, incluindo slides), listar os endpoints existentes em `server.js` e nomear os modelos de IA efetivamente usados (`gpt-4o-mini` e `gpt-4o-search-preview`).

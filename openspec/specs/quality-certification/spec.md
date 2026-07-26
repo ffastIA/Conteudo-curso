@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Gerar, como etapa final opcional do pipeline (Agente de Qualidade), um
+Relatório Técnico-Pedagógico avaliando a qualidade didática geral do curso,
+com persona de especialista e seções fixas, exportável como `.docx`.
+
+## Requirements
 
 ### Requirement: Agente de Qualidade disponível após conclusão do pipeline
 O sistema SHALL disponibilizar o Agente de Qualidade Pedagógica após a conclusão da Etapa 5 (ou Etapa 6, se executada), como etapa final do fluxo, via endpoint `GET /api/qualidade` com resposta em SSE.

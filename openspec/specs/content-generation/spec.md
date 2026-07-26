@@ -1,4 +1,11 @@
-## ADDED Requirements
+## Purpose
+
+Gerar o conteúdo técnico detalhado de cada aula (Etapa 5) via streaming, com
+controles de robustez (retry de quantidade de aulas, timeouts, renderização
+client-side eficiente) e adequação ao nível, modalidade e proporção
+teórico/prático do curso.
+
+## Requirements
 
 ### Requirement: Validação e correção automática da quantidade de aulas planejadas
 O sistema SHALL validar, após receber a resposta da IA em `planLessons()`, se a quantidade de aulas retornada corresponde a `numAulas` (calculado a partir de carga horária ÷ duração por aula). Em caso de divergência, o sistema SHALL tentar novamente uma única vez, informando à IA a quantidade incorreta da tentativa anterior e a quantidade exata exigida. O sistema SHALL usar o resultado mais próximo de `numAulas` entre as duas tentativas, sem interromper a geração do curso mesmo que a divergência persista após o retry.
@@ -77,17 +84,7 @@ A função `renderMarkdown` SHALL processar listas markdown (`- item` / `* item`
 - **THEN** `renderMarkdown` processa o texto em tempo proporcional ao tamanho do texto, sem backtracking exponencial
 - **THEN** o HTML resultante agrupa os itens consecutivos em um único `<ul>`, preservando o comportamento visual atual
 
-## REMOVED Requirements
-
-### Requirement: Deduplicação automática por similaridade Jaccard
-**Reason:** A regeneração automática silenciosa impede que o usuário veja e julgue as sobreposições detectadas. O novo ciclo de revisão (Etapa 5★) expõe a análise Jaccard como reporte visível e deixa a decisão de correção ao revisor humano. Skills removidas: `conteudoRegenSkill`.
-**Migration:** A detecção de similaridade Jaccard ≥ 55% migrou para `GET /api/revisao-qualidade` (Etapa 5★) como reporte informativo. Nenhuma regeneração automática substitui a antiga.
-
-### Requirement: Revisão de coerência automática ao final da geração
-**Reason:** A `revisaoCoerenciaSkill` era executada silenciosamente ao final do stream de `/api/conteudo` e raramente consultada. A análise de coerência agora é parte explícita e visível da Etapa 5★ (`revisaoQualidadeSkill`), com saída estruturada no `.docx` de revisão. Skills removidas: `revisaoCoerenciaSkill`.
-**Migration:** O arquivo `revisao_coerencia.txt/docx` não é mais gerado pelo endpoint `/api/conteudo`. A análise equivalente é gerada pela Etapa 5★ em `revisao_qualidade.txt/docx`.
-
-## MODIFIED Requirements
+---
 
 ### Requirement: Geração de conteúdo técnico por aula
 O sistema SHALL gerar conteúdo técnico detalhado para cada aula individualmente via SSE streaming, mantendo os mecanismos de escopo e consciência sequencial (ajustes 1–4). O sistema SHALL persistir cada aula em `aula{NN}_conteudo.docx` e `scr/aula{NN}_conteudo.txt`. O sistema SHALL manter `sess.conteudo` em memória (concatenação das aulas) para consumidores downstream (PPC, finalizar-conteudo), mas SHALL NOT persistir o arquivo consolidado `conteudo.docx` nem `scr/conteudo.txt` em disco. O sistema SHALL emitir evento `done` ao concluir todas as aulas, sem executar nenhuma análise de qualidade ou deduplicação pós-geração.

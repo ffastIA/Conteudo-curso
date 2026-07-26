@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Estabelecer e manter uma base mínima de testes automatizados: gate de
+cobertura, mock da OpenAI compatível com os contratos reais das skills, e
+cobertura de integração dos caminhos críticos.
+
+## Requirements
 
 ### Requirement: Gate de cobertura executável e verde
 O comando `npm run test:coverage` SHALL sair com código 0, com threshold global de linhas mantido em 40% no `jest.config.js`.

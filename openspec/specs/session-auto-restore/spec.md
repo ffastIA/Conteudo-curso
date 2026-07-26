@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Restaurar automaticamente `sess.conteudoPorAula` a partir dos arquivos em
+disco sempre que a sessão em memória estiver vazia nos handlers da Etapa 6,
+de forma transparente ao usuário.
+
+## Requirements
 
 ### Requirement: Restauração automática de conteudoPorAula a partir do disco
 O sistema SHALL tentar restaurar `sess.conteudoPorAula` a partir de dados persistidos em disco sempre que este array estiver vazio no início dos handlers da Etapa 6. A restauração SHALL ser transparente para o usuário e não SHALL alterar o contrato dos endpoints nem o comportamento quando a sessão já estiver populada.

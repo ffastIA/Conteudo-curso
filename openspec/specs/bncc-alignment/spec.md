@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Permitir que o usuário alinhe o conteúdo do curso à BNCC (Base Nacional Comum
+Curricular), selecionando habilidades ou competências que são injetadas nos
+prompts de todas as etapas geradoras.
+
+## Requirements
 
 ### Requirement: Pergunta de alinhamento BNCC na Etapa 0
 O sistema SHALL perguntar ao usuário, antes de qualquer outra etapa, se o conteúdo do curso deve se alinhar à BNCC. A resposta é binária (Sim/Não). Se Não, toda a seção BNCC é pulada e o sistema avança para a seleção de metodologia pedagógica.

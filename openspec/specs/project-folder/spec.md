@@ -1,3 +1,12 @@
+## Purpose
+
+Definir como cada projeto usa uma pasta raiz configurável pelo usuário (com
+subpasta `/scr` para arquivos internos), garantindo que exportações e
+arquivos internos sejam salvos nos lugares corretos, sempre em disco — nunca
+via download do navegador.
+
+## Requirements
+
 ### Requirement: Pasta raiz por projeto com subdiretório /scr para internos
 Cada projeto SHALL ter uma pasta raiz (`pastaProjeto` em `sess.config`). `POST /api/config` SHALL exigir que `pastaProjeto` esteja preenchida para configurar/criar um projeto, retornando erro 400 se estiver vazia. O sistema SHALL salvar arquivos `.docx` de exportação em `courseRootDir(sess)` e arquivos internos (`.txt`, `projeto.json`) em `courseScrDir(sess)`.
 

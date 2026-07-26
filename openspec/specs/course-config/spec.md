@@ -1,3 +1,11 @@
+## Purpose
+
+Definir os campos de configuração do curso (Etapa 1) — incluindo modalidade,
+pré-requisitos, proporção teórico/prático e pasta do projeto — e controlar
+quando a ementa precisa ser regenerada a partir de mudanças nesses campos.
+
+## Requirements
+
 ### Requirement: CourseConfig inclui campos de modalidade, pré-requisitos, proporção teórico/prático e pasta do projeto
 O modelo `CourseConfig` SHALL incluir os campos `modalidade`, `preRequisitos`, `proporcaoTeoricoPratico` e `pastaProjeto`. O formulário da Etapa 1 SHALL exibir esses campos antes do botão de submissão. Os campos existentes (nome, publico, carga, duracao, nivel, objetivos) permanecem inalterados.
 

@@ -1,4 +1,10 @@
-## ADDED Requirements
+## Purpose
+
+Permitir que o usuário importe um arquivo `.docx` editado externamente para
+substituir o artefato de uma etapa já gerada, identificando a etapa por nome
+de arquivo ou por título, com confirmação explícita antes de sobrescrever.
+
+## Requirements
 
 ### Requirement: Importar .docx editado para substituir artefato de etapa
 O sistema SHALL aceitar o upload de um arquivo `.docx` editado pelo usuário, extrair seu conteúdo textual via `mammoth`, identificar a qual etapa ele pertence e sobrescrever o `.txt` correspondente após confirmação explícita do usuário. A identificação por nome de arquivo SHALL aceitar tanto o basename exato do stage quanto basenames com prefixo do curso no formato `<prefixo>_<stage>` (padrão gerado pelo export `.docx` do sistema).

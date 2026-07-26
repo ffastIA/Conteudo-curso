@@ -1,3 +1,11 @@
+## Purpose
+
+Tornar a pesquisa web da Etapa 2 resiliente a falhas transitórias, com
+timeout, retry automático e fallback para geração sem busca web, preservando
+os dados das etapas anteriores em qualquer cenário de falha.
+
+## Requirements
+
 ### Requirement: Timeout na chamada de pesquisa web
 O sistema SHALL abortar a chamada ao modelo de pesquisa web se ela não concluir dentro de **45 segundos**. O timeout SHALL ser implementado via `AbortSignal` passado ao SDK OpenAI, cancelando efetivamente a requisição HTTP. O modelo de pesquisa web SHALL ser `gpt-4o-search-preview`, referenciado pela constante `MODEL_SEARCH` em `skills.js`.
 

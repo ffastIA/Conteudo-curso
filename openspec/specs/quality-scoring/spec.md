@@ -1,4 +1,11 @@
-## ADDED Requirements
+## Purpose
+
+Definir a fórmula compartilhada de score de qualidade de uma aula (combinando
+rubrica avaliada por LLM e componentes determinísticos), usada tanto na
+revisão de qualidade quanto no gate de aceite do ciclo de aplicação de
+melhorias.
+
+## Requirements
 
 ### Requirement: Fórmula de score de qualidade de aula
 O sistema SHALL calcular o score de qualidade de uma aula como `Score = 0.7 × RubricaLLM + 0.3 × Determinístico`, ambos em escala 0–1, resultado arredondado a 2 casas decimais. `RubricaLLM` SHALL ser a média ponderada de 5 critérios avaliados por LLM em escala 0–10 (convertidos a 0–1): Aderência ao Plano de Aula (peso 0.30), Aderência ao Plano de Ensino e Ementa (0.25), Adequação a Nível/Público/Modalidade (0.20), Qualidade Didática (0.15), Clareza e Estrutura (0.10). `Determinístico` SHALL ser a média de três componentes calculados sem chamada de API: cobertura de objetivos, penalidade de sobreposição Jaccard (limiar 0.55, mesmo já usado no sistema) e completude estrutural (presença tolerante das seções esperadas do conteúdo).

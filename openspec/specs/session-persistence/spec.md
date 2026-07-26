@@ -1,3 +1,12 @@
+## Purpose
+
+Persistir os campos estruturados da sessão (BNCC, metodologia, aulas, inputs
+por etapa) em `projeto.json` a cada etapa concluída, e reconstruir a sessão e
+os campos editáveis do frontend a partir desses dados após um restart do
+servidor.
+
+## Requirements
+
 ### Requirement: Campos de sessão persistidos em disco
 A sessão em memória SHALL ter os campos `bncc`, `metodologia`, `aulas` (LessonMeta[]) e `inputs` persistidos em `{courseScrDir}/projeto.json` a cada etapa concluída. Os campos textuais (`.txt`) são persistidos em `courseScrDir` individualmente.
 

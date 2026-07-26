@@ -1,3 +1,11 @@
+## Purpose
+
+Registrar, para cada ciclo de aplicação de melhorias, snapshots do conteúdo
+anterior, métricas de mudança (similaridade Jaccard) e um relatório
+timestampado com as melhorias efetivamente aplicadas por aula.
+
+## Requirements
+
 ### Requirement: Persistência de observações do revisor em disco
 O sistema SHALL gravar as observações extraídas do `.docx` em `scr/observacoes_pendentes.json` imediatamente após a extração em `POST /api/aplicar-melhorias`, antes de qualquer confirmação do usuário. O arquivo SHALL ser sobrescrito a cada novo upload, refletindo sempre as observações da rodada mais recente.
 

@@ -1,4 +1,9 @@
-## ADDED Requirements
+## Purpose
+
+Acumular e consultar o consumo de tokens das chamadas OpenAI de cada projeto,
+persistido em disco e sobrevivendo a restarts do servidor.
+
+## Requirements
 
 ### Requirement: Histórico de uso de tokens persistido por projeto
 O sistema SHALL acumular o consumo de tokens de todas as chamadas OpenAI do projeto em `scr/token_usage.json`, com o formato `{ total: { prompt, completion, total }, porDia: { "YYYY-MM-DD": { prompt, completion, total } }, atualizadoEm }`. A acumulação SHALL ocorrer no ponto único `addUsage(usage, sess)` e SHALL ser tolerante a arquivo ausente ou corrompido (recomeça zerado, sem interromper a geração). A persistência SHALL ocorrer somente quando houver projeto identificável na sessão.

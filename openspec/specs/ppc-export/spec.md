@@ -1,4 +1,11 @@
-## ADDED Requirements
+## Purpose
+
+Gerar, a partir do pipeline principal já concluído, um Projeto Pedagógico de
+Curso (PPC) completo — com as seções complementares não cobertas pelo
+pipeline (perfil do egresso, competências, perfil docente, infraestrutura) —
+e exportá-lo como `.docx`.
+
+## Requirements
 
 ### Requirement: Botão "Gerar PPC" disponível após pipeline completo
 O sistema SHALL exibir o botão "Gerar PPC Completo" no frontend após a conclusão do pipeline principal (Etapa 5 ou 6), como ação opcional pós-pipeline, sem ser uma etapa numerada do fluxo.

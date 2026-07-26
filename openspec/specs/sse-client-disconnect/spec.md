@@ -1,4 +1,11 @@
-## ADDED Requirements
+## Purpose
+
+Abortar a chamada OpenAI em andamento e interromper loops de geração
+multi-aula quando o cliente desconecta de uma rota SSE antes do fim do
+stream, distinguindo esse encerramento silencioso do erro de timeout por
+inatividade.
+
+## Requirements
 
 ### Requirement: Desconexão do cliente aborta a chamada OpenAI em curso
 Quando o cliente de uma rota SSE desconecta antes do fim do stream (evento `close` da resposta com `writableEnded === false`), o servidor SHALL abortar a chamada OpenAI em andamento via `AbortSignal`.
