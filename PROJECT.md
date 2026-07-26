@@ -94,11 +94,6 @@ saídas/            — Fallback apenas para projetos legados sem `pastaProjeto`
 tests/             — Testes unitários (skills) e de integração (endpoints, SSE)
 ```
 
-> `specs.yaml` ainda existe no repositório mas está desatualizado (não
-> reflete BNCC, revisão de qualidade, aplicação de melhorias, slides nem
-> roteiros) — não usá-lo como referência; `openspec/specs/` é a fonte
-> correta.
-
 ---
 
 ## 4. Modelos de dados

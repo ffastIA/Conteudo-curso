@@ -57,8 +57,7 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 ├── package.json
 ├── .env.example
 ├── PROJECT.md           — guia canônico de arquitetura e convenções
-├── specs.yaml           — specs canônicas (modelos de dados, endpoints, pipeline)
-├── openspec/            — configuração e changes do OpenSpec
+├── openspec/            — configuração, changes e specs canônicas (openspec/specs/)
 ├── public/
 │   ├── index.html        — Frontend HTML (Etapas 0–8, formulários, log panels)
 │   ├── app.js             — Frontend JS (SSE streaming, BNCC UI, navegação entre etapas)
