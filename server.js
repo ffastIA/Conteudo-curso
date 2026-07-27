@@ -29,8 +29,11 @@ const upload = multer({ storage: multer.memoryStorage() });
 // (.env, nunca commitada) usado para OPENAI_API_KEY.
 const GAMMA_API_KEY = process.env.GAMMA_API_KEY;
 const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
-const GAMMA_POLL_INTERVAL_MS = 5_000;
-const GAMMA_POLL_TIMEOUT_MS = 5 * 60_000;
+// Cadência do polling (a API do Gamma não tem webhook). Configuráveis por env
+// apenas para encurtar a espera nos testes — em produção valem os padrões;
+// valor ausente ou não-numérico cai no padrão.
+const GAMMA_POLL_INTERVAL_MS = Number(process.env.GAMMA_POLL_INTERVAL_MS) || 5_000;
+const GAMMA_POLL_TIMEOUT_MS = Number(process.env.GAMMA_POLL_TIMEOUT_MS) || 5 * 60_000;
 
 const SEARCH_TIMEOUT_MS = 45_000;
 const SEARCH_RETRY_TIMEOUT_MS = 30_000;
