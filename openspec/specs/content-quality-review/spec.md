@@ -85,7 +85,7 @@ O sistema SHALL exportar o relatório de revisão de qualidade como arquivo `.do
 
 #### Scenario: Persistência em disco
 - **WHEN** o stream da Etapa 5★ conclui
-- **THEN** `revisao_qualidade.txt` e `revisao_qualidade.docx` são gravados em `saídas/{curso-slug}/`
+- **THEN** `revisao_qualidade.txt` é gravado em `courseScrDir(sess)` (`/scr` dentro de `pastaProjeto`) e `revisao_qualidade.docx` em `courseRootDir(sess)` (raiz de `pastaProjeto`) — `saídas/{curso-slug}/` só é usada como fallback legado quando `pastaProjeto` não está definida (ver capability `project-folder`)
 - **THEN** `sess.revisaoQualidade` é populado com o texto completo
 
 ---

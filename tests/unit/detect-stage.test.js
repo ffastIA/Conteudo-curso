@@ -36,6 +36,11 @@ describe('detectStage — detecção de etapa pelo nome do arquivo', () => {
       .toEqual({ stage: 'roteiro03', detectadoPor: 'nome' });
   });
 
+  test('nome de roteiro de avatar (Etapa 10), exato', () => {
+    expect(detectStage('roteiroAvatar03.docx', null, sessVazia))
+      .toEqual({ stage: 'roteiroAvatar03', detectadoPor: 'nome' });
+  });
+
   test('stage sem separador _ no prefixo não casa (evita falso positivo)', () => {
     expect(detectStage('minhametodologia.docx', null, sessVazia)).toBeNull();
   });

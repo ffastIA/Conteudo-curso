@@ -36,7 +36,7 @@ O sistema SHALL sobrescrever o `.txt` da etapa identificada somente após confir
 
 #### Scenario: Confirmação com estágio identificado
 - **WHEN** o cliente faz `POST /api/importar/confirmar` com `{ stage: "aula03_conteudo", texto: "..." }`
-- **THEN** o sistema sobrescreve `saídas/{slug}/aula03_conteudo.txt`, atualiza `sess.conteudoPorAula[2].texto`, atualiza `projeto.json` com `stages["aula03_conteudo"] = { fonte: "usuario", importadoEm: ISO8601 }` e retorna `{ ok: true, stage: "aula03_conteudo" }`
+- **THEN** o sistema sobrescreve `aula03_conteudo.txt` em `courseScrDir(sess)` (`/scr` dentro de `pastaProjeto`; `saídas/{slug}/scr/` só no fallback legado, ver capability `project-folder`), atualiza `sess.conteudoPorAula[2].texto`, atualiza `projeto.json` com `stages["aula03_conteudo"] = { fonte: "usuario", geradoEm: ISO8601 }` e retorna `{ ok: true, stage: "aula03_conteudo" }`
 
 #### Scenario: Confirmação para etapa consolidada (conteudo, plano_de_ensino, etc.)
 - **WHEN** o cliente confirma importação para `plano_de_ensino`

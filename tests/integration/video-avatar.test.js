@@ -1,0 +1,449 @@
+'use strict';
+
+jest.mock('openai');
+
+const request = require('supertest');
+const OpenAI = require('openai');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
+
+// Encolhe a cadência do polling do HeyGen antes de carregar o server (as
+// constantes HEYGEN_POLL_* são lidas do env na carga do módulo) — mesmo
+// motivo/padrão já usado em tests/integration/slides-gamma.test.js para o Gamma.
+process.env.HEYGEN_POLL_INTERVAL_MS = '20';
+process.env.HEYGEN_POLL_TIMEOUT_MS = '300';
+
+const app = require('../../server');
+
+function baseConfig(pastaProjeto) {
+  return {
+    nome: 'Curso de Vídeo com Avatar',
+    publico: 'Jovens de 16 a 18 anos',
+    carga: '1',
+    duracao: '60',
+    nivel: 'intermediario',
+    objetivos: 'Aprender o assunto do curso',
+    modalidade: 'online',
+    proporcaoTeoricoPratico: '40% teórico / 60% prático',
+    preRequisitos: '',
+    pastaProjeto
+  };
+}
+
+beforeAll(() => {
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
+});
+
+beforeEach(() => {
+  OpenAI.__reset();
+});
+
+afterEach(() => {
+  delete global.fetch;
+});
+
+function agent() {
+  return request.agent(app);
+}
+
+function parseSSE(body) {
+  const text = typeof body === 'string' ? body : body.toString();
+  return text
+    .split('\n\n')
+    .filter(block => block.startsWith('data:'))
+    .map(block => {
+      try { return JSON.parse(block.replace(/^data:\s*/, '')); }
+      catch { return null; }
+    })
+    .filter(Boolean);
+}
+
+async function collectSSE(ag, urlPath) {
+  const res = await ag
+    .get(urlPath)
+    .buffer(true)
+    .parse((res, callback) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk.toString(); });
+      res.on('end', () => callback(null, data));
+    });
+  return res;
+}
+
+// Popula sess.conteudoPorAula com N aulas via GET /api/conteudo — mesmo
+// helper usado em tests/integration/slides-gamma.test.js.
+async function configurarCursoComConteudo(ag, aulas) {
+  const pastaProjeto = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-video-avatar-'));
+  await ag.post('/api/config').send(baseConfig(pastaProjeto));
+  OpenAI.__setResponses([JSON.stringify({ aulas })]);
+  await collectSSE(ag, '/api/conteudo');
+  return pastaProjeto;
+}
+
+function configHeygenPayload(overrides = {}) {
+  return {
+    avatarId: 'av_123',
+    avatarName: 'Ana',
+    avatarType: 'studio_avatar',
+    voiceId: 'voice_123',
+    voiceName: 'Voz Ana',
+    expressiveness: null,
+    motionPrompt: '',
+    ...overrides
+  };
+}
+
+async function configurarHeygen(ag, overrides = {}) {
+  await ag.post('/api/heygen/config').send(configHeygenPayload(overrides));
+}
+
+// Mock de fetch global para os endpoints do HeyGen usados por
+// GET /api/heygen/avatares e GET /api/heygen/vozes (listagem, sem geração).
+function installHeygenListFetchMock({ avatares = [{ id: 'av_1', name: 'Ana', avatar_type: 'studio_avatar' }], vozes = [{ voice_id: 'v_1', name: 'Voz Ana', language: 'pt-BR' }], failListagem = false } = {}) {
+  const calls = [];
+  global.fetch = jest.fn(async (url) => {
+    const urlStr = String(url);
+    calls.push({ url: urlStr });
+    if (failListagem) return { ok: false, status: 401, text: async () => 'chave inválida' };
+    if (urlStr.includes('/v3/avatars/looks')) {
+      return { ok: true, status: 200, json: async () => ({ data: avatares }) };
+    }
+    if (urlStr.includes('/v3/voices')) {
+      return { ok: true, status: 200, json: async () => ({ data: vozes }) };
+    }
+    return { ok: false, status: 404, text: async () => 'not found' };
+  });
+  return calls;
+}
+
+// Mock de fetch global simulando o fluxo de geração de vídeo do HeyGen:
+// POST /v3/videos -> GET /v3/videos/{id} (poll) -> GET <video_url> (download).
+function installHeygenVideoFetchMock({
+  outcome = 'completed',
+  pendingRounds = 0,
+  failMessage = 'Falha simulada no HeyGen',
+  httpFailStage = null,
+  httpFailStatus = 500
+} = {}) {
+  const calls = [];
+  let pollCount = 0;
+  const respostaNaoOk = { ok: false, status: httpFailStatus, text: async () => 'detalhe do erro' };
+
+  global.fetch = jest.fn(async (url, options = {}) => {
+    const urlStr = String(url);
+    calls.push({ url: urlStr, options });
+
+    if (urlStr.endsWith('/v3/videos') && options.method === 'POST') {
+      if (httpFailStage === 'criacao') return respostaNaoOk;
+      return { ok: true, status: 200, json: async () => ({ data: { video_id: 'vid-abc123', status: 'waiting' } }) };
+    }
+
+    if (/\/v3\/videos\/[^/]+$/.test(urlStr)) {
+      pollCount += 1;
+      if (httpFailStage === 'poll') return respostaNaoOk;
+      if (pollCount <= pendingRounds) {
+        return { ok: true, status: 200, json: async () => ({ data: { status: 'processing' } }) };
+      }
+      if (outcome === 'failed') {
+        return { ok: true, status: 200, json: async () => ({ data: { status: 'failed', error: { message: failMessage } } }) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { status: 'completed', video_url: 'https://heygen-video.example.com/fake.mp4' } })
+      };
+    }
+
+    // Download do video_url
+    if (httpFailStage === 'download') return respostaNaoOk;
+    return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('MP4-FAKE-BYTES') };
+  });
+  return calls;
+}
+
+function contarPollsVideo(calls) {
+  return calls.filter(c => /\/v3\/videos\/[^/]+$/.test(c.url)).length;
+}
+
+describe('GET /api/heygen/avatares e /api/heygen/vozes', () => {
+  test('lista avatares do workspace', async () => {
+    const ag = agent();
+    installHeygenListFetchMock();
+    const res = await ag.get('/api/heygen/avatares');
+    expect(res.status).toBe(200);
+    expect(res.body.avatares).toEqual([{ id: 'av_1', name: 'Ana', avatar_type: 'studio_avatar' }]);
+  });
+
+  test('lista vozes do workspace, repassando filtros de query', async () => {
+    const ag = agent();
+    const calls = installHeygenListFetchMock();
+    const res = await ag.get('/api/heygen/vozes?type=public&language=Portuguese');
+    expect(res.status).toBe(200);
+    expect(res.body.vozes).toEqual([{ voice_id: 'v_1', name: 'Voz Ana', language: 'pt-BR' }]);
+    const chamada = calls.find(c => c.url.includes('/v3/voices'));
+    expect(chamada.url).toContain('type=public');
+    expect(chamada.url).toContain('language=Portuguese');
+  });
+
+  test('erro do HeyGen ao listar retorna 500', async () => {
+    const ag = agent();
+    installHeygenListFetchMock({ failListagem: true });
+    const res = await ag.get('/api/heygen/avatares');
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('POST /api/heygen/config', () => {
+  test('sem avatarId ou voiceId retorna 400', async () => {
+    const ag = agent();
+    const res = await ag.post('/api/heygen/config').send({ avatarName: 'Ana' });
+    expect(res.status).toBe(400);
+  });
+
+  test('config válida retorna 200', async () => {
+    const ag = agent();
+    const res = await ag.post('/api/heygen/config').send(configHeygenPayload());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true });
+  });
+});
+
+describe('GET /api/video-avatar/parametros', () => {
+  test('sem Etapa 5 concluída retorna 400', async () => {
+    const ag = agent();
+    const pastaProjeto = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-video-avatar-'));
+    await ag.post('/api/config').send(baseConfig(pastaProjeto));
+
+    const res = await ag.get('/api/video-avatar/parametros?index=0');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Etapa 5/);
+  });
+
+  test('sem configuração do HeyGen retorna 400', async () => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);
+
+    const res = await ag.get('/api/video-avatar/parametros?index=0');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/avatar|voz/i);
+  });
+
+  test('índice fora do intervalo retorna 400', async () => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);
+    await configurarHeygen(ag);
+
+    const res = await ag.get('/api/video-avatar/parametros?index=5');
+    expect(res.status).toBe(400);
+  });
+
+  test('devolve metadados e duracaoPadrao inicial 30', async () => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [
+      { titulo: 'Memórias RAM e ROM', modulo: '', objetivos: 'Definir RAM e ROM' }
+    ]);
+    await configurarHeygen(ag);
+
+    const res = await ag.get('/api/video-avatar/parametros?index=0');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      index: 0, numero: '01', total: 1, titulo: 'Memórias RAM e ROM', duracaoPadrao: 30
+    });
+  });
+});
+
+describe('POST /api/video-avatar/parametros', () => {
+  test.each([0, 1000, 4.5, 'x', null, undefined])('segundos inválido (%p) retorna 400', async (segundos) => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);
+    const res = await ag.post('/api/video-avatar/parametros').send({ index: 0, segundos });
+    expect(res.status).toBe(400);
+  });
+
+  test('segundos válido retorna 200', async () => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);
+    const res = await ag.post('/api/video-avatar/parametros').send({ index: 0, segundos: 45 });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true });
+  });
+});
+
+describe('GET /api/video-avatar/roteiro/gerar', () => {
+  test('sem duração aprovada emite evento SSE error', async () => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);
+    const res = await collectSSE(ag, '/api/video-avatar/roteiro/gerar');
+    const events = parseSSE(res.body);
+    expect(events.some(e => e.type === 'error')).toBe(true);
+  });
+
+  test('gera e persiste roteiroAvatar01.txt/.docx, atualiza duracaoAvatarDefault', async () => {
+    const ag = agent();
+    const pastaProjeto = await configurarCursoComConteudo(ag, [
+      { titulo: 'Memórias RAM e ROM', modulo: '', objetivos: 'Definir RAM e ROM' }
+    ]);
+    await configurarHeygen(ag);
+    await ag.post('/api/video-avatar/parametros').send({ index: 0, segundos: 40 });
+
+    OpenAI.__setResponse('Texto de fala gerado para a aula.');
+    const res = await collectSSE(ag, '/api/video-avatar/roteiro/gerar');
+    const events = parseSSE(res.body);
+    const done = events.find(e => e.type === 'done');
+
+    expect(done).toBeDefined();
+    expect(done.baseName).toBe('roteiroAvatar01');
+    expect(fs.existsSync(path.join(pastaProjeto, 'scr', 'roteiroAvatar01.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(pastaProjeto, 'roteiroAvatar01.docx'))).toBe(true);
+
+    // Sticky: a próxima chamada de parâmetros já vem com a duração usada.
+    const parametros = await ag.get('/api/video-avatar/parametros?index=0');
+    expect(parametros.body.duracaoPadrao).toBe(40);
+  });
+});
+
+describe('GET /api/video-avatar/gerar', () => {
+  test('sem configuração do HeyGen emite evento SSE error', async () => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);
+    const res = await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+    const events = parseSSE(res.body);
+    expect(events.some(e => e.type === 'error')).toBe(true);
+  });
+
+  test('sem roteiro de avatar confirmado emite evento SSE error', async () => {
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);
+    await configurarHeygen(ag);
+    const res = await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+    const events = parseSSE(res.body);
+    const erro = events.find(e => e.type === 'error');
+    expect(erro).toBeDefined();
+    expect(erro.message).toMatch(/roteiro/i);
+  });
+
+  async function prepararAulaComRoteiroAvatarConfirmado(ag, { avatarType = 'studio_avatar', expressiveness = null, motionPrompt = '' } = {}) {
+    const pastaProjeto = await configurarCursoComConteudo(ag, [
+      { titulo: 'Aula única', modulo: '', objetivos: 'Objetivo único' }
+    ]);
+    await configurarHeygen(ag, { avatarType, expressiveness, motionPrompt });
+    await ag.post('/api/video-avatar/parametros').send({ index: 0, segundos: 30 });
+    OpenAI.__setResponse('Texto de fala gerado para a aula.');
+    await collectSSE(ag, '/api/video-avatar/roteiro/gerar');
+    return pastaProjeto;
+  }
+
+  test('gera o vídeo, baixa o .mp4 em videos/ (criada sob demanda) e registra o evento done', async () => {
+    const ag = agent();
+    const pastaProjeto = await prepararAulaComRoteiroAvatarConfirmado(ag);
+
+    expect(fs.existsSync(path.join(pastaProjeto, 'videos'))).toBe(false);
+
+    const calls = installHeygenVideoFetchMock({ outcome: 'completed' });
+    const res = await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+    const events = parseSSE(res.body);
+    const done = events.find(e => e.type === 'done');
+
+    expect(done).toBeDefined();
+    expect(done.numero).toBe('01');
+    expect(fs.existsSync(path.join(pastaProjeto, 'videos', 'aula01_video.mp4'))).toBe(true);
+
+    const criacao = calls.find(c => c.url.endsWith('/v3/videos') && c.options.method === 'POST');
+    const payload = JSON.parse(criacao.options.body);
+    expect(payload.type).toBe('avatar');
+    expect(payload.avatar_id).toBe('av_123');
+    expect(payload.voice_id).toBe('voice_123');
+    // O mock de streaming do OpenAI (tests/__mocks__/openai.js) acrescenta um
+    // espaço após cada palavra — mesmo comportamento observado nos demais
+    // testes de streaming do projeto.
+    expect(payload.script.trim()).toBe('Texto de fala gerado para a aula.');
+    expect(payload.aspect_ratio).toBe('16:9');
+    // avatarType = studio_avatar (padrão do helper) — expressiveness não deve ir, mesmo se setado.
+    expect(payload).not.toHaveProperty('expressiveness');
+    expect(payload).not.toHaveProperty('motion_prompt');
+  });
+
+  test('inclui expressiveness só quando avatarType é photo_avatar', async () => {
+    const ag = agent();
+    await prepararAulaComRoteiroAvatarConfirmado(ag, { avatarType: 'photo_avatar', expressiveness: 'high' });
+
+    const calls = installHeygenVideoFetchMock({ outcome: 'completed' });
+    await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+
+    const criacao = calls.find(c => c.url.endsWith('/v3/videos') && c.options.method === 'POST');
+    const payload = JSON.parse(criacao.options.body);
+    expect(payload.expressiveness).toBe('high');
+  });
+
+  test('inclui motion_prompt quando configurado', async () => {
+    const ag = agent();
+    await prepararAulaComRoteiroAvatarConfirmado(ag, { motionPrompt: 'gestos calmos' });
+
+    const calls = installHeygenVideoFetchMock({ outcome: 'completed' });
+    await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+
+    const criacao = calls.find(c => c.url.endsWith('/v3/videos') && c.options.method === 'POST');
+    const payload = JSON.parse(criacao.options.body);
+    expect(payload.motion_prompt).toBe('gestos calmos');
+  });
+
+  test('status pending: continua o polling até completed e só então persiste', async () => {
+    const ag = agent();
+    const pastaProjeto = await prepararAulaComRoteiroAvatarConfirmado(ag);
+
+    const calls = installHeygenVideoFetchMock({ outcome: 'completed', pendingRounds: 2 });
+    const res = await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+    const events = parseSSE(res.body);
+
+    expect(events.find(e => e.type === 'done')).toBeDefined();
+    expect(contarPollsVideo(calls)).toBe(3);
+    expect(fs.existsSync(path.join(pastaProjeto, 'videos', 'aula01_video.mp4'))).toBe(true);
+  });
+
+  test('falha do HeyGen emite evento error e não persiste arquivo nem registra o vídeo', async () => {
+    const ag = agent();
+    const pastaProjeto = await prepararAulaComRoteiroAvatarConfirmado(ag);
+
+    installHeygenVideoFetchMock({ outcome: 'failed' });
+    const res = await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+    const events = parseSSE(res.body);
+
+    expect(events.some(e => e.type === 'error')).toBe(true);
+    expect(events.some(e => e.type === 'done')).toBe(false);
+    expect(fs.existsSync(path.join(pastaProjeto, 'videos'))).toBe(false);
+  });
+
+  test('geração que nunca conclui estoura o tempo limite e não persiste arquivo', async () => {
+    const ag = agent();
+    const pastaProjeto = await prepararAulaComRoteiroAvatarConfirmado(ag);
+
+    const calls = installHeygenVideoFetchMock({ pendingRounds: Infinity });
+    const res = await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+    const events = parseSSE(res.body);
+    const erro = events.find(e => e.type === 'error');
+
+    expect(erro).toBeDefined();
+    expect(erro.message).toMatch(/[Tt]empo limite/);
+    expect(contarPollsVideo(calls)).toBeGreaterThan(1);
+    expect(fs.existsSync(path.join(pastaProjeto, 'videos'))).toBe(false);
+  });
+
+  test('status não-ok ao criar o vídeo emite error e não persiste arquivo', async () => {
+    const ag = agent();
+    const pastaProjeto = await prepararAulaComRoteiroAvatarConfirmado(ag);
+
+    installHeygenVideoFetchMock({ httpFailStage: 'criacao', httpFailStatus: 401 });
+    const res = await collectSSE(ag, '/api/video-avatar/gerar?index=0');
+    const erro = parseSSE(res.body).find(e => e.type === 'error');
+
+    expect(erro).toBeDefined();
+    expect(erro.message).toMatch(/401/);
+    expect(fs.existsSync(path.join(pastaProjeto, 'videos'))).toBe(false);
+  });
+});

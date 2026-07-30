@@ -7,7 +7,10 @@ const state = {
   estiloVisual: null,
   roteiroBlocos: null,
   roteiroIndex: 0,
-  slidesIndex: 0
+  slidesIndex: 0,
+  heygenConfig: null,
+  videoAvatarIndex: 0,
+  videoAvatarNumero: ''
 };
 
 // ── Contador global de tokens ────────────────────────────────────────────────
@@ -37,6 +40,7 @@ function atualizarBotoesDependentesDaEtapa5() {
   document.getElementById('btnQualidade').disabled = false;
   document.getElementById('btnPpc').disabled = false;
   document.getElementById('btnSlides').disabled = false;
+  document.getElementById('btnVideoAvatar').disabled = false;
 }
 
 // Habilita o botão de Roteiros (Etapa 9) assim que a Etapa 4 (Plano de Aula)
@@ -1053,6 +1057,244 @@ function registrarArquivoRoteiroGerado(msg) {
     `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🎬 Roteiro ${escHtml(msg.numero)}: ${escHtml(msg.titulo)}</span>`);
 }
 
+// ── STEP 10 — Vídeo com Avatar (HeyGen) ─────────────────────────────────────
+// Avatar/voz/controles avançados são escolhidos uma única vez por curso
+// (mesmo padrão do estilo visual). Diferente de Slides/Roteiros, o avanço
+// entre aulas NÃO é automático: o usuário escolhe manualmente a aula a cada
+// rodada (o ciclo por aula envolve revisão humana fora do app em duas etapas
+// — roteiro e vídeo — então auto-avançar geraria confusão sobre qual aula
+// está em andamento).
+
+document.getElementById('btnVideoAvatar').addEventListener('click', async () => {
+  if (!state.doneSteps.has(5)) {
+    alert('Conclua as Etapas 1–5 antes de gerar vídeos com avatar.');
+    return;
+  }
+  if (state.heygenConfig) {
+    await carregarSeletorAulasVideoAvatar();
+    return;
+  }
+  await carregarHeygenConfig();
+});
+
+async function carregarHeygenConfig() {
+  const btn = document.getElementById('btnVideoAvatar');
+  btn.disabled = true;
+  try {
+    const [rAvatares, rVozes] = await Promise.all([
+      fetch('/api/heygen/avatares'),
+      fetch('/api/heygen/vozes')
+    ]);
+    const dataAvatares = await rAvatares.json();
+    const dataVozes = await rVozes.json();
+    if (!rAvatares.ok) { alert(dataAvatares.error || 'Erro ao listar avatares do HeyGen.'); return; }
+    if (!rVozes.ok) { alert(dataVozes.error || 'Erro ao listar vozes do HeyGen.'); return; }
+    if (!dataAvatares.avatares?.length) {
+      alert('Nenhum avatar encontrado no seu workspace HeyGen. Crie um avatar em app.heygen.com antes de continuar.');
+      return;
+    }
+    if (!dataVozes.vozes?.length) {
+      alert('Nenhuma voz encontrada no seu workspace HeyGen.');
+      return;
+    }
+
+    const avataresList = document.getElementById('heygenAvataresList');
+    avataresList.innerHTML = dataAvatares.avatares.map((a, i) =>
+      `<label class="bncc-item">` +
+      `<input type="radio" name="heygenAvatarOpcao" value="${escHtml(a.id)}" ` +
+      `data-name="${escHtml(a.name || '')}" data-type="${escHtml(a.avatar_type || '')}" ${i === 0 ? 'checked' : ''}>` +
+      `<span><strong>${escHtml(a.name || a.id)}</strong>${a.avatar_type ? ` — ${escHtml(a.avatar_type)}` : ''}</span>` +
+      `</label>`
+    ).join('');
+
+    const vozesList = document.getElementById('heygenVozesList');
+    vozesList.innerHTML = dataVozes.vozes.map((v, i) =>
+      `<label class="bncc-item">` +
+      `<input type="radio" name="heygenVozOpcao" value="${escHtml(v.voice_id)}" ` +
+      `data-name="${escHtml(v.name || '')}" ${i === 0 ? 'checked' : ''}>` +
+      `<span><strong>${escHtml(v.name || v.voice_id)}</strong>${v.language ? ` — ${escHtml(v.language)}` : ''}</span>` +
+      `</label>`
+    ).join('');
+
+    document.getElementById('heygenConfigContainer').style.display = 'block';
+  } catch (err) {
+    alert('Erro ao carregar avatares/vozes do HeyGen: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnConfirmarHeygenConfig').addEventListener('click', async () => {
+  const avatarOpcao = document.querySelector('#heygenAvataresList input[name=heygenAvatarOpcao]:checked');
+  const vozOpcao = document.querySelector('#heygenVozesList input[name=heygenVozOpcao]:checked');
+  if (!avatarOpcao || !vozOpcao) {
+    alert('Selecione um avatar e uma voz antes de confirmar.');
+    return;
+  }
+  const escolha = {
+    avatarId: avatarOpcao.value,
+    avatarName: avatarOpcao.dataset.name,
+    avatarType: avatarOpcao.dataset.type,
+    voiceId: vozOpcao.value,
+    voiceName: vozOpcao.dataset.name,
+    expressiveness: document.getElementById('heygenExpressividade').value || null,
+    motionPrompt: document.getElementById('heygenMotionPrompt').value.trim()
+  };
+  try {
+    const r = await fetch('/api/heygen/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(escolha)
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao salvar a configuração do HeyGen.'); return; }
+    state.heygenConfig = escolha;
+    document.getElementById('heygenConfigContainer').style.display = 'none';
+    await carregarSeletorAulasVideoAvatar();
+  } catch (err) {
+    alert('Erro ao salvar a configuração do HeyGen: ' + err.message);
+  }
+});
+
+// Popula o seletor de aulas (1x, usando o "total" devolvido pelos parâmetros
+// da primeira aula) e abre a primeira aula por padrão.
+async function carregarSeletorAulasVideoAvatar() {
+  try {
+    const r = await fetch('/api/video-avatar/parametros?index=0');
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao carregar aulas.'); return; }
+
+    const select = document.getElementById('videoAvatarAulaSelect');
+    select.innerHTML = Array.from({ length: data.total }, (_, i) =>
+      `<option value="${i}">Aula ${i + 1}</option>`
+    ).join('');
+    document.getElementById('videoAvatarAulaCard').style.display = 'block';
+    await abrirParametrosVideoAvatar(0);
+  } catch (err) {
+    alert('Erro ao carregar aulas: ' + err.message);
+  }
+}
+
+document.getElementById('videoAvatarAulaSelect').addEventListener('change', async (e) => {
+  await abrirParametrosVideoAvatar(Number(e.target.value));
+});
+
+// Monta (sem IA) e exibe os parâmetros da aula de índice `index` — reseta o
+// estado visual do roteiro/vídeo, já que é uma aula nova sendo aberta.
+async function abrirParametrosVideoAvatar(index) {
+  try {
+    const r = await fetch(`/api/video-avatar/parametros?index=${index}`);
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao montar parâmetros do vídeo.'); return; }
+
+    state.videoAvatarIndex = index;
+    state.videoAvatarNumero = data.numero;
+    document.getElementById('videoAvatarAulaSelect').value = String(index);
+    document.getElementById('videoAvatarAulaProgresso').textContent = `${data.index + 1} de ${data.total} — ${data.titulo}`;
+    document.getElementById('duracaoSegundosInput').value = String(data.duracaoPadrao);
+    document.getElementById('videoAvatarParametrosCard').style.display = 'block';
+    document.getElementById('logRoteiroAvatar').innerHTML = '';
+    document.getElementById('resultRoteiroAvatar').innerHTML = '';
+    document.getElementById('resultRoteiroAvatar').classList.remove('active');
+    document.getElementById('logVideoAvatar').innerHTML = '';
+    document.getElementById('videoAvatarRoteiroActions').style.display = 'none';
+  } catch (err) {
+    alert('Erro ao montar parâmetros do vídeo: ' + err.message);
+  }
+}
+
+// Só dígitos no campo de segundos — validação client-side complementar à do
+// servidor (Number.isInteger + faixa válida).
+document.getElementById('duracaoSegundosInput').addEventListener('input', (e) => {
+  e.target.value = e.target.value.replace(/[^\d]/g, '');
+});
+
+document.getElementById('btnGerarRoteiroAvatar').addEventListener('click', async () => {
+  const index = state.videoAvatarIndex;
+  const segundos = Number(document.getElementById('duracaoSegundosInput').value);
+  const gerarBtn = document.getElementById('btnGerarRoteiroAvatar');
+  if (!Number.isInteger(segundos) || segundos < 5) {
+    alert('Informe uma duração inteira válida, em segundos.');
+    return;
+  }
+  gerarBtn.disabled = true;
+
+  try {
+    const r = await fetch('/api/video-avatar/parametros', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index, segundos })
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao aprovar a duração.'); gerarBtn.disabled = false; return; }
+
+    const logPanel = initLog('logRoteiroAvatar');
+    streamSSE('/api/video-avatar/roteiro/gerar', {
+      logPanel,
+      resultEl: 'resultRoteiroAvatar',
+      onDone() {
+        gerarBtn.disabled = false;
+        document.getElementById('videoAvatarRoteiroActions').style.display = 'flex';
+      },
+      onError() { gerarBtn.disabled = false; }
+    });
+  } catch (err) {
+    alert('Erro ao aprovar a duração: ' + err.message);
+    gerarBtn.disabled = false;
+  }
+});
+
+document.getElementById('btnImportarRoteiroAvatar').addEventListener('click', () => {
+  if (!state.videoAvatarNumero) return;
+  abrirImportar('roteiroAvatar' + state.videoAvatarNumero);
+});
+
+document.getElementById('btnEnviarHeygen').addEventListener('click', () => {
+  const index = state.videoAvatarIndex;
+  const btn = document.getElementById('btnEnviarHeygen');
+  btn.disabled = true;
+
+  const logPanel = initLog('logVideoAvatar');
+  addLog(logPanel, 'Enviando roteiro ao HeyGen...');
+
+  const es = new EventSource(`/api/video-avatar/gerar?index=${index}`);
+
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'progress') {
+      if (msg.message.includes('concluído')) finishLog(logPanel, msg.message);
+      else addLog(logPanel, msg.message);
+    } else if (msg.type === 'done') {
+      registrarArquivoVideoAvatarGerado(msg);
+      markDone(10);
+      es.close();
+      refreshTokenCounter();
+      btn.disabled = false;
+      document.getElementById('videoAvatarResultCard').style.display = 'block';
+    } else if (msg.type === 'error') {
+      errLog(logPanel, msg.message);
+      es.close();
+      refreshTokenCounter();
+      btn.disabled = false;
+    }
+  };
+
+  es.onerror = () => {
+    errLog(logPanel, 'Erro de conexão com o servidor.');
+    es.close();
+    refreshTokenCounter();
+    btn.disabled = false;
+  };
+});
+
+function registrarArquivoVideoAvatarGerado(msg) {
+  const container = document.getElementById('videoAvatarArquivos');
+  container.style.display = 'flex';
+  container.insertAdjacentHTML('beforeend',
+    `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🧑‍🏫 Vídeo ${escHtml(msg.numero)}: ${escHtml(msg.titulo)}</span>`);
+}
+
 // ── Copiar ───────────────────────────────────────────────────────────────────
 function copyResult(elId) {
   const el = document.getElementById(elId);
@@ -1188,6 +1430,20 @@ async function carregarProjetoPorPasta(pasta) {
         `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🖥️ ${escHtml(a.titulo)}</span>`
       ).join('');
       document.getElementById('slidesResultCard').style.display = 'block';
+    }
+
+    // Restaura a configuração do HeyGen (Etapa 10) e os vídeos já gerados —
+    // os valores sticky de duração já ficam no lado servidor (sess), devolvidos
+    // a cada GET /api/video-avatar/parametros.
+    if (data.heygenConfig) state.heygenConfig = data.heygenConfig;
+    if (data.videosAvatarGerados?.length) {
+      const container = document.getElementById('videoAvatarArquivos');
+      container.style.display = 'flex';
+      container.innerHTML = data.videosAvatarGerados.map(a =>
+        `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🧑‍🏫 Vídeo ${escHtml(a.numero)}: ${escHtml(a.titulo)}</span>`
+      ).join('');
+      document.getElementById('videoAvatarResultCard').style.display = 'block';
+      markDone(10);
     }
 
     // Restaura metodologia no painel da Etapa 0

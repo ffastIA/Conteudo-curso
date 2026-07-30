@@ -7,7 +7,7 @@ os dados das etapas anteriores em qualquer cenário de falha.
 ## Requirements
 
 ### Requirement: Timeout na chamada de pesquisa web
-O sistema SHALL abortar a chamada ao modelo de pesquisa web se ela não concluir dentro de **45 segundos**. O timeout SHALL ser implementado via `AbortSignal` passado ao SDK OpenAI, cancelando efetivamente a requisição HTTP. O modelo de pesquisa web SHALL ser `gpt-4o-search-preview`, referenciado pela constante `MODEL_SEARCH` em `skills.js`.
+O sistema SHALL abortar a chamada ao modelo de pesquisa web se ela não concluir dentro de **45 segundos**. O timeout SHALL ser implementado via `AbortSignal` passado ao SDK OpenAI, cancelando efetivamente a requisição HTTP. O modelo de pesquisa web SHALL ser `gpt-4o-search-preview`, referenciado pela constante `MODEL_RESEARCH` em `skills.js`.
 
 #### Scenario: Timeout acionado na primeira tentativa
 - **WHEN** a chamada ao modelo de pesquisa web demora mais de 45 segundos sem resposta

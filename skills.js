@@ -341,6 +341,50 @@ const roteiroSkill = ({ promptPreenchido, metodologia, bnccContext }) => ({
   user: promptPreenchido + pedagCtxBlock(metodologia, bnccContext)
 });
 
+// Gera o roteiro de fala do avatar do HeyGen (Etapa 10) — texto corrido, sem
+// blocos de cena/holograma (diferente de roteiroSkill/Etapa 9), calibrado
+// para a duração-alvo em segundos informada pelo usuário. Heurística de
+// cadência de fala natural em PT-BR: ~2,5 palavras/segundo (~150 palavras/min).
+const PALAVRAS_POR_SEGUNDO_AVATAR = 2.5;
+
+function estimarPalavrasAlvo(segundos) {
+  return Math.round(segundos * PALAVRAS_POR_SEGUNDO_AVATAR);
+}
+
+const roteiroAvatarSkill = ({ aulaTitulo, aulaTexto, segundos, publico, nivel, metodologia, bnccContext }) => {
+  const palavrasAlvo = estimarPalavrasAlvo(segundos);
+  return {
+    model: MODEL_ECONOMY,
+    system:
+      'Você é roteirista de fala para avatar digital. Escreva um texto corrido, ' +
+      'natural, para ser narrado em voz alta — sem marcações de cena, câmera ou ' +
+      'holograma, sem headings markdown, sem bullets. Apenas a fala em si, pronta ' +
+      'para leitura em voz alta. Tom natural, mas nunca monótono: o avatar deve ' +
+      'soar envolvente, motivador e inspirador, como um bom instrutor entusiasmado ' +
+      'pelo tema. Responda em português.',
+    user:
+      `Escreva o texto de fala de um avatar digital narrando o conteúdo da aula ` +
+      `abaixo, para um vídeo de aproximadamente ${segundos} segundos de duração.\n\n` +
+      `Aula: ${aulaTitulo}\n` +
+      (publico ? `Público-alvo: ${publico}\n` : '') +
+      (nivel ? `Nível: ${nivel}\n` : '') +
+      `\nConteúdo da aula (fonte):\n${truncateAula(aulaTexto)}\n\n` +
+      `Alvo de tamanho: aproximadamente ${palavrasAlvo} palavras (pode variar ±15%). ` +
+      `Quanto maior a duração pedida, mais desenvolvido e detalhado deve ser o texto ` +
+      `(mais exemplos, mais explicação) — quanto menor, mais direto e objetivo. ` +
+      `Escreva em tom natural de voz humana, como se estivesse explicando o tema a ` +
+      `um aluno, sem citar o número de palavras ou a duração no texto final.` +
+      pedagCtxBlock(metodologia, bnccContext)
+  };
+};
+
+// Trunca o conteúdo da aula usado como fonte — mesmo limite de 1.500 chars já
+// usado em truncate() (server.js) para as demais skills que citam texto extenso.
+function truncateAula(texto, max = 1500) {
+  if (!texto) return '';
+  return texto.length > max ? texto.slice(0, max) + '...' : texto;
+}
+
 const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
   model: MODEL_ECONOMY,
   system:
@@ -875,6 +919,8 @@ module.exports = {
   conteudoSkill,
   estiloVisualSkill,
   roteiroSkill,
+  roteiroAvatarSkill,
+  estimarPalavrasAlvo,
   // Ciclo de revisão e melhoria (Etapas 5★ e 6)
   revisaoQualidadeSkill,
   aplicarMelhoriasSkill,

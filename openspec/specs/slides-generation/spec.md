@@ -83,13 +83,13 @@ Antes de gerar slides com imagem, o sistema SHALL oferecer um menu de 3 a 5 opç
 - **THEN** cada opção do menu corresponde a um arquétipo de estilo nomeado e reconhecível (ou uma combinação coerente entre arquétipos), adaptado ao público-alvo e à tipologia do curso — não uma categoria inventada sem referência conhecida
 
 #### Scenario: Escolha do usuário é obrigatória antes da geração
-- **WHEN** o cliente chama `GET /api/slides` sem um estilo visual previamente selecionado nesta sessão
+- **WHEN** o cliente chama `GET /api/slides/parametros` sem um estilo visual previamente selecionado nesta sessão
 - **THEN** o servidor retorna HTTP 400 com uma mensagem pedindo para escolher um estilo antes de gerar os slides
 
 #### Scenario: Escolha do usuário é persistida
 - **WHEN** o cliente chama `POST /api/estilos-visuais/selecionar` com uma opção válida (contendo `housePrompt`)
 - **THEN** o sistema grava a escolha na sessão (`sess.estiloVisual`) e no `projeto.json` do curso
-- **THEN** uma chamada subsequente a `GET /api/slides` na mesma sessão usa esse estilo sem pedir nova seleção
+- **THEN** chamadas subsequentes a `GET /api/slides/parametros`/`GET /api/slides/gerar` na mesma sessão usam esse estilo sem pedir nova seleção
 
 #### Scenario: Estilo restaurado ao recarregar o projeto
 - **WHEN** o usuário recarrega um projeto (`POST /api/carregar-projeto`) que já teve um estilo visual selecionado anteriormente
@@ -208,4 +208,17 @@ densidade e o vocabulário do conteúdo gerado.
 #### Scenario: Tom leve e nível do curso incorporados às instruções
 - **WHEN** o sistema monta a chamada de geração para uma aula
 - **THEN** `textOptions.tone` (ou `additionalInstructions`) inclui uma instrução de tom leve/descontraído adequado à faixa etária, e menciona o nível do curso (`sess.config.nivel`) para adequar densidade e vocabulário
+
+---
+
+### Requirement: Erro claro quando GAMMA_API_KEY não está configurada
+O sistema SHALL verificar, antes de qualquer chamada de rede à API do Gamma, se a variável de ambiente `GAMMA_API_KEY` está definida e não vazia, e SHALL retornar um erro citando explicitamente o nome da variável e apontando para `.env.example` quando ela estiver ausente — em vez de deixar a chamada prosseguir e falhar com um erro genérico de autenticação da API do Gamma.
+
+#### Scenario: GAMMA_API_KEY ausente ao gerar slides
+- **WHEN** o usuário aciona `GET /api/slides/gerar` com `GAMMA_API_KEY` ausente ou vazia no `.env`
+- **THEN** o evento SSE `error` cita `GAMMA_API_KEY` e `.env.example`, e nenhum arquivo `.pptx` é gerado
+
+#### Scenario: GAMMA_API_KEY presente segue o fluxo normal
+- **WHEN** `GAMMA_API_KEY` está definida e não vazia
+- **THEN** o sistema chama a API do Gamma normalmente, sem nenhuma mudança de comportamento em relação ao existente
 

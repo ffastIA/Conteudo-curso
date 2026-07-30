@@ -59,7 +59,7 @@ O sistema SHALL truncar o conteúdo de cada aula para os primeiros 1.500 caracte
 ---
 
 ### Requirement: Exportação do relatório como .docx
-O sistema SHALL exportar o Relatório Técnico-Pedagógico como arquivo `.docx` via `POST /api/export/qualidade`, persistindo `relatorio_qualidade.txt` e `relatorio_qualidade.docx` em `saídas/{course-slug}/`.
+O sistema SHALL exportar o Relatório Técnico-Pedagógico como arquivo `.docx` via `POST /api/export/qualidade`, persistindo `relatorio_qualidade.txt` em `courseScrDir(sess)` (`/scr` dentro de `pastaProjeto`) e `relatorio_qualidade.docx` em `courseRootDir(sess)` (raiz de `pastaProjeto`) — `saídas/{course-slug}/` só é usada como fallback legado quando `pastaProjeto` não está definida (ver capability `project-folder`).
 
 #### Scenario: Exportação do relatório
 - **WHEN** o usuário clica em "Exportar Relatório" após a geração

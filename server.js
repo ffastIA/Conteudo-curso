@@ -35,6 +35,17 @@ const GAMMA_API_BASE = 'https://public-api.gamma.app/v1.0';
 const GAMMA_POLL_INTERVAL_MS = Number(process.env.GAMMA_POLL_INTERVAL_MS) || 5_000;
 const GAMMA_POLL_TIMEOUT_MS = Number(process.env.GAMMA_POLL_TIMEOUT_MS) || 5 * 60_000;
 
+// ── HeyGen (Etapa 10 — Vídeo com avatar) ────────────────────────────────────
+// Mesmo padrão do Gamma: sem SDK, fetch nativo, chave via .env. Usa o endpoint
+// "Avatar Video" da API v3 (POST /v3/videos, type:"avatar") — determinístico,
+// narra o script literalmente — não o "Video Agent" (prompt criativo, só
+// acessível via MCP/CLI/agente, que reescreve o texto livremente).
+const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY;
+const HEYGEN_API_BASE = 'https://api.heygen.com';
+const HEYGEN_POLL_INTERVAL_MS = Number(process.env.HEYGEN_POLL_INTERVAL_MS) || 5_000;
+// Vídeo de avatar demora mais que slides — teto maior que o do Gamma (5 min).
+const HEYGEN_POLL_TIMEOUT_MS = Number(process.env.HEYGEN_POLL_TIMEOUT_MS) || 10 * 60_000;
+
 const SEARCH_TIMEOUT_MS = 45_000;
 const SEARCH_RETRY_TIMEOUT_MS = 30_000;
 const STALL_TIMEOUT_MS = 45_000;
@@ -59,6 +70,19 @@ function makeAbortSignal(ms) {
   const ac = new AbortController();
   setTimeout(() => ac.abort(), ms);
   return ac.signal;
+}
+
+// Valida a presença de uma API key externa obrigatória (GAMMA_API_KEY,
+// HEYGEN_API_KEY) antes de qualquer chamada de rede. Diferente de
+// OPENAI_API_KEY — cuja ausência já derruba o servidor na inicialização com
+// um erro claro do próprio SDK (`new OpenAI(...)`, linha ~24) — GAMMA_API_KEY
+// e HEYGEN_API_KEY ausentes não impedem o servidor de subir; sem este guard,
+// o único sintoma seria um 401 cru vindo da API externa, sem apontar a causa
+// raiz (variável de ambiente não configurada).
+function requireApiKey(value, envVarName) {
+  if (!value?.trim()) {
+    throw new Error(`${envVarName} não está configurada. Adicione a chave em .env (veja .env.example) antes de usar esta etapa.`);
+  }
 }
 
 // Rastreia desconexão prematura do cliente numa rota SSE e expõe um signal
@@ -735,6 +759,15 @@ function courseScrDir(sess) {
   return dir;
 }
 
+// Subpasta dos vídeos de avatar gerados (Etapa 10) — criada sob demanda no
+// primeiro download, não antecipadamente (mesmo padrão de courseScrDir, mas
+// só chamada quando de fato há um vídeo pronto para gravar).
+function videosDir(sess) {
+  const dir = path.join(courseRootDir(sess), 'videos');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 // Abre o diálogo nativo de seleção de pasta do Windows a partir do processo do
 // servidor (necessário porque navegadores não expõem caminhos absolutos de
 // pastas ao JavaScript da página). Só faz sentido para uso local, com servidor
@@ -874,6 +907,10 @@ function saveProject(sess, stageInfo = null) {
   projeto.slidesObservacaoDefault = sess.slidesObservacaoDefault || '';
   projeto.slidesQuantidadeDefault = sess.slidesQuantidadeDefault || null;
   projeto.slidesGerados = sess.slidesGerados || [];
+  projeto.heygenConfig = sess.heygenConfig || null;
+  projeto.roteirosAvatarGerados = sess.roteirosAvatarGerados || [];
+  projeto.duracaoAvatarDefault = sess.duracaoAvatarDefault || null;
+  projeto.videosAvatarGerados = sess.videosAvatarGerados || [];
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -910,6 +947,7 @@ async function persistStage(sess, baseName, label, content, sites = []) {
 // assíncrono create → poll → download. Nenhum SDK oficial é usado: é uma API
 // REST simples, chamada via fetch nativo do Node (sem dependência nova).
 async function criarGeracaoGamma(payload, client = null) {
+  requireApiKey(GAMMA_API_KEY, 'GAMMA_API_KEY');
   const timeoutSignal = makeAbortSignal(30_000);
   const resp = await fetch(`${GAMMA_API_BASE}/generations`, {
     method: 'POST',
@@ -963,6 +1001,105 @@ async function persistGammaSlidesStage(sess, baseName, exportUrl) {
   const buffer = Buffer.from(await resp.arrayBuffer());
   const rootDir = courseRootDir(sess);
   const fullPath = path.join(rootDir, `${baseName}.pptx`);
+  fs.writeFileSync(fullPath, buffer);
+  saveProject(sess, { baseName, fonte: 'ia' });
+  return fullPath;
+}
+
+// ── Integração com a API do HeyGen (Etapa 10 — Vídeo com avatar) ───────────
+// Lista os avatares do workspace ("looks" — inclui digital twins, studio
+// avatars e photo avatars custom do usuário), para o menu de configuração
+// da Etapa 10 (uma escolha por curso).
+async function listarAvataresHeygen() {
+  requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
+  const timeoutSignal = makeAbortSignal(30_000);
+  const resp = await fetch(`${HEYGEN_API_BASE}/v3/avatars/looks?limit=50`, {
+    headers: { 'x-api-key': HEYGEN_API_KEY },
+    signal: timeoutSignal
+  });
+  if (!resp.ok) {
+    const detalhe = await resp.text().catch(() => '');
+    throw new Error(`HeyGen retornou ${resp.status} ao listar avatares.${detalhe ? ' ' + detalhe : ''}`);
+  }
+  const data = await resp.json();
+  return data.data || [];
+}
+
+// Lista as vozes do workspace (públicas do HeyGen + privadas/clonadas pelo
+// usuário), com filtros opcionais de idioma/gênero/tipo.
+async function listarVozesHeygen({ type, language, gender } = {}) {
+  requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
+  const params = new URLSearchParams({ limit: '50' });
+  if (type) params.set('type', type);
+  if (language) params.set('language', language);
+  if (gender) params.set('gender', gender);
+  const timeoutSignal = makeAbortSignal(30_000);
+  const resp = await fetch(`${HEYGEN_API_BASE}/v3/voices?${params.toString()}`, {
+    headers: { 'x-api-key': HEYGEN_API_KEY },
+    signal: timeoutSignal
+  });
+  if (!resp.ok) {
+    const detalhe = await resp.text().catch(() => '');
+    throw new Error(`HeyGen retornou ${resp.status} ao listar vozes.${detalhe ? ' ' + detalhe : ''}`);
+  }
+  const data = await resp.json();
+  return data.data || [];
+}
+
+// Cria o vídeo do avatar (fluxo "Avatar Video", determinístico — narra o
+// script literalmente, diferente do "Video Agent" que reescreve o texto).
+async function criarVideoHeygen(payload, client = null) {
+  requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
+  const timeoutSignal = makeAbortSignal(30_000);
+  const resp = await fetch(`${HEYGEN_API_BASE}/v3/videos`, {
+    method: 'POST',
+    headers: { 'x-api-key': HEYGEN_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: client ? combineSignals(client.signal, timeoutSignal) : timeoutSignal
+  });
+  if (!resp.ok) {
+    const detalhe = await resp.text().catch(() => '');
+    throw new Error(`HeyGen retornou ${resp.status} ao criar o vídeo do avatar.${detalhe ? ' ' + detalhe : ''}`);
+  }
+  const data = await resp.json();
+  return data.data;
+}
+
+// Aguarda a conclusão do vídeo via polling (sem webhook nesta primeira
+// versão — mesmo padrão do Gamma). Respeita a desconexão do cliente SSE e um
+// teto de tempo total maior que o do Gamma (vídeo de avatar demora mais).
+async function aguardarVideoHeygen(videoId, client) {
+  const prazo = Date.now() + HEYGEN_POLL_TIMEOUT_MS;
+  while (Date.now() < prazo) {
+    if (client.disconnected) throw new Error('Cliente desconectado durante a geração do vídeo.');
+
+    const timeoutSignal = makeAbortSignal(30_000);
+    const resp = await fetch(`${HEYGEN_API_BASE}/v3/videos/${videoId}`, {
+      headers: { 'x-api-key': HEYGEN_API_KEY },
+      signal: combineSignals(client.signal, timeoutSignal)
+    });
+    if (!resp.ok) {
+      throw new Error(`HeyGen retornou ${resp.status} ao consultar o andamento do vídeo.`);
+    }
+    const { data } = await resp.json();
+    if (data.status === 'completed') return data;
+    if (data.status === 'failed') {
+      throw new Error(data.error?.message || 'A geração do vídeo falhou no HeyGen.');
+    }
+    await new Promise(r => setTimeout(r, HEYGEN_POLL_INTERVAL_MS));
+  }
+  throw new Error('Tempo limite excedido aguardando a geração do vídeo no HeyGen.');
+}
+
+// Baixa o .mp4 pronto e grava em videos/aula{NN}_video.mp4 dentro da pasta do
+// projeto — mesmo contrato de persistGammaSlidesStage, mas em videosDir().
+async function persistHeygenVideoStage(sess, baseName, videoUrl) {
+  const resp = await fetch(videoUrl);
+  if (!resp.ok) {
+    throw new Error(`Falha ao baixar o .mp4 gerado pelo HeyGen (status ${resp.status}).`);
+  }
+  const buffer = Buffer.from(await resp.arrayBuffer());
+  const fullPath = path.join(videosDir(sess), `${baseName}.mp4`);
   fs.writeFileSync(fullPath, buffer);
   saveProject(sess, { baseName, fonte: 'ia' });
   return fullPath;
@@ -1338,6 +1475,46 @@ app.post('/api/estilos-visuais/selecionar', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Configuração do HeyGen (Etapa 10 — Vídeo com avatar), uma vez por curso ─
+// Mesmo padrão do estiloVisual: menu → confirmar → persistir em sess/projeto.json.
+// Diferença: as opções vêm direto do workspace HeyGen do usuário (via API),
+// não são geradas por IA.
+app.get('/api/heygen/avatares', async (req, res) => {
+  try {
+    const avatares = await listarAvataresHeygen();
+    res.json({ avatares });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Erro ao listar avatares do HeyGen.' });
+  }
+});
+
+app.get('/api/heygen/vozes', async (req, res) => {
+  try {
+    const vozes = await listarVozesHeygen(req.query);
+    res.json({ vozes });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Erro ao listar vozes do HeyGen.' });
+  }
+});
+
+app.post('/api/heygen/config', (req, res) => {
+  const sess = getSession(req, res);
+  const { avatarId, avatarName, avatarType, voiceId, voiceName, expressiveness, motionPrompt } = req.body || {};
+  if (!avatarId || !voiceId) {
+    return res.status(400).json({ error: 'Selecione um avatar e uma voz antes de continuar.' });
+  }
+  sess.heygenConfig = {
+    avatarId, avatarName: avatarName || '', avatarType: avatarType || '',
+    voiceId, voiceName: voiceName || '',
+    expressiveness: expressiveness || null,
+    motionPrompt: motionPrompt?.trim() || ''
+  };
+  saveProject(sess);
+  res.json({ ok: true });
+});
+
 // ── Etapa 8 — Slides, via API do Gamma, opcional e independente ────────────
 // Reorganiza o conteúdo JÁ gerado de cada aula em slides — não gera conteúdo
 // pedagógico novo, apenas estrutura/resume o que já existe. Pausa para
@@ -1610,6 +1787,197 @@ app.get('/api/roteiro/gerar', async (req, res) => {
     }
     console.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar roteiro' });
+  } finally {
+    res.end();
+  }
+});
+
+// ── Etapa 10 — Vídeo com avatar (HeyGen), opcional e independente ──────────
+// Requer a Etapa 5 (Conteúdo) concluída — fonte do texto de cada aula — e a
+// configuração de avatar/voz do HeyGen (uma vez por curso, ver
+// POST /api/heygen/config acima). Diferente de Slides/Roteiro, NÃO avança
+// automaticamente entre aulas: o ciclo por aula é mais longo (gerar roteiro →
+// revisar fora do app → reenviar → confirmar → gerar vídeo → revisar o .mp4
+// fora do app) e o usuário escolhe manualmente qual aula trabalhar a cada vez.
+
+const DURACAO_AVATAR_MIN_SEGUNDOS = 5;
+const DURACAO_AVATAR_MAX_SEGUNDOS = 600;
+
+// GET /api/video-avatar/parametros?index=N — metadados da aula + duração
+// sticky atual, sem chamar IA nenhuma.
+app.get('/api/video-avatar/parametros', (req, res) => {
+  const sess = getSession(req, res);
+  restoreConteudoPorAula(sess);
+  if (!sess.conteudo && !sess.conteudoPorAula?.length) {
+    return res.status(400).json({ error: 'Conclua a Etapa 5 antes de gerar vídeos com avatar.' });
+  }
+  if (!sess.heygenConfig) {
+    return res.status(400).json({ error: 'Configure o avatar e a voz do HeyGen antes de continuar.' });
+  }
+
+  const aulas = sess.conteudoPorAula;
+  const index = Number(req.query.index);
+  if (!Number.isInteger(index) || index < 0 || index >= aulas.length) {
+    return res.status(400).json({ error: 'Índice de aula inválido.' });
+  }
+
+  const aula = aulas[index];
+  res.json({
+    index,
+    numero: String(index + 1).padStart(2, '0'),
+    titulo: aula.titulo,
+    total: aulas.length,
+    duracaoPadrao: sess.duracaoAvatarDefault || 30
+  });
+});
+
+// POST /api/video-avatar/parametros — aprova a duração (segundos, inteiro)
+// da aula, guardada para a próxima chamada a GET /api/video-avatar/roteiro/gerar.
+app.post('/api/video-avatar/parametros', (req, res) => {
+  const sess = getSession(req, res);
+  const { index, segundos } = req.body || {};
+  const i = Number(index);
+  const s = Number(segundos);
+  if (!Number.isInteger(i) || !sess.conteudoPorAula?.[i]) {
+    return res.status(400).json({ error: 'Índice de aula inválido.' });
+  }
+  if (!Number.isInteger(s) || s < DURACAO_AVATAR_MIN_SEGUNDOS || s > DURACAO_AVATAR_MAX_SEGUNDOS) {
+    return res.status(400).json({ error: `Informe uma duração inteira entre ${DURACAO_AVATAR_MIN_SEGUNDOS} e ${DURACAO_AVATAR_MAX_SEGUNDOS} segundos.` });
+  }
+  sess.roteiroAvatarPendente = { index: i, segundos: s };
+  res.json({ ok: true });
+});
+
+// GET /api/video-avatar/roteiro/gerar (SSE) — chama a IA com a duração
+// aprovada, persiste roteiroAvatar{NN}.txt/.docx. Sem avanço automático
+// (proximoIndex) — decisão de design D6, ver openspec/changes/video-avatar-generation.
+app.get('/api/video-avatar/roteiro/gerar', async (req, res) => {
+  const sess = getSession(req, res);
+  if (!sess.roteiroAvatarPendente) {
+    return sseError(res, 'Nenhuma duração aprovada. Defina a duração da aula antes de gerar o roteiro.');
+  }
+  sseHeaders(res);
+  const client = clientAbort(res);
+  const { index, segundos } = sess.roteiroAvatarPendente;
+  const aula = sess.conteudoPorAula[index];
+  const numero = String(index + 1).padStart(2, '0');
+
+  try {
+    send(res, { type: 'progress', message: `Gerando roteiro de avatar da aula ${index + 1} de ${sess.conteudoPorAula.length}: ${aula.titulo}` });
+
+    const skill = skills.roteiroAvatarSkill({
+      aulaTitulo: aula.titulo,
+      aulaTexto: aula.texto,
+      segundos,
+      publico: sess.config?.publico,
+      nivel: sess.config?.nivel,
+      metodologia: getMetodologia(sess),
+      bnccContext: buildPedagogicalContext(sess)
+    });
+
+    const stream = await openai.chat.completions.create({
+      model: skill.model,
+      stream: true,
+      stream_options: { include_usage: true },
+      messages: [
+        { role: 'system', content: skill.system },
+        { role: 'user', content: skill.user }
+      ]
+    }, { signal: client.signal });
+
+    let fullText = '';
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content;
+      if (text) { fullText += text; send(res, { type: 'token', text }); }
+      if (chunk.usage) addUsage(chunk.usage, sess);
+    }
+    if (client.disconnected) return;
+
+    const baseName = `roteiroAvatar${numero}`;
+
+    sess.duracaoAvatarDefault = segundos;
+    sess.roteirosAvatarGerados = sess.roteirosAvatarGerados || [];
+    sess.roteirosAvatarGerados.push({ index, numero, titulo: aula.titulo, baseName, segundos });
+    sess.roteiroAvatarPendente = null;
+
+    await persistStage(sess, baseName, `Roteiro de Avatar — Aula ${index + 1}: ${aula.titulo}`, fullText);
+
+    send(res, { type: 'progress', message: `Roteiro de avatar da aula ${index + 1} concluído` });
+    send(res, { type: 'done', fullText, index, numero, baseName, titulo: aula.titulo });
+  } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração do roteiro de avatar — interrompendo /api/video-avatar/roteiro/gerar');
+      return;
+    }
+    console.error(err);
+    send(res, { type: 'error', message: err.message || 'Erro ao gerar roteiro de avatar' });
+  } finally {
+    res.end();
+  }
+});
+
+// GET /api/video-avatar/gerar?index=N (SSE) — envia o roteiro CONFIRMADO
+// (versão da IA ou reenviada pelo usuário via /api/importar/confirmar, ambas
+// gravadas em scr/roteiroAvatar{NN}.txt) para o HeyGen e baixa o .mp4 pronto.
+app.get('/api/video-avatar/gerar', async (req, res) => {
+  const sess = getSession(req, res);
+  const index = Number(req.query.index);
+  if (!sess.heygenConfig) {
+    return sseError(res, 'Configure o avatar e a voz do HeyGen antes de gerar o vídeo.');
+  }
+  if (!Number.isInteger(index) || !sess.conteudoPorAula?.[index]) {
+    return sseError(res, 'Índice de aula inválido.');
+  }
+  const numero = String(index + 1).padStart(2, '0');
+  const roteiroTexto = readMemory(sess, `roteiroAvatar${numero}`);
+  if (!roteiroTexto) {
+    return sseError(res, 'Gere e confirme o roteiro de avatar desta aula antes de enviar ao HeyGen.');
+  }
+
+  sseHeaders(res);
+  const client = clientAbort(res);
+  const aula = sess.conteudoPorAula[index];
+  const { avatarId, avatarType, voiceId, expressiveness, motionPrompt } = sess.heygenConfig;
+
+  try {
+    send(res, { type: 'progress', message: `Enviando roteiro da aula ${index + 1} para o HeyGen...` });
+
+    const payload = {
+      type: 'avatar',
+      avatar_id: avatarId,
+      voice_id: voiceId,
+      script: roteiroTexto,
+      engine: { type: 'avatar_iv' },
+      aspect_ratio: '16:9',
+      resolution: '1080p',
+      // expressiveness/motion_prompt só têm efeito em photo avatars (Avatar IV)
+      // — enviados só quando configurados, o HeyGen ignora quando não se aplica.
+      ...(expressiveness && avatarType === 'photo_avatar' ? { expressiveness } : {}),
+      ...(motionPrompt ? { motion_prompt: motionPrompt } : {})
+    };
+
+    const criacao = await criarVideoHeygen(payload, client);
+    send(res, { type: 'progress', message: `Aguardando o HeyGen gerar o vídeo da aula ${index + 1}... (pode levar alguns minutos)` });
+
+    const resultado = await aguardarVideoHeygen(criacao.video_id, client);
+    if (client.disconnected) return;
+
+    const baseName = `aula${numero}_video`;
+
+    sess.videosAvatarGerados = sess.videosAvatarGerados || [];
+    sess.videosAvatarGerados.push({ index, numero, titulo: aula.titulo, baseName, geradoEm: new Date().toISOString() });
+
+    await persistHeygenVideoStage(sess, baseName, resultado.video_url);
+
+    send(res, { type: 'progress', message: `Vídeo da aula ${index + 1} concluído` });
+    send(res, { type: 'done', index, numero, baseName, titulo: aula.titulo });
+  } catch (err) {
+    if (client.disconnected) {
+      console.warn('[sse] cliente desconectou durante a geração do vídeo — interrompendo /api/video-avatar/gerar');
+      return;
+    }
+    console.error(err);
+    send(res, { type: 'error', message: err.message || 'Erro ao gerar vídeo do avatar' });
   } finally {
     res.end();
   }
@@ -2263,6 +2631,10 @@ app.post('/api/carregar-projeto', (req, res) => {
       sess.slidesObservacaoDefault = p.slidesObservacaoDefault || '';
       sess.slidesQuantidadeDefault = p.slidesQuantidadeDefault || null;
       sess.slidesGerados = p.slidesGerados || [];
+      sess.heygenConfig = p.heygenConfig || null;
+      sess.roteirosAvatarGerados = p.roteirosAvatarGerados || [];
+      sess.duracaoAvatarDefault = p.duracaoAvatarDefault || null;
+      sess.videosAvatarGerados = p.videosAvatarGerados || [];
       stages = p.stages || {};
     } catch {
       sess.config = {};
@@ -2324,7 +2696,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [] });
+  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────
@@ -2345,6 +2717,8 @@ function detectStage(filename, firstH1, sess) {
   if (/^aula\d{2}_conteudo$/.test(base)) return { stage: base, detectadoPor: 'nome' };
   // roteiro03 → roteiro03 (Etapa 9 — Roteiros de vídeo)
   if (/^roteiro\d{2}$/.test(base)) return { stage: base, detectadoPor: 'nome' };
+  // roteiroAvatar03 → roteiroAvatar03 (Etapa 10 — Vídeo com avatar)
+  if (/^roteiroAvatar\d{2}$/.test(base)) return { stage: base, detectadoPor: 'nome' };
   // O export gera "<nome_do_curso>_<stage>.docx" — casa pelo sufixo _<stage>
   const baseLower = base.toLowerCase();
   for (const key of Object.keys(STAGES_FIXOS)) {
@@ -2408,6 +2782,10 @@ app.post('/api/importar/confirmar', async (req, res) => {
     sess.aulas.forEach((_, i) => {
       const idx = String(i + 1).padStart(2, '0');
       allStages[`aula${idx}_conteudo`] = { sessField: null, label: `Aula ${i + 1}` };
+      // roteiroAvatar{NN} (Etapa 10) — sem espelho em sess (o .txt em disco é
+      // a fonte lida na hora de gerar o vídeo), só precisa existir aqui para
+      // não cair no guard "Stage desconhecido" abaixo.
+      allStages[`roteiroAvatar${idx}`] = { sessField: null, label: `Roteiro de Avatar — Aula ${i + 1}` };
     });
   }
   if (!allStages[stage]) return res.status(400).json({ error: 'Stage desconhecido' });
@@ -3694,6 +4072,7 @@ module.exports.clientAbort = clientAbort;
 module.exports.combineSignals = combineSignals;
 module.exports.streamSkillToClient = streamSkillToClient;
 module.exports.detectStage = detectStage;
+module.exports.requireApiKey = requireApiKey;
 module.exports.preencherTemplateRoteiro = preencherTemplateRoteiro;
 module.exports.extrairBlocoVozAvatar = extrairBlocoVozAvatar;
 module.exports.preencherBlocoVozNoRoteiro = preencherBlocoVozNoRoteiro;

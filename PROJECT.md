@@ -30,11 +30,16 @@ Aplicação web que **automatiza a criação de material didático completo** pa
 | 7 | Agente de Qualidade Pedagógica + PPC | `GET /api/qualidade` (SSE), `GET /api/ppc` (SSE) | ✅ Implementado |
 | 8 | Slides (via API do Gamma) | `GET /api/estilos-visuais`, `POST /api/estilos-visuais/selecionar`, `GET /api/slides/parametros`, `POST /api/slides/parametros`, `GET /api/slides/gerar` (SSE) | ✅ Implementado |
 | 9 | Roteiros de vídeo | `POST /api/roteiro/blocos`, `GET /api/roteiro/prompt`, `POST /api/roteiro/aprovar`, `GET /api/roteiro/gerar` (SSE) | ✅ Implementado |
+| 10 | Vídeo com avatar (HeyGen) | `GET /api/heygen/avatares`, `GET /api/heygen/vozes`, `POST /api/heygen/config`, `GET/POST /api/video-avatar/parametros`, `GET /api/video-avatar/roteiro/gerar` (SSE), `GET /api/video-avatar/gerar` (SSE) | ✅ Implementado |
 
-As etapas 8 e 9 são opcionais e independentes: não bloqueiam nem são
+As etapas 8, 9 e 10 são opcionais e independentes: não bloqueiam nem são
 bloqueadas pelas demais, exceto exigirem respectivamente a Etapa 5
-(Conteúdo) e a Etapa 4 (Plano de Aula) já concluídas. A numeração acima é a
-usada na navegação do frontend (`data-step` em `public/index.html`).
+(Conteúdo), a Etapa 4 (Plano de Aula) e a Etapa 5 (Conteúdo) novamente já
+concluídas. A numeração acima é a usada na navegação do frontend
+(`data-step` em `public/index.html`). Diferente das etapas 8 e 9, a Etapa 10
+não avança automaticamente entre aulas — o usuário escolhe manualmente qual
+aula trabalhar a cada rodada (ver capability `video-avatar-generation` em
+`openspec/specs/`).
 
 Endpoints transversais (não amarrados a uma etapa específica):
 `GET /api/escolher-pasta` (seletor nativo de pasta), `GET /api/tokens`
@@ -63,6 +68,7 @@ Backend:   Node.js 18+ + Express 4.18
 Frontend:  Vanilla JS + HTML5 + CSS3 (sem frameworks)
 IA:        OpenAI SDK v4 (maxRetries: 6)
 Slides:    API do Gamma v1.0 (REST, chamada direta via fetch — sem SDK)
+Vídeo:     API do HeyGen v3, fluxo "Avatar Video" (REST, fetch — sem SDK)
 Docs:      docx v9 (geração) + mammoth v1 (extração de .docx importado)
 Testes:    Jest 30.4.2 + Supertest 7.2.2
 Protocolo: Server-Sent Events (SSE) para todas as operações assíncronas
@@ -172,6 +178,12 @@ slidesGerados         string[]      (arquivos aula{NN}_slides.pptx já gerados n
 roteiroBlocos         number|null   (1–6, escolhido uma única vez por curso — Etapa 9)
 roteiroPendente       { index, texto }|null
 roteirosGerados       string[]      (arquivos roteiro{NN}.docx já gerados nesta sessão)
+heygenConfig          { avatarId, avatarName, avatarType, voiceId, voiceName,
+                         expressiveness, motionPrompt }|null  (Etapa 10, 1x por curso)
+roteiroAvatarPendente { index, segundos }|null
+roteirosAvatarGerados string[]      (arquivos roteiroAvatar{NN}.docx já gerados nesta sessão)
+duracaoAvatarDefault  number|null   (sticky — última duração em segundos usada)
+videosAvatarGerados   string[]      (arquivos videos/aula{NN}_video.mp4 já gerados nesta sessão)
 inputs                object        (inputs do usuário por etapa — topicos, limite, ajustesEnsino, observacoesAula)
 ```
 
@@ -294,6 +306,8 @@ internos (`.txt`, `.json`) ficam em `{pastaProjeto}/scr/`:
   ppc_completo.docx                    scr/ppc_completo.txt             (Etapa 7)
   aula01_slides.pptx                   (... por aula — Etapa 8, gerado via Gamma)
   roteiro01.docx                       scr/roteiro01.txt   (... por aula — Etapa 9)
+  roteiroAvatar01.docx                 scr/roteiroAvatar01.txt (... por aula — Etapa 10)
+  videos/aula01_video.mp4              (... por aula — Etapa 10, gerado via HeyGen, subpasta criada sob demanda)
   scr/projeto.json                     — estado estruturado da sessão (config, bncc, aulas, inputs, stages)
   scr/score_historico.json             — histórico de scores por ciclo de melhorias
   scr/observacoes_pendentes.json       — observações extraídas do último upload da Etapa 6

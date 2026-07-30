@@ -35,6 +35,7 @@
     <button class="step-pill" data-step="7">7 · Qualidade</button>
     <button class="step-pill" data-step="8">8 · Slides</button>
     <button class="step-pill" data-step="9">9 · Roteiros</button>
+    <button class="step-pill" data-step="10">10 · Vídeo Avatar</button>
   </nav>
 
   <!-- ── STEP 0 ── -->
@@ -572,6 +573,91 @@
     <div class="card" id="roteiroResultCard" style="display:none">
       <h2>Roteiros Gerados</h2>
       <div id="roteiroArquivos" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
+    </div>
+  </section>
+
+  <!-- ── STEP 10 ── -->
+  <section class="step-section" id="step10">
+    <div class="card">
+      <h2>Vídeo com Avatar (HeyGen)</h2>
+      <p style="font-size:.85rem;color:#555;line-height:1.6">
+        Gera um roteiro de fala calibrado pela duração que você definir (em segundos)
+        a partir do conteúdo já produzido na Etapa 5, e envia esse roteiro — revisado
+        por você — para o HeyGen narrar com o avatar e a voz escolhidos, gerando um
+        vídeo <strong>.mp4 por aula</strong>.
+      </p>
+      <p class="field-hint">
+        Requer a conclusão da Etapa 5 (Conteúdo). Etapa opcional e independente.
+        Diferente de Slides e Roteiros, aqui você escolhe manualmente a aula a
+        trabalhar a cada rodada — não há avanço automático.
+      </p>
+
+      <!-- Configuração do avatar/voz do HeyGen (1x por curso) -->
+      <div id="heygenConfigContainer" style="display:none">
+        <h3 style="font-size:1rem;margin-bottom:8px">Escolha o avatar</h3>
+        <div id="heygenAvataresList" class="bncc-checklist"></div>
+
+        <h3 style="font-size:1rem;margin:18px 0 8px">Escolha a voz</h3>
+        <div id="heygenVozesList" class="bncc-checklist"></div>
+
+        <div class="form-group" style="max-width:220px;margin-top:16px">
+          <label for="heygenExpressividade">Expressividade (opcional)</label>
+          <select id="heygenExpressividade">
+            <option value="">Não definir</option>
+            <option value="low">Baixa</option>
+            <option value="medium">Média</option>
+            <option value="high">Alta</option>
+          </select>
+          <span class="field-hint">Só tem efeito para avatares do tipo "foto".</span>
+        </div>
+        <div class="form-group" style="margin-top:12px">
+          <label for="heygenMotionPrompt">Instruções de movimento/gestos (opcional)</label>
+          <textarea id="heygenMotionPrompt" placeholder="Ex: gestos calmos, tom professoral"></textarea>
+        </div>
+
+        <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
+          <button id="btnConfirmarHeygenConfig" class="btn btn-primary">Confirmar avatar e voz →</button>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button id="btnVideoAvatar" class="btn btn-primary" disabled>🧑‍🏫 Gerar Vídeo com Avatar</button>
+      </div>
+    </div>
+
+    <!-- Seleção manual de aula -->
+    <div class="card" id="videoAvatarAulaCard" style="display:none">
+      <h2>Selecione a aula</h2>
+      <div class="form-group" style="max-width:420px">
+        <label for="videoAvatarAulaSelect">Aula</label>
+        <select id="videoAvatarAulaSelect"></select>
+      </div>
+    </div>
+
+    <!-- Parâmetros da aula (duração em segundos) + roteiro -->
+    <div class="card" id="videoAvatarParametrosCard" style="display:none">
+      <h2>Roteiro de Avatar — Aula <span id="videoAvatarAulaProgresso"></span></h2>
+      <div class="form-group" style="max-width:220px">
+        <label for="duracaoSegundosInput">Duração do vídeo (segundos)</label>
+        <input type="number" id="duracaoSegundosInput" step="1" min="5" max="600" placeholder="30" />
+        <span class="field-hint">Apenas números inteiros.</span>
+      </div>
+      <div class="btn-row" style="margin-top:14px">
+        <button id="btnGerarRoteiroAvatar" class="btn btn-primary">Gerar roteiro →</button>
+      </div>
+      <div class="log-panel" id="logRoteiroAvatar" style="margin-top:14px"></div>
+      <div class="result-area" id="resultRoteiroAvatar"></div>
+      <div class="btn-row" id="videoAvatarRoteiroActions" style="display:none;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" id="btnImportarRoteiroAvatar">⬆ Importar versão editada</button>
+        <button id="btnEnviarHeygen" class="btn btn-primary">🎬 Enviar ao HeyGen e gerar vídeo</button>
+      </div>
+      <div class="log-panel" id="logVideoAvatar" style="margin-top:14px"></div>
+    </div>
+
+    <!-- Resumo dos vídeos gerados -->
+    <div class="card" id="videoAvatarResultCard" style="display:none">
+      <h2>Vídeos Gerados</h2>
+      <div id="videoAvatarArquivos" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
     </div>
   </section>
 
