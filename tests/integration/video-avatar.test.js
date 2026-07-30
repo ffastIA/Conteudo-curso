@@ -191,6 +191,25 @@ describe('GET /api/heygen/avatares e /api/heygen/vozes', () => {
     expect(chamada.url).toContain('language=Portuguese');
   });
 
+  test('sem query, filtra vozes por português por padrão', async () => {
+    const ag = agent();
+    const calls = installHeygenListFetchMock();
+    const res = await ag.get('/api/heygen/vozes');
+    expect(res.status).toBe(200);
+    const chamada = calls.find(c => c.url.includes('/v3/voices'));
+    expect(chamada.url).toContain('language=Portuguese');
+  });
+
+  test('language explícito na query sobrepõe o padrão de português', async () => {
+    const ag = agent();
+    const calls = installHeygenListFetchMock();
+    const res = await ag.get('/api/heygen/vozes?language=English');
+    expect(res.status).toBe(200);
+    const chamada = calls.find(c => c.url.includes('/v3/voices'));
+    expect(chamada.url).toContain('language=English');
+    expect(chamada.url).not.toContain('language=Portuguese');
+  });
+
   test('erro do HeyGen ao listar retorna 500', async () => {
     const ag = agent();
     installHeygenListFetchMock({ failListagem: true });

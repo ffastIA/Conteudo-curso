@@ -1489,9 +1489,16 @@ app.get('/api/heygen/avatares', async (req, res) => {
   }
 });
 
+// Filtra vozes em português por padrão (curso é sempre em português) — a API
+// do HeyGen não distingue variantes (só existe o valor "Portuguese", sem
+// separar Brasil/Portugal). `?language=` na query ainda permite sobrepor o
+// padrão se algum dia fizer sentido buscar outro idioma.
+const HEYGEN_VOZES_LANGUAGE_DEFAULT = 'Portuguese';
+
 app.get('/api/heygen/vozes', async (req, res) => {
   try {
-    const vozes = await listarVozesHeygen(req.query);
+    const { type, language, gender } = req.query;
+    const vozes = await listarVozesHeygen({ type, language: language || HEYGEN_VOZES_LANGUAGE_DEFAULT, gender });
     res.json({ vozes });
   } catch (err) {
     console.error(err);
