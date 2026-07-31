@@ -475,6 +475,16 @@
         pausa aula a aula para revisão antes de cada uma.
       </p>
 
+      <!-- Seleção de template Gamma customizado (só aparece quando GAMMA_TEMPLATE_IDS está configurada) -->
+      <div id="slidesTemplateContainer" style="display:none">
+        <h3 style="font-size:1rem;margin-bottom:8px">Escolha o template do Gamma</h3>
+        <p style="font-size:.82rem;color:#777;margin-bottom:12px">Selecione uma opção — será aplicada a todas as aulas.</p>
+        <div id="slidesTemplateList" class="bncc-checklist"></div>
+        <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
+          <button id="btnConfirmarSlidesTemplate" class="btn btn-primary">Confirmar template →</button>
+        </div>
+      </div>
+
       <!-- Seleção de estilo visual (exibida antes da primeira geração) -->
       <div id="estiloVisualContainer" style="display:none">
         <h3 style="font-size:1rem;margin-bottom:8px">Escolha o estilo visual das imagens</h3>
@@ -492,7 +502,10 @@
 
     <!-- Parâmetros por aula (quantidade de slides + observações complementares) -->
     <div class="card" id="slidesParametrosCard" style="display:none">
-      <h2>Slides da Aula <span id="slidesAulaProgresso"></span></h2>
+      <div class="btn-row" style="justify-content:space-between;align-items:center">
+        <h2>Slides da Aula <span id="slidesAulaProgresso"></span></h2>
+        <button id="btnTrocarSlidesTemplate" class="btn btn-secondary btn-sm" style="display:none">🔁 Trocar template</button>
+      </div>
       <div class="form-group" style="max-width:220px">
         <label for="slidesQuantidadeSelect">Quantidade de slides</label>
         <select id="slidesQuantidadeSelect">
@@ -617,6 +630,7 @@
 
         <div class="btn-row" style="margin-top:16px;justify-content:flex-start">
           <button id="btnConfirmarHeygenConfig" class="btn btn-primary">Confirmar avatar e voz →</button>
+          <button id="btnCancelarHeygenConfig" class="btn btn-secondary" style="display:none">Cancelar</button>
         </div>
       </div>
 
@@ -627,7 +641,10 @@
 
     <!-- Seleção manual de aula -->
     <div class="card" id="videoAvatarAulaCard" style="display:none">
-      <h2>Selecione a aula</h2>
+      <div class="btn-row" style="justify-content:space-between;align-items:center">
+        <h2>Selecione a aula</h2>
+        <button id="btnTrocarHeygenConfig" class="btn btn-secondary">🔁 Trocar avatar/voz</button>
+      </div>
       <div class="form-group" style="max-width:420px">
         <label for="videoAvatarAulaSelect">Aula</label>
         <select id="videoAvatarAulaSelect"></select>

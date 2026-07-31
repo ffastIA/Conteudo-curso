@@ -87,14 +87,23 @@ function initLog(panelId) {
   return el;
 }
 
-function addLog(panel, msg, type = 'current') {
-  // Remove spinner da linha anterior
+// Remove o spinner de qualquer linha "current" pendente, marcando-a como
+// concluída — usada tanto ao adicionar uma nova linha de log quanto (via
+// clearSpinner) quando o evento SSE "done" chega e a última mensagem de
+// "progress" não foi reconhecida como a finalização (ex.: "Roteiro da aula
+// 1 concluído" não é o literal "Concluído"), o que deixaria o spinner
+// girando para sempre sem isso.
+function clearSpinner(panel) {
   panel.querySelectorAll('.log-line.current').forEach(l => {
     l.classList.remove('current');
     const sp = l.querySelector('.spinner');
     if (sp) sp.remove();
     l.classList.add('done-line');
   });
+}
+
+function addLog(panel, msg, type = 'current') {
+  clearSpinner(panel);
 
   const div = document.createElement('div');
   div.className = `log-line ${type}`;
@@ -110,12 +119,7 @@ function addLog(panel, msg, type = 'current') {
 }
 
 function finishLog(panel, msg = 'Concluído') {
-  panel.querySelectorAll('.log-line.current').forEach(l => {
-    l.classList.remove('current');
-    const sp = l.querySelector('.spinner');
-    if (sp) sp.remove();
-    l.classList.add('done-line');
-  });
+  clearSpinner(panel);
   const div = document.createElement('div');
   div.className = 'log-line done-line';
   div.innerHTML = `✔ ${escHtml(msg)}`;
@@ -202,6 +206,7 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
       scheduleRender();
     } else if (msg.type === 'done') {
       cancelScheduledRender();
+      clearSpinner(logPanel);
       fullText = msg.fullText;
       resultArea.innerHTML = renderMarkdown(fullText);
       resultArea.scrollTop = resultArea.scrollHeight;
@@ -805,15 +810,103 @@ document.getElementById('btnSlides').addEventListener('click', async () => {
     return;
   }
 
-  // Estilo visual já escolhido nesta sessão (ou restaurado de um projeto
-  // carregado) — pula direto para os parâmetros da primeira aula.
-  if (state.estiloVisual) {
-    await abrirParametrosSlides(0);
+  // Template Gamma já escolhido nesta sessão — segue direto para o estilo
+  // visual. Caso contrário, sempre consulta o servidor de novo (nunca
+  // guarda em cache que "não há templates": a lista em GAMMA_TEMPLATE_IDS
+  // só é lida quando o servidor sobe, mas o usuário pode configurá-la e
+  // reiniciar o servidor no meio da sessão do navegador, sem recarregar a
+  // página — um cache client-side desatualizado faria o sistema pular a
+  // tela de seleção mesmo com templates já disponíveis).
+  if (state.slidesTemplate) {
+    await prosseguirParaEstiloVisual();
     return;
   }
 
-  await carregarEstilosVisuais();
+  await carregarSlidesTemplates();
 });
+
+// Resolve os templates Gamma configurados (GAMMA_TEMPLATE_IDS) e exibe a
+// tela de seleção. Se nenhum estiver configurado: no fluxo normal (chamada
+// pelo botão "Gerar Slides"), segue direto para a etapa de estilo visual,
+// sem exibir nada; no modo interativo (botão "Trocar template"), avisa o
+// usuário em vez de fechar a tela em que ele já estava.
+async function carregarSlidesTemplates({ interativo = false } = {}) {
+  const btn = document.getElementById('btnSlides');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/slides/templates');
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao listar templates do Gamma.'); return; }
+    if (!data.templates?.length) {
+      if (interativo) {
+        alert('Nenhum template do Gamma configurado (GAMMA_TEMPLATE_IDS vazia no .env).');
+        return;
+      }
+      await prosseguirParaEstiloVisual();
+      return;
+    }
+
+    const indexAtual = data.templates.findIndex(t => t.id === state.slidesTemplate?.id);
+    const lista = document.getElementById('slidesTemplateList');
+    lista.innerHTML = data.templates.map((t, i) =>
+      `<label class="bncc-item">` +
+      `<input type="radio" name="slidesTemplateOpcao" value="${escHtml(t.id)}" ` +
+      `data-title="${escHtml(t.title || t.id)}" ${i === (indexAtual >= 0 ? indexAtual : 0) ? 'checked' : ''}>` +
+      `<span><strong>${escHtml(t.title || t.id)}</strong></span>` +
+      `</label>`
+    ).join('');
+    if (interativo) document.getElementById('slidesParametrosCard').style.display = 'none';
+    document.getElementById('slidesTemplateContainer').style.display = 'block';
+  } catch (err) {
+    alert('Erro ao carregar templates do Gamma: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btnConfirmarSlidesTemplate').addEventListener('click', async () => {
+  const opcao = document.querySelector('#slidesTemplateList input[name=slidesTemplateOpcao]:checked');
+  if (!opcao) {
+    alert('Selecione um template antes de confirmar.');
+    return;
+  }
+  try {
+    const r = await fetch('/api/slides/template', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ templateId: opcao.value })
+    });
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Erro ao salvar o template escolhido.'); return; }
+    state.slidesTemplate = data.template;
+    document.getElementById('slidesTemplateContainer').style.display = 'none';
+    // Se o usuário estava revendo os parâmetros de uma aula específica
+    // (troca de template no meio do curso), volta para essa mesma aula em
+    // vez de reiniciar do zero na aula 1.
+    await prosseguirParaEstiloVisual(state.slidesIndex ?? 0);
+  } catch (err) {
+    alert('Erro ao salvar o template escolhido: ' + err.message);
+  }
+});
+
+// "Trocar template": reabre a tela de seleção (já com o template atual
+// pré-marcado, via carregarSlidesTemplates) sem perder a aula em que o
+// usuário estava — mesmo padrão de btnTrocarHeygenConfig (Etapa 10).
+document.getElementById('btnTrocarSlidesTemplate').addEventListener('click', async () => {
+  await carregarSlidesTemplates({ interativo: true });
+});
+
+// Depois de resolvido o template (escolhido, ou funcionalidade não
+// configurada), segue para a escolha de estilo visual — que continua
+// exigida independente do template — ou direto para a aula `index`
+// (0 = início do curso) se o estilo visual já tiver sido escolhido antes.
+async function prosseguirParaEstiloVisual(index = 0) {
+  if (state.estiloVisual) {
+    await abrirParametrosSlides(index);
+    return;
+  }
+  await carregarEstilosVisuais();
+}
 
 async function carregarEstilosVisuais() {
   const btn = document.getElementById('btnSlides');
@@ -878,6 +971,10 @@ async function abrirParametrosSlides(index) {
     document.getElementById('slidesQuantidadeSelect').value = String(data.quantidadePadrao);
     document.getElementById('slidesObservacaoTexto').value = data.observacaoPadrao;
     document.getElementById('slidesParametrosCard').style.display = 'block';
+    // Só existe template para trocar quando GAMMA_TEMPLATE_IDS está
+    // configurada — nesse caso o servidor já teria rejeitado esta chamada
+    // sem um template selecionado, então state.slidesTemplate garante isso.
+    document.getElementById('btnTrocarSlidesTemplate').style.display = state.slidesTemplate ? '' : 'none';
     document.getElementById('logSlides').innerHTML = '';
   } catch (err) {
     alert('Erro ao montar parâmetros dos slides: ' + err.message);
@@ -914,6 +1011,7 @@ document.getElementById('btnGerarSlidesAula').addEventListener('click', async ()
         if (msg.message.includes('concluídos')) finishLog(logPanel, msg.message);
         else addLog(logPanel, msg.message);
       } else if (msg.type === 'done') {
+        clearSpinner(logPanel);
         registrarArquivoSlideGerado(msg);
         es.close();
         refreshTokenCounter();
@@ -1098,11 +1196,17 @@ async function carregarHeygenConfig() {
       return;
     }
 
+    // Ao reabrir para trocar, pré-marca o avatar/voz atualmente configurados
+    // (quando ainda presentes na lista) em vez de sempre cair no primeiro item.
+    const avatarIndexAtual = dataAvatares.avatares.findIndex(a => a.id === state.heygenConfig?.avatarId);
+    const vozIndexAtual = dataVozes.vozes.findIndex(v => v.voice_id === state.heygenConfig?.voiceId);
+
     const avataresList = document.getElementById('heygenAvataresList');
     avataresList.innerHTML = dataAvatares.avatares.map((a, i) =>
       `<label class="bncc-item">` +
       `<input type="radio" name="heygenAvatarOpcao" value="${escHtml(a.id)}" ` +
-      `data-name="${escHtml(a.name || '')}" data-type="${escHtml(a.avatar_type || '')}" ${i === 0 ? 'checked' : ''}>` +
+      `data-name="${escHtml(a.name || '')}" data-type="${escHtml(a.avatar_type || '')}" ${i === (avatarIndexAtual >= 0 ? avatarIndexAtual : 0) ? 'checked' : ''}>` +
+      (a.preview_image_url ? `<img class="avatar-preview" src="${escHtml(a.preview_image_url)}" alt="" onerror="this.style.display='none'">` : '') +
       `<span><strong>${escHtml(a.name || a.id)}</strong>${a.avatar_type ? ` — ${escHtml(a.avatar_type)}` : ''}</span>` +
       `</label>`
     ).join('');
@@ -1111,7 +1215,7 @@ async function carregarHeygenConfig() {
     vozesList.innerHTML = dataVozes.vozes.map((v, i) =>
       `<label class="bncc-item">` +
       `<input type="radio" name="heygenVozOpcao" value="${escHtml(v.voice_id)}" ` +
-      `data-name="${escHtml(v.name || '')}" ${i === 0 ? 'checked' : ''}>` +
+      `data-name="${escHtml(v.name || '')}" ${i === (vozIndexAtual >= 0 ? vozIndexAtual : 0) ? 'checked' : ''}>` +
       `<span><strong>${escHtml(v.name || v.voice_id)}</strong>${v.language ? ` — ${escHtml(v.language)}` : ''}</span>` +
       `</label>`
     ).join('');
@@ -1150,10 +1254,31 @@ document.getElementById('btnConfirmarHeygenConfig').addEventListener('click', as
     if (!r.ok) { alert(data.error || 'Erro ao salvar a configuração do HeyGen.'); return; }
     state.heygenConfig = escolha;
     document.getElementById('heygenConfigContainer').style.display = 'none';
+    document.getElementById('btnCancelarHeygenConfig').style.display = 'none';
     await carregarSeletorAulasVideoAvatar();
   } catch (err) {
     alert('Erro ao salvar a configuração do HeyGen: ' + err.message);
   }
+});
+
+// "Trocar avatar/voz": reabre a tela de seleção (já com a config atual
+// pré-marcada, via carregarHeygenConfig) sem perder o estado da aula
+// selecionada, que fica escondido até o usuário confirmar ou cancelar.
+document.getElementById('btnTrocarHeygenConfig').addEventListener('click', async () => {
+  document.getElementById('videoAvatarAulaCard').style.display = 'none';
+  document.getElementById('videoAvatarParametrosCard').style.display = 'none';
+  document.getElementById('btnCancelarHeygenConfig').style.display = '';
+  await carregarHeygenConfig();
+});
+
+// Fecha a tela de seleção sem persistir nada — só faz sentido quando
+// reaberta via "Trocar avatar/voz" (o botão fica oculto na 1ª configuração
+// do curso, quando ainda não há seletor de aula para voltar).
+document.getElementById('btnCancelarHeygenConfig').addEventListener('click', () => {
+  document.getElementById('heygenConfigContainer').style.display = 'none';
+  document.getElementById('btnCancelarHeygenConfig').style.display = 'none';
+  document.getElementById('videoAvatarAulaCard').style.display = 'block';
+  document.getElementById('videoAvatarParametrosCard').style.display = 'block';
 });
 
 // Popula o seletor de aulas (1x, usando o "total" devolvido pelos parâmetros
@@ -1266,6 +1391,7 @@ document.getElementById('btnEnviarHeygen').addEventListener('click', () => {
       if (msg.message.includes('concluído')) finishLog(logPanel, msg.message);
       else addLog(logPanel, msg.message);
     } else if (msg.type === 'done') {
+      clearSpinner(logPanel);
       registrarArquivoVideoAvatarGerado(msg);
       markDone(10);
       es.close();
@@ -1407,6 +1533,10 @@ async function carregarProjetoPorPasta(pasta) {
     // Restaura o estilo visual escolhido (Etapa 8) — evita pedir de novo se já
     // salvo no projeto.json de uma sessão anterior.
     if (data.estiloVisual) state.estiloVisual = data.estiloVisual;
+
+    // Restaura o template Gamma escolhido (Etapa 8), quando a funcionalidade
+    // está configurada e uma seleção já foi feita nesta pasta de projeto.
+    if (data.slidesTemplate) state.slidesTemplate = data.slidesTemplate;
 
     // Restaura o número de blocos (Etapa 9) e os roteiros já gerados, evitando
     // pedir a escolha de blocos de novo e repopulando os badges de arquivos.

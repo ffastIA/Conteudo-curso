@@ -256,6 +256,13 @@ textarea { resize: vertical; min-height: 80px; }
 .bncc-item input[type="checkbox"],
 .bncc-item input[type="radio"] { margin-top: 2px; accent-color: #7B68D4; flex-shrink: 0; }
 .bncc-item span strong { color: #4A3B8C; }
+.avatar-preview {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
 .metodologia-card {
   background: #f3f0fd;
   border: 1.5px solid #c4b5fd;

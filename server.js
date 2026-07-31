@@ -46,6 +46,26 @@ const HEYGEN_POLL_INTERVAL_MS = Number(process.env.HEYGEN_POLL_INTERVAL_MS) || 5
 // Vídeo de avatar demora mais que slides — teto maior que o do Gamma (5 min).
 const HEYGEN_POLL_TIMEOUT_MS = Number(process.env.HEYGEN_POLL_TIMEOUT_MS) || 10 * 60_000;
 
+// Lista de IDs separados por vírgula (ex.: "id1, id2,id3") -> array trimado
+// sem entradas vazias. Usado para restringir avatares/vozes exibidos na
+// Etapa 10 a um subconjunto curado do workspace HeyGen (ver HEYGEN_AVATAR_IDS
+// e HEYGEN_VOICE_IDS abaixo) — vazio/ausente significa "sem filtro".
+function parseCsvEnv(value) {
+  return (value || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+const HEYGEN_AVATAR_IDS = parseCsvEnv(process.env.HEYGEN_AVATAR_IDS);
+const HEYGEN_VOICE_IDS = parseCsvEnv(process.env.HEYGEN_VOICE_IDS);
+
+// Mesmo padrão acima, para restringir os templates Gamma customizados
+// oferecidos na Etapa 8 (ver listarTemplatesGamma) — vazio/ausente
+// significa "funcionalidade de template desativada" (comportamento igual
+// ao anterior a esta feature).
+const GAMMA_TEMPLATE_IDS = parseCsvEnv(process.env.GAMMA_TEMPLATE_IDS);
+
 const SEARCH_TIMEOUT_MS = 45_000;
 const SEARCH_RETRY_TIMEOUT_MS = 30_000;
 const STALL_TIMEOUT_MS = 45_000;
@@ -902,6 +922,7 @@ function saveProject(sess, stageInfo = null) {
   projeto.aulas = sess.aulas || [];
   projeto.inputs = sess.inputs || {};
   projeto.estiloVisual = sess.estiloVisual || null;
+  projeto.slidesTemplate = sess.slidesTemplate || null;
   projeto.roteiroBlocos = sess.roteiroBlocos || null;
   projeto.roteirosGerados = sess.roteirosGerados || [];
   projeto.slidesObservacaoDefault = sess.slidesObservacaoDefault || '';
@@ -946,10 +967,10 @@ async function persistStage(sess, baseName, label, content, sites = []) {
 // Cria uma geração no Gamma (POST /generations) — primeiro passo do fluxo
 // assíncrono create → poll → download. Nenhum SDK oficial é usado: é uma API
 // REST simples, chamada via fetch nativo do Node (sem dependência nova).
-async function criarGeracaoGamma(payload, client = null) {
+async function criarGeracaoGamma(payload, client = null, endpointPath = '/generations') {
   requireApiKey(GAMMA_API_KEY, 'GAMMA_API_KEY');
   const timeoutSignal = makeAbortSignal(30_000);
-  const resp = await fetch(`${GAMMA_API_BASE}/generations`, {
+  const resp = await fetch(`${GAMMA_API_BASE}${endpointPath}`, {
     method: 'POST',
     headers: { 'X-API-KEY': GAMMA_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1006,44 +1027,147 @@ async function persistGammaSlidesStage(sess, baseName, exportUrl) {
   return fullPath;
 }
 
+// Resolve o nome de cada template configurado em GAMMA_TEMPLATE_IDS
+// consultando GET /gammas/{id}. Diferente do HeyGen (lista tudo do
+// workspace e filtra), a API do Gamma não expõe um endpoint de listagem
+// geral de gammas da conta — só consulta por ID já conhecido — por isso o
+// caminho é o inverso: um GET por ID já configurado. Um ID inacessível ou
+// removido é logado e omitido do resultado, sem derrubar a lista inteira.
+async function listarTemplatesGamma() {
+  if (!GAMMA_TEMPLATE_IDS.length) return [];
+  requireApiKey(GAMMA_API_KEY, 'GAMMA_API_KEY');
+  const templates = await Promise.all(GAMMA_TEMPLATE_IDS.map(async (id) => {
+    try {
+      const timeoutSignal = makeAbortSignal(30_000);
+      const resp = await fetch(`${GAMMA_API_BASE}/gammas/${id}`, {
+        headers: { 'X-API-KEY': GAMMA_API_KEY },
+        signal: timeoutSignal
+      });
+      if (!resp.ok) throw new Error(`status ${resp.status}`);
+      const data = await resp.json();
+      return { id, title: data.title || id };
+    } catch (err) {
+      console.warn(`[listarTemplatesGamma] Template ${id} indisponível: ${err.message}`);
+      return null;
+    }
+  }));
+  return templates.filter(Boolean);
+}
+
 // ── Integração com a API do HeyGen (Etapa 10 — Vídeo com avatar) ───────────
-// Lista os avatares do workspace ("looks" — inclui digital twins, studio
-// avatars e photo avatars custom do usuário), para o menu de configuração
-// da Etapa 10 (uma escolha por curso).
+// Busca todas as páginas de um endpoint HeyGen paginado (contrato comum a
+// /v3/voices: array em `data`, mais `has_more`/`next_token`) — usado porque
+// o catálogo (principalmente vozes públicas) costuma passar de uma única
+// página, e um item além da primeira ficava invisível na Etapa 10 mesmo
+// estando no workspace do usuário.
+// maxPaginas é uma salvaguarda contra loop infinito, não um limite prático
+// (o maior catálogo observado, vozes públicas, tem ~2.400 itens em ~24
+// páginas de 100).
+async function paginarHeygen(path, baseParams = {}, { maxPaginas = 100 } = {}) {
+  const itens = [];
+  let token = null;
+  for (let i = 0; i < maxPaginas; i++) {
+    const params = new URLSearchParams(baseParams);
+    if (token) params.set('token', token);
+    const timeoutSignal = makeAbortSignal(30_000);
+    const resp = await fetch(`${HEYGEN_API_BASE}${path}?${params.toString()}`, {
+      headers: { 'x-api-key': HEYGEN_API_KEY },
+      signal: timeoutSignal
+    });
+    if (!resp.ok) {
+      const detalhe = await resp.text().catch(() => '');
+      throw new Error(`HeyGen retornou ${resp.status} ao buscar ${path}.${detalhe ? ' ' + detalhe : ''}`);
+    }
+    const data = await resp.json();
+    itens.push(...(data.data || []));
+    if (!data.has_more) break;
+    token = data.next_token;
+  }
+  return itens;
+}
+
+// Lista os avatares próprios do usuário (grupos custom — digital twins,
+// studio avatars, photo avatars — e os "looks" dentro de cada grupo), para
+// o menu de configuração da Etapa 10. NÃO usa GET /v3/avatars/looks: esse
+// endpoint devolve o catálogo PÚBLICO inteiro do HeyGen misturado com os
+// avatares do usuário (milhares de itens, sem nenhum parâmetro de filtro
+// por dono — `type`/`owner`/`source` são todos rejeitados com "Extra inputs
+// are not permitted"), então paginar até o fim levaria minutos. Usa os
+// endpoints v2 (avatar_group.list?include_public=false +
+// avatar_group/{id}/avatars), que já escopam para os grupos do próprio
+// usuário — HeyGen os sinaliza como legados (sunset 2026-10-31, migrar para
+// /v3/avatar_groups quando esse endpoint entrar no ar; hoje retorna 404).
 async function listarAvataresHeygen() {
   requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
-  const timeoutSignal = makeAbortSignal(30_000);
-  const resp = await fetch(`${HEYGEN_API_BASE}/v3/avatars/looks?limit=50`, {
+  const timeoutSignalGrupos = makeAbortSignal(30_000);
+  const respGrupos = await fetch(`${HEYGEN_API_BASE}/v2/avatar_group.list?include_public=false`, {
     headers: { 'x-api-key': HEYGEN_API_KEY },
-    signal: timeoutSignal
+    signal: timeoutSignalGrupos
   });
-  if (!resp.ok) {
-    const detalhe = await resp.text().catch(() => '');
-    throw new Error(`HeyGen retornou ${resp.status} ao listar avatares.${detalhe ? ' ' + detalhe : ''}`);
+  if (!respGrupos.ok) {
+    const detalhe = await respGrupos.text().catch(() => '');
+    throw new Error(`HeyGen retornou ${respGrupos.status} ao listar grupos de avatares.${detalhe ? ' ' + detalhe : ''}`);
   }
-  const data = await resp.json();
-  return data.data || [];
+  const dataGrupos = await respGrupos.json();
+  const grupos = dataGrupos.data?.avatar_group_list || [];
+
+  const looksPorGrupo = await Promise.all(grupos.map(async (grupo) => {
+    const timeoutSignal = makeAbortSignal(30_000);
+    const resp = await fetch(`${HEYGEN_API_BASE}/v2/avatar_group/${grupo.id}/avatars`, {
+      headers: { 'x-api-key': HEYGEN_API_KEY },
+      signal: timeoutSignal
+    });
+    if (!resp.ok) {
+      const detalhe = await resp.text().catch(() => '');
+      throw new Error(`HeyGen retornou ${resp.status} ao listar avatares do grupo ${grupo.name || grupo.id}.${detalhe ? ' ' + detalhe : ''}`);
+    }
+    const data = await resp.json();
+    const looks = data.data?.avatar_list || [];
+    const avatarType = `${(grupo.group_type || 'custom').toLowerCase()}_avatar`;
+    return looks.map(look => ({
+      id: look.id,
+      name: look.name || grupo.name,
+      avatar_type: avatarType,
+      preview_image_url: look.image_url || grupo.preview_image || ''
+    }));
+  }));
+
+  const avatares = looksPorGrupo.flat();
+  if (!HEYGEN_AVATAR_IDS.length) return avatares;
+  return avatares.filter(a => HEYGEN_AVATAR_IDS.includes(a.id));
 }
 
 // Lista as vozes do workspace (públicas do HeyGen + privadas/clonadas pelo
-// usuário), com filtros opcionais de idioma/gênero/tipo.
+// usuário), com filtros opcionais de idioma/gênero/tipo. Quando `type` não é
+// especificado, busca públicas E privadas e combina — a API do HeyGen só
+// devolve o catálogo público se `type` for omitido, então vozes clonadas do
+// usuário nunca apareceriam com uma única chamada sem type. Vozes privadas
+// não recebem o filtro de idioma: elas tipicamente vêm sem idioma marcado
+// (`language: "unknown"`) e o filtro de idioma do HeyGen as excluiria mesmo
+// sendo vozes legítimas do usuário.
 async function listarVozesHeygen({ type, language, gender } = {}) {
   requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
-  const params = new URLSearchParams({ limit: '50' });
-  if (type) params.set('type', type);
-  if (language) params.set('language', language);
-  if (gender) params.set('gender', gender);
-  const timeoutSignal = makeAbortSignal(30_000);
-  const resp = await fetch(`${HEYGEN_API_BASE}/v3/voices?${params.toString()}`, {
-    headers: { 'x-api-key': HEYGEN_API_KEY },
-    signal: timeoutSignal
-  });
-  if (!resp.ok) {
-    const detalhe = await resp.text().catch(() => '');
-    throw new Error(`HeyGen retornou ${resp.status} ao listar vozes.${detalhe ? ' ' + detalhe : ''}`);
+  const baseParams = { limit: '100' };
+  if (gender) baseParams.gender = gender;
+
+  if (type) {
+    const params = { ...baseParams, type };
+    if (language) params.language = language;
+    const vozes = await paginarHeygen('/v3/voices', params);
+    return HEYGEN_VOICE_IDS.length ? vozes.filter(v => HEYGEN_VOICE_IDS.includes(v.voice_id)) : vozes;
   }
-  const data = await resp.json();
-  return data.data || [];
+
+  const paramsPublicas = { ...baseParams, type: 'public' };
+  if (language) paramsPublicas.language = language;
+  const paramsPrivadas = { ...baseParams, type: 'private' };
+
+  const [publicas, privadas] = await Promise.all([
+    paginarHeygen('/v3/voices', paramsPublicas),
+    paginarHeygen('/v3/voices', paramsPrivadas)
+  ]);
+  const vozes = [...privadas, ...publicas];
+  if (!HEYGEN_VOICE_IDS.length) return vozes;
+  return vozes.filter(v => HEYGEN_VOICE_IDS.includes(v.voice_id));
 }
 
 // Cria o vídeo do avatar (fluxo "Avatar Video", determinístico — narra o
@@ -1529,6 +1653,51 @@ app.post('/api/heygen/config', (req, res) => {
 // mesmo padrão de duas fases já usado na Etapa 9 (Roteiros): monta parâmetros
 // (sem IA) → aprova → gera via SSE, com avanço automático entre aulas.
 
+// Instrução fixa enviada em toda geração via template (modo
+// POST /generations/from-template), antes de qualquer conteúdo específico
+// da aula — preserva os elementos de marca fixos do template (logo etc.)
+// independentemente do que a IA decidir sobre o resto do conteúdo.
+const GAMMA_TEMPLATE_PROMPT_FIXO =
+  'Preserve as logo do na parte superior direita e inferior esquerda. Essa logos sempre devem estar presentes e na mesma posição. ' +
+  'Altere apenas os textos dentro dos cards e insira imagens que tenham relação com o tema, nas quadros reservados para as imagens. ' +
+  'A explicação de cada imagem deve ficar na caixa de texto abaixo da respectiva imagem.';
+
+// GET /api/slides/templates — resolve os templates Gamma configurados em
+// GAMMA_TEMPLATE_IDS (nome via API); lista vazia quando não configurada,
+// caso em que a seleção de template fica inativa na Etapa 8.
+app.get('/api/slides/templates', async (req, res) => {
+  try {
+    const templates = await listarTemplatesGamma();
+    res.json({ templates });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Erro ao listar templates do Gamma.' });
+  }
+});
+
+// POST /api/slides/template — grava a escolha do template Gamma para todo o
+// curso (todas as aulas geradas neste ciclo usam o mesmo template).
+app.post('/api/slides/template', async (req, res) => {
+  const sess = getSession(req, res);
+  const { templateId } = req.body || {};
+  if (!templateId || !GAMMA_TEMPLATE_IDS.includes(templateId)) {
+    return res.status(400).json({ error: 'Selecione um template válido antes de continuar.' });
+  }
+  try {
+    const templates = await listarTemplatesGamma();
+    const template = templates.find(t => t.id === templateId);
+    if (!template) {
+      return res.status(400).json({ error: 'Template indisponível no momento. Tente novamente.' });
+    }
+    sess.slidesTemplate = template;
+    saveProject(sess);
+    res.json({ ok: true, template: sess.slidesTemplate });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Erro ao salvar o template escolhido.' });
+  }
+});
+
 // GET /api/slides/parametros?index=N — metadados da aula + valores sticky
 // atuais (quantidade/observação), sem chamar IA nenhuma.
 app.get('/api/slides/parametros', (req, res) => {
@@ -1539,6 +1708,9 @@ app.get('/api/slides/parametros', (req, res) => {
   }
   if (!sess.estiloVisual) {
     return res.status(400).json({ error: 'Escolha um estilo visual antes de gerar os slides.' });
+  }
+  if (GAMMA_TEMPLATE_IDS.length && !sess.slidesTemplate) {
+    return res.status(400).json({ error: 'Escolha um template do Gamma antes de gerar os slides.' });
   }
 
   const aulas = sess.conteudoPorAula;
@@ -1592,7 +1764,18 @@ app.get('/api/slides/gerar', async (req, res) => {
   try {
     send(res, { type: 'progress', message: `Gerando slides da aula ${index + 1} de ${aulas.length}: ${aula.titulo}` });
 
-    const payload = {
+    const payload = sess.slidesTemplate ? {
+      gammaId: sess.slidesTemplate.id,
+      prompt: [
+        GAMMA_TEMPLATE_PROMPT_FIXO,
+        `Público-alvo: ${sess.config.publico || 'não especificado'}. Nível do curso: ${sess.config.nivel || 'não especificado'} — ` +
+          `adeque a densidade de informação e o vocabulário a esse nível, com tom leve, descontraído e acolhedor, adequado à faixa etária do público-alvo.`,
+        `Gere exatamente ${quantidade} card(s) de conteúdo para esta aula, além dos cards fixos do template.`,
+        `Conteúdo da aula "${aula.titulo}":\n${aula.texto}`,
+        ...(texto ? [`Observações complementares desta aula: ${texto}`] : [])
+      ].join('\n\n'),
+      exportAs: 'pptx'
+    } : {
       inputText: aula.texto,
       textMode: 'condense',
       format: 'presentation',
@@ -1613,7 +1796,7 @@ app.get('/api/slides/gerar', async (req, res) => {
       exportAs: 'pptx'
     };
 
-    const criacao = await criarGeracaoGamma(payload, client);
+    const criacao = await criarGeracaoGamma(payload, client, sess.slidesTemplate ? '/generations/from-template' : '/generations');
     send(res, { type: 'progress', message: `Aguardando o Gamma concluir a geração da aula ${index + 1}...` });
 
     const resultado = await aguardarGeracaoGamma(criacao.generationId, client);
@@ -2633,6 +2816,7 @@ app.post('/api/carregar-projeto', (req, res) => {
       sess.aulas = p.aulas || [];
       sess.inputs = p.inputs || {};
       sess.estiloVisual = p.estiloVisual || null;
+      sess.slidesTemplate = p.slidesTemplate || null;
       sess.roteiroBlocos = p.roteiroBlocos || null;
       sess.roteirosGerados = p.roteirosGerados || [];
       sess.slidesObservacaoDefault = p.slidesObservacaoDefault || '';
@@ -2703,7 +2887,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
+  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────

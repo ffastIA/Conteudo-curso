@@ -13,6 +13,14 @@ const fs = require('fs');
 // motivo/padrão já usado em tests/integration/slides-gamma.test.js para o Gamma.
 process.env.HEYGEN_POLL_INTERVAL_MS = '20';
 process.env.HEYGEN_POLL_TIMEOUT_MS = '300';
+// Este arquivo testa o baseline "sem filtro" (todos os avatares/vozes do
+// workspace) — precisa forçar essas variáveis vazias aqui, senão um
+// HEYGEN_AVATAR_IDS/HEYGEN_VOICE_IDS real no .env do desenvolvedor (dotenv
+// não sobrescreve process.env já definido, mas preenche o que estiver
+// ausente) vazaria para os testes e quebraria o baseline. Ver
+// tests/integration/heygen-avatares-vozes-filtro-env.test.js para o caso filtrado.
+process.env.HEYGEN_AVATAR_IDS = '';
+process.env.HEYGEN_VOICE_IDS = '';
 
 const app = require('../../server');
 
@@ -105,17 +113,53 @@ async function configurarHeygen(ag, overrides = {}) {
 
 // Mock de fetch global para os endpoints do HeyGen usados por
 // GET /api/heygen/avatares e GET /api/heygen/vozes (listagem, sem geração).
-function installHeygenListFetchMock({ avatares = [{ id: 'av_1', name: 'Ana', avatar_type: 'studio_avatar' }], vozes = [{ voice_id: 'v_1', name: 'Voz Ana', language: 'pt-BR' }], failListagem = false } = {}) {
+// Avatares: GET /v2/avatar_group.list devolve os grupos próprios do usuário;
+// GET /v2/avatar_group/{id}/avatars devolve os looks de cada grupo (roteado
+// por id extraído da URL) — sem paginação, mesmo contrato usado por
+// listarAvataresHeygen(). Vozes: cada lista é dada como array de "páginas"
+// (arrays de itens), simulando has_more/next_token — mais de uma página =
+// o sistema deve seguir a paginação até a última. Roteadas por
+// type=public/type=private na própria URL, já que listarVozesHeygen faz
+// duas chamadas distintas quando o caller não especifica `type`.
+function installHeygenListFetchMock({
+  grupos = [{ id: 'grupo_1', name: 'Ana', group_type: 'STUDIO' }],
+  looksPorGrupo = { grupo_1: [{ id: 'av_1', name: 'Ana', image_url: 'https://x/av1.png' }] },
+  vozesPublicasPaginas = [[{ voice_id: 'v_1', name: 'Voz Ana', language: 'pt-BR' }]],
+  vozesPrivadasPaginas = [[]],
+  failListagem = false
+} = {}) {
   const calls = [];
+  const paginaAtual = { publicas: 0, privadas: 0 };
+
+  function proximaPagina(chave, paginas) {
+    const idx = paginaAtual[chave];
+    paginaAtual[chave] += 1;
+    const itens = paginas[idx] || [];
+    const hasMore = idx < paginas.length - 1;
+    return { data: itens, has_more: hasMore, next_token: hasMore ? `token_${chave}_${idx + 1}` : undefined };
+  }
+
   global.fetch = jest.fn(async (url) => {
     const urlStr = String(url);
     calls.push({ url: urlStr });
     if (failListagem) return { ok: false, status: 401, text: async () => 'chave inválida' };
-    if (urlStr.includes('/v3/avatars/looks')) {
-      return { ok: true, status: 200, json: async () => ({ data: avatares }) };
+    if (urlStr.includes('/v2/avatar_group.list')) {
+      return { ok: true, status: 200, json: async () => ({ error: null, data: { total_count: grupos.length, avatar_group_list: grupos } }) };
+    }
+    const matchGrupo = urlStr.match(/\/v2\/avatar_group\/([^/?]+)\/avatars/);
+    if (matchGrupo) {
+      const avatarList = looksPorGrupo[matchGrupo[1]] || [];
+      return { ok: true, status: 200, json: async () => ({ error: null, data: { avatar_list: avatarList } }) };
     }
     if (urlStr.includes('/v3/voices')) {
-      return { ok: true, status: 200, json: async () => ({ data: vozes }) };
+      const isPrivada = urlStr.includes('type=private');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => isPrivada
+          ? proximaPagina('privadas', vozesPrivadasPaginas)
+          : proximaPagina('publicas', vozesPublicasPaginas)
+      };
     }
     return { ok: false, status: 404, text: async () => 'not found' };
   });
@@ -177,7 +221,17 @@ describe('GET /api/heygen/avatares e /api/heygen/vozes', () => {
     installHeygenListFetchMock();
     const res = await ag.get('/api/heygen/avatares');
     expect(res.status).toBe(200);
-    expect(res.body.avatares).toEqual([{ id: 'av_1', name: 'Ana', avatar_type: 'studio_avatar' }]);
+    expect(res.body.avatares).toEqual([
+      { id: 'av_1', name: 'Ana', avatar_type: 'studio_avatar', preview_image_url: 'https://x/av1.png' }
+    ]);
+  });
+
+  test('não chama GET /v3/avatars/looks (catálogo público) para listar avatares', async () => {
+    const ag = agent();
+    const calls = installHeygenListFetchMock();
+    await ag.get('/api/heygen/avatares');
+    expect(calls.some(c => c.url.includes('/v3/avatars/looks'))).toBe(false);
+    expect(calls.some(c => c.url.includes('/v2/avatar_group.list'))).toBe(true);
   });
 
   test('lista vozes do workspace, repassando filtros de query', async () => {
@@ -215,6 +269,60 @@ describe('GET /api/heygen/avatares e /api/heygen/vozes', () => {
     installHeygenListFetchMock({ failListagem: true });
     const res = await ag.get('/api/heygen/avatares');
     expect(res.status).toBe(500);
+  });
+
+  test('combina os looks de múltiplos grupos de avatar do usuário', async () => {
+    const ag = agent();
+    installHeygenListFetchMock({
+      grupos: [
+        { id: 'grupo_1', name: 'Ana', group_type: 'STUDIO' },
+        { id: 'grupo_2', name: 'Bruno', group_type: 'PHOTO' }
+      ],
+      looksPorGrupo: {
+        grupo_1: [{ id: 'av_1', name: 'Ana', image_url: 'https://x/av1.png' }],
+        grupo_2: [{ id: 'av_2', name: 'Bruno', image_url: 'https://x/av2.png' }]
+      }
+    });
+    const res = await ag.get('/api/heygen/avatares');
+    expect(res.status).toBe(200);
+    expect(res.body.avatares).toEqual([
+      { id: 'av_1', name: 'Ana', avatar_type: 'studio_avatar', preview_image_url: 'https://x/av1.png' },
+      { id: 'av_2', name: 'Bruno', avatar_type: 'photo_avatar', preview_image_url: 'https://x/av2.png' }
+    ]);
+  });
+
+  test('sem type, combina vozes públicas e privadas do workspace', async () => {
+    const ag = agent();
+    installHeygenListFetchMock({
+      vozesPublicasPaginas: [[{ voice_id: 'v_pub', name: 'Voz Pública', language: 'pt-BR' }]],
+      vozesPrivadasPaginas: [[{ voice_id: 'v_priv', name: 'Voz Clonada', language: 'unknown' }]]
+    });
+    const res = await ag.get('/api/heygen/vozes');
+    expect(res.status).toBe(200);
+    expect(res.body.vozes).toEqual([
+      { voice_id: 'v_priv', name: 'Voz Clonada', language: 'unknown' },
+      { voice_id: 'v_pub', name: 'Voz Pública', language: 'pt-BR' }
+    ]);
+  });
+
+  test('busca de vozes privadas não envia filtro de idioma, públicas envia', async () => {
+    const ag = agent();
+    const calls = installHeygenListFetchMock();
+    await ag.get('/api/heygen/vozes');
+    const chamadaPublica = calls.find(c => c.url.includes('/v3/voices') && c.url.includes('type=public'));
+    const chamadaPrivada = calls.find(c => c.url.includes('/v3/voices') && c.url.includes('type=private'));
+    expect(chamadaPublica).toBeDefined();
+    expect(chamadaPrivada).toBeDefined();
+    expect(chamadaPublica.url).toContain('language=Portuguese');
+    expect(chamadaPrivada.url).not.toContain('language=');
+  });
+
+  test('type explícito na query não dispara a busca do outro tipo', async () => {
+    const ag = agent();
+    const calls = installHeygenListFetchMock();
+    const res = await ag.get('/api/heygen/vozes?type=public');
+    expect(res.status).toBe(200);
+    expect(calls.some(c => c.url.includes('type=private'))).toBe(false);
   });
 });
 

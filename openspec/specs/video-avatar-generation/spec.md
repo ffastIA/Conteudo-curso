@@ -5,22 +5,36 @@ narrando um roteiro de fala calibrado pela duração (em segundos) escolhida
 pelo usuário, via API do HeyGen (v3, fluxo "Avatar Video"), como uma etapa
 opcional (Etapa 10) que não bloqueia nem é bloqueada pelas demais etapas do
 pipeline, exceto exigir a Etapa 5 (Conteúdo) concluída.
-
 ## Requirements
-
 ### Requirement: Configuração de avatar, voz e narração do HeyGen, uma vez por curso
-O sistema SHALL permitir que o usuário escolha, uma única vez por curso, o avatar, a voz e os controles avançados de narração (`expressiveness`, `motion_prompt`) do HeyGen que serão usados em todos os vídeos gerados naquele curso. As opções de avatar SHALL ser obtidas em tempo real do workspace HeyGen do usuário (não geradas por IA), via `GET /v3/avatars/looks`. As opções de voz SHALL ser obtidas da mesma forma via `GET /v3/voices`, filtradas por `language: "Portuguese"` por padrão (único valor de português exposto pela API do HeyGen — sem distinção entre Brasil e Portugal), salvo quando o cliente especificar explicitamente outro idioma. A escolha SHALL ser persistida em `sess.heygenConfig` e em `projeto.json`.
+O sistema SHALL permitir que o usuário escolha, uma única vez por curso, o avatar, a voz e os controles avançados de narração (`expressiveness`, `motion_prompt`) do HeyGen que serão usados em todos os vídeos gerados naquele curso. As opções de avatar SHALL ser obtidas em tempo real dos grupos de avatar próprios do usuário (não geradas por IA, e não incluindo o catálogo público de avatares do HeyGen), via `GET /v2/avatar_group.list?include_public=false` seguido de `GET /v2/avatar_group/{group_id}/avatars` para cada grupo. As opções de voz SHALL ser obtidas via `GET /v3/voices`, paginado completamente (seguindo `has_more`/`next_token` até esgotar o catálogo, não apenas a primeira página), e SHALL incluir tanto vozes públicas quanto vozes privadas/clonadas do usuário quando o cliente não especificar um `type` explícito. Vozes públicas SHALL ser filtradas por `language: "Portuguese"` por padrão (único valor de português exposto pela API do HeyGen — sem distinção entre Brasil e Portugal), salvo quando o cliente especificar explicitamente outro idioma; vozes privadas/clonadas NÃO SHALL ser filtradas por idioma (elas tipicamente não têm idioma marcado na API do HeyGen, e o filtro de idioma do HeyGen as excluiria mesmo sendo vozes legítimas do usuário). A escolha SHALL ser persistida em `sess.heygenConfig` e em `projeto.json`.
 
 #### Scenario: Listar avatares e vozes do workspace
 - **WHEN** o usuário abre a tela de configuração da Etapa 10 pela primeira vez num curso
-- **THEN** o sistema busca `GET /v3/avatars/looks` e `GET /v3/voices` no HeyGen e apresenta as opções encontradas para seleção
+- **THEN** o sistema busca os grupos de avatar próprios do usuário (e os looks de cada grupo) e as vozes via `GET /v3/voices` (paginando completamente) no HeyGen, e apresenta as opções encontradas para seleção
 
-#### Scenario: Vozes filtradas por português por padrão
-- **WHEN** o cliente chama `GET /api/heygen/vozes` sem especificar `?language=` na query
-- **THEN** o sistema filtra o resultado por `language: "Portuguese"` junto ao HeyGen, retornando apenas vozes em português
+#### Scenario: Avatares próprios do usuário, não o catálogo público do HeyGen
+- **WHEN** o sistema busca as opções de avatar para a Etapa 10
+- **THEN** o sistema retorna apenas avatares dos grupos próprios do usuário (`GET /v2/avatar_group.list?include_public=false`), nunca avatares públicos/stock do catálogo geral do HeyGen
+
+#### Scenario: Vozes além da primeira página do HeyGen
+- **WHEN** o workspace HeyGen do usuário tem mais vozes do que cabem em uma página (`has_more: true` na resposta)
+- **THEN** o sistema segue `next_token` e continua buscando até a última página, incluindo essas vozes na lista apresentada
+
+#### Scenario: Vozes públicas filtradas por português por padrão
+- **WHEN** o cliente chama `GET /api/heygen/vozes` sem especificar `?language=` nem `?type=` na query
+- **THEN** o sistema filtra as vozes públicas por `language: "Portuguese"` junto ao HeyGen, mas busca todas as vozes privadas do usuário sem esse filtro de idioma
+
+#### Scenario: Vozes privadas/clonadas incluídas por padrão
+- **WHEN** o cliente chama `GET /api/heygen/vozes` sem especificar `?type=` na query
+- **THEN** o sistema busca tanto `type=public` quanto `type=private` no HeyGen e retorna as vozes de ambos combinadas
+
+#### Scenario: Tipo de voz especificado explicitamente não é combinado
+- **WHEN** o cliente chama `GET /api/heygen/vozes?type=public` (ou `?type=private`) explicitamente
+- **THEN** o sistema busca apenas o tipo especificado, sem combinar com o outro tipo
 
 #### Scenario: Workspace sem avatares ou vozes cadastrados
-- **WHEN** o workspace HeyGen do usuário não tem nenhum avatar ou nenhuma voz em português cadastrados
+- **WHEN** o workspace HeyGen do usuário não tem nenhum avatar ou nenhuma voz (pública em português ou privada) cadastrados
 - **THEN** o sistema exibe a lista vazia sem erro e comunica que é preciso criar avatar/voz diretamente no HeyGen antes de continuar
 
 #### Scenario: Confirmar configuração
@@ -130,3 +144,27 @@ O sistema SHALL verificar, antes de qualquer chamada de rede à API do HeyGen, s
 #### Scenario: HEYGEN_API_KEY presente segue o fluxo normal
 - **WHEN** `HEYGEN_API_KEY` está definida e não vazia
 - **THEN** o sistema chama a API do HeyGen normalmente, sem nenhuma mudança de comportamento em relação ao existente
+
+### Requirement: Trocar avatar/voz do curso a qualquer momento
+O sistema SHALL permitir que o usuário reabra a tela de seleção de avatar/voz do HeyGen a qualquer momento na Etapa 10, mesmo depois de já ter confirmado uma configuração (`heygenConfig`) para o curso, através de um botão "Trocar avatar/voz" visível junto ao seletor de aulas. Ao reabrir, o sistema SHALL buscar novamente as listas de avatares e vozes (respeitando o filtro de `HEYGEN_AVATAR_IDS`/`HEYGEN_VOICE_IDS`, quando configurado) e SHALL pré-selecionar o avatar e a voz atualmente configurados quando ainda presentes na lista retornada. Confirmar a nova escolha SHALL sobrescrever `sess.heygenConfig` e a persistência em `projeto.json`, sem afetar roteiros ou vídeos de aulas já gerados com a configuração anterior. O sistema SHALL oferecer uma opção de cancelar a troca sem alterar a configuração salva.
+
+#### Scenario: Reabrir a seleção com a configuração atual pré-marcada
+- **WHEN** o usuário clica em "Trocar avatar/voz" com `heygenConfig` já definido para o curso
+- **THEN** o sistema busca `GET /api/heygen/avatares` e `GET /api/heygen/vozes` novamente e exibe a tela de seleção com o avatar e a voz atualmente configurados já marcados (quando presentes na lista)
+
+#### Scenario: Confirmar uma nova escolha substitui a anterior
+- **WHEN** o usuário seleciona um avatar e/ou voz diferentes e confirma
+- **THEN** o sistema grava a nova escolha em `sess.heygenConfig` e em `projeto.json`, substituindo a anterior, e volta para o seletor de aulas
+
+#### Scenario: Cancelar a troca preserva a configuração anterior
+- **WHEN** o usuário abre a tela via "Trocar avatar/voz" e clica em "Cancelar" sem confirmar
+- **THEN** o sistema fecha a tela de seleção sem alterar `sess.heygenConfig` nem `projeto.json`, voltando ao estado anterior (seletor de aulas)
+
+#### Scenario: Avatar ou voz configurados não constam mais na lista filtrada
+- **WHEN** o usuário reabre a seleção e o `avatarId`/`voiceId` atualmente configurado não está mais entre os itens retornados (removido do workspace ou do filtro `HEYGEN_AVATAR_IDS`/`HEYGEN_VOICE_IDS`)
+- **THEN** o sistema exibe a lista normalmente, sem nenhum item pré-marcado automaticamente a partir da configuração anterior, exigindo que o usuário escolha explicitamente antes de confirmar
+
+#### Scenario: Trocar avatar/voz não reprocessa aulas já concluídas
+- **WHEN** o usuário troca o avatar/voz do curso após já ter gerado vídeos para uma ou mais aulas com a configuração anterior
+- **THEN** os vídeos e roteiros já gerados permanecem inalterados; apenas as próximas gerações de roteiro/vídeo usam a nova configuração
+

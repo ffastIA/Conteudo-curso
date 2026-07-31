@@ -15,6 +15,14 @@ const fs = require('fs');
 process.env.GAMMA_POLL_INTERVAL_MS = '20';
 process.env.GAMMA_POLL_TIMEOUT_MS = '300';
 
+// Esta suíte cobre o modo padrão (sem template) de geração de slides —
+// força GAMMA_TEMPLATE_IDS vazia independente do .env local de quem roda os
+// testes (dotenv só define uma env var se ela ainda não estiver setada em
+// process.env), para não depender de o .env local não ter template
+// configurado. O modo com template tem suíte própria em
+// tests/integration/slides-template-gamma.test.js.
+process.env.GAMMA_TEMPLATE_IDS = '';
+
 const app = require('../../server');
 
 function baseConfig(pastaProjeto) {
