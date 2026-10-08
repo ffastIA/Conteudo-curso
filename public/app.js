@@ -465,6 +465,7 @@ document.getElementById('btnSearch').addEventListener('click', () => {
     },
     onError() {
       document.getElementById('btnSearch').disabled = false;
+      addLog(logPanel, '💡 Tente novamente ou avance para a Etapa 3 — a pesquisa pode ser pulada.');
     }
   });
 });
@@ -1598,6 +1599,8 @@ async function carregarProjetoPorPasta(pasta) {
     banner.textContent = `✅ Projeto "${data.nome}" carregado — ${data.etapasCarregadas.length} etapas restauradas.`;
     if (data.camposFaltantes?.length)
       banner.textContent += ` Campos a reinserir: ${data.camposFaltantes.join(', ')}.`;
+    if (data.aviso)
+      banner.textContent += ` ⚠️ ${data.aviso}.`;
 
     // Só agora a sessão tem config.nome/pastaProjeto — GET /api/tokens passa a
     // conseguir localizar e devolver o histórico persistido (scr/token_usage.json).

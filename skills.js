@@ -3,7 +3,7 @@
 // demais etapas → gpt-4o-mini, mais econômico em tokens) e a estrutura de
 // mensagens (system + user) usada na chamada à OpenAI.
 
-const MODEL_RESEARCH = 'gpt-4o-search-preview';
+const MODEL_RESEARCH = 'gpt-4o';
 const MODEL_ECONOMY = 'gpt-4o-mini';
 
 // Resumo enxuto (somente título + objetivos) de um conjunto de aulas — usado
@@ -199,8 +199,8 @@ const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodolo
     'técnicos. Responda em português. (Nota: a pesquisa web não está disponível — ' +
     'utilize exclusivamente seu conhecimento para gerar o conteúdo.)',
   user:
-    `Sintetize conteúdos relevantes para um curso de formação tecnológica, ' +
-    'com base no seu conhecimento sobre o tema:\n` +
+    `Sintetize conteúdos relevantes para um curso de formação tecnológica, ` +
+    `com base no seu conhecimento sobre o tema:\n` +
     `Curso: ${nome}\nNível: ${nivel}\nPúblico: ${publico}\n` +
     (modalidade ? `Modalidade: ${modalidade} — considere recursos e práticas compatíveis com essa modalidade.\n` : '') +
     nivelBlock(nivel, 'pesquisa') +
