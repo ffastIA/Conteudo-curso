@@ -68,6 +68,7 @@ const GAMMA_TEMPLATE_IDS = parseCsvEnv(process.env.GAMMA_TEMPLATE_IDS);
 
 const SEARCH_TIMEOUT_MS = 45_000;
 const SEARCH_RETRY_TIMEOUT_MS = 30_000;
+const SEARCH_FALLBACK_TIMEOUT_MS = 30_000;
 const STALL_TIMEOUT_MS = 45_000;
 const CONTEUDO_SEARCH_TIMEOUT_MS = 90_000;
 // Teto de tokens de saída por aula, uniforme em todas as gerações de conteúdo
@@ -792,7 +793,32 @@ function videosDir(sess) {
 // servidor (necessário porque navegadores não expõem caminhos absolutos de
 // pastas ao JavaScript da página). Só faz sentido para uso local, com servidor
 // e navegador na mesma máquina — ver capability native-folder-picker.
-function escolherPastaWindows() {
+// Última pasta escolhida no seletor (persistida no servidor, para o diálogo
+// abrir nela da próxima vez em vez de na raiz do usuário). O caminho do arquivo
+// pode ser redirecionado por ULTIMA_PASTA_FILE (usado nos testes).
+function ultimaPastaFile() {
+  return process.env.ULTIMA_PASTA_FILE || path.join(__dirname, '.ultima-pasta.json');
+}
+
+// Devolve a última pasta lembrada, ou null se não houver, o arquivo estiver
+// ilegível ou a pasta não existir mais.
+function lerUltimaPasta() {
+  try {
+    const { pasta } = JSON.parse(fs.readFileSync(ultimaPastaFile(), 'utf-8'));
+    if (typeof pasta === 'string' && pasta && fs.existsSync(pasta)) return pasta;
+  } catch { /* sem arquivo ou ilegível: sem pasta lembrada */ }
+  return null;
+}
+
+function gravarUltimaPasta(pasta) {
+  try {
+    fs.writeFileSync(ultimaPastaFile(), JSON.stringify({ pasta, atualizadoEm: new Date().toISOString() }, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn(`[escolher-pasta] Não foi possível gravar a última pasta: ${err.message}`);
+  }
+}
+
+function escolherPastaWindows(pastaInicial = null) {
   return new Promise((resolve, reject) => {
     // Usa um Form invisível TopMost como dono do diálogo em vez de tentar
     // reaproveitar o HWND do navegador via GetForegroundWindow/P-Invoke: mais
@@ -813,6 +839,7 @@ function escolherPastaWindows() {
 
       $f = New-Object System.Windows.Forms.FolderBrowserDialog
       $f.Description = 'Selecione a pasta do projeto'
+      if ($env:PASTA_INICIAL) { $f.SelectedPath = $env:PASTA_INICIAL }
 
       $result = $f.ShowDialog($owner)
       $owner.Close()
@@ -824,7 +851,8 @@ function escolherPastaWindows() {
     execFile(
       'powershell.exe',
       ['-NoProfile', '-STA', '-Command', script],
-      { timeout: 120_000 },
+      // A pasta inicial vai por variável de ambiente (não interpolada no script).
+      { timeout: 120_000, env: { ...process.env, PASTA_INICIAL: pastaInicial || '' } },
       (err, stdout, stderr) => {
         if (err) {
           if (stderr) err.message += `\n${stderr}`;
@@ -940,10 +968,15 @@ function saveProject(sess, stageInfo = null) {
       geradoEm: new Date().toISOString()
     };
   }
+  // Escrita atômica: arquivo temporário + rename, para nunca deixar um
+  // projeto.json parcial (ou com restos de uma versão mais longa anterior).
+  const tmpPath = `${projetoPath}.tmp-${process.pid}`;
   try {
-    fs.writeFileSync(projetoPath, JSON.stringify(projeto, null, 2), 'utf-8');
+    fs.writeFileSync(tmpPath, JSON.stringify(projeto, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, projetoPath);
   } catch (err) {
     console.error('[saveProject] Erro ao gravar projeto.json:', err.message);
+    try { fs.unlinkSync(tmpPath); } catch { /* temporário já ausente */ }
   }
 }
 
@@ -2176,7 +2209,8 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
 // ── GET /api/escolher-pasta — abre o seletor nativo de pasta do Windows ─────
 app.get('/api/escolher-pasta', async (req, res) => {
   try {
-    const pasta = await escolherPastaWindows();
+    const pasta = await escolherPastaWindows(lerUltimaPasta());
+    if (pasta) gravarUltimaPasta(pasta);
     res.json({ pasta });
   } catch (err) {
     console.error('[escolher-pasta] Erro ao abrir seletor nativo:', err.message);
@@ -2274,7 +2308,7 @@ app.get('/api/search', async (req, res) => {
             { role: 'system', content: fbSkill.system },
             { role: 'user', content: fbSkill.user }
           ]
-        }, { signal: client.signal });
+        }, { signal: combineSignals(client.signal, makeAbortSignal(SEARCH_FALLBACK_TIMEOUT_MS)) });
       }
     }
     if (client.disconnected) return;
@@ -2807,32 +2841,50 @@ app.post('/api/carregar-projeto', (req, res) => {
   let stages = {};
 
   const projetoPath = path.join(baseDir, 'scr', 'projeto.json');
+  let projetoJson = null;
+  let avisoCorrompido = null;
+  let backupCorrompido = null;
   if (fs.existsSync(projetoPath)) {
     try {
-      const p = JSON.parse(fs.readFileSync(projetoPath, 'utf-8'));
-      sess.config = p.config || {};
-      sess.bncc = p.bncc || { ativo: false, publico: null, nivel: null, itens: [] };
-      sess.metodologia = p.metodologia || '';
-      sess.aulas = p.aulas || [];
-      sess.inputs = p.inputs || {};
-      sess.estiloVisual = p.estiloVisual || null;
-      sess.slidesTemplate = p.slidesTemplate || null;
-      sess.roteiroBlocos = p.roteiroBlocos || null;
-      sess.roteirosGerados = p.roteirosGerados || [];
-      sess.slidesObservacaoDefault = p.slidesObservacaoDefault || '';
-      sess.slidesQuantidadeDefault = p.slidesQuantidadeDefault || null;
-      sess.slidesGerados = p.slidesGerados || [];
-      sess.heygenConfig = p.heygenConfig || null;
-      sess.roteirosAvatarGerados = p.roteirosAvatarGerados || [];
-      sess.duracaoAvatarDefault = p.duracaoAvatarDefault || null;
-      sess.videosAvatarGerados = p.videosAvatarGerados || [];
-      stages = p.stages || {};
+      projetoJson = JSON.parse(fs.readFileSync(projetoPath, 'utf-8'));
     } catch {
-      sess.config = {};
-      return res.json({ ok: true, etapasCarregadas: [], camposFaltantes: ['config','bncc','metodologia','aulas'], aviso: 'projeto.json corrompido — campos estruturados não carregados' });
+      // projeto.json inválido: trata como ausente (fluxo legado, lê os .txt),
+      // preservando o arquivo ruim como .bak para não perder nada.
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const bakPath = `${projetoPath}.corrompido-${ts}.bak`;
+      try {
+        fs.renameSync(projetoPath, bakPath);
+        backupCorrompido = path.basename(bakPath);
+      } catch (err) {
+        console.warn(`[carregar-projeto] Não foi possível preservar o projeto.json corrompido: ${err.message}`);
+      }
+      avisoCorrompido = backupCorrompido
+        ? `projeto.json corrompido — preservado como ${backupCorrompido}; campos estruturados (BNCC, metodologia) precisam ser revistos`
+        : 'projeto.json corrompido — campos estruturados (BNCC, metodologia) precisam ser revistos';
     }
+  }
+  if (projetoJson) {
+    const p = projetoJson;
+    sess.config = p.config || {};
+    sess.bncc = p.bncc || { ativo: false, publico: null, nivel: null, itens: [] };
+    sess.metodologia = p.metodologia || '';
+    sess.aulas = p.aulas || [];
+    sess.inputs = p.inputs || {};
+    sess.estiloVisual = p.estiloVisual || null;
+    sess.slidesTemplate = p.slidesTemplate || null;
+    sess.roteiroBlocos = p.roteiroBlocos || null;
+    sess.roteirosGerados = p.roteirosGerados || [];
+    sess.slidesObservacaoDefault = p.slidesObservacaoDefault || '';
+    sess.slidesQuantidadeDefault = p.slidesQuantidadeDefault || null;
+    sess.slidesGerados = p.slidesGerados || [];
+    sess.heygenConfig = p.heygenConfig || null;
+    sess.roteirosAvatarGerados = p.roteirosAvatarGerados || [];
+    sess.duracaoAvatarDefault = p.duracaoAvatarDefault || null;
+    sess.videosAvatarGerados = p.videosAvatarGerados || [];
+    stages = p.stages || {};
   } else {
-    // legado: sem projeto.json — infere config pelo nome da pasta
+    // legado (ou projeto.json corrompido, já preservado como .bak acima):
+    // infere config pelo nome da pasta
     sess.config = { nome: slugLegado.replace(/_/g, ' ') };
     camposFaltantes.push('bncc', 'metodologia', 'aulas');
   }
@@ -2887,7 +2939,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
+  res.json({ ok: true, ...(avisoCorrompido ? { aviso: avisoCorrompido, ...(backupCorrompido ? { backup: backupCorrompido } : {}) } : {}), etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────

@@ -6,6 +6,7 @@ node_modules/
 
 # Saídas geradas
 saídas/
+saidas/
 
 # Ambiente virtual Python
 .venv/
@@ -31,3 +32,6 @@ scripts/revisao_anotada_teste.docx
 # OS
 .DS_Store
 Thumbs.db
+
+# Última pasta escolhida no seletor nativo (estado local)
+.ultima-pasta.json
