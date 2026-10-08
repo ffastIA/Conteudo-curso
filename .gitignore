@@ -3,6 +3,8 @@ node_modules/
 
 # Variáveis de ambiente (contém chave da OpenAI)
 .env
+# Passphrase mestra para criptografia do .env (NUNCA commitar)
+.env.key
 
 # Saídas geradas
 saídas/

@@ -1,3 +1,28 @@
+// Auto-descriptografia: se .env não existe mas .env.encrypted + .env.key existem,
+// descriptografa em memória e injeta em process.env antes de qualquer outro código.
+(function autoDecryptEnv() {
+  const path = require('node:path');
+  const fs   = require('node:fs');
+  const ROOT = __dirname;
+  const envPath = path.join(ROOT, '.env');
+  const encPath = path.join(ROOT, '.env.encrypted');
+  const keyPath = path.join(ROOT, '.env.key');
+  if (!fs.existsSync(envPath) && fs.existsSync(encPath) && fs.existsSync(keyPath)) {
+    try {
+      const { decryptEnv } = require('./scripts/env-crypto');
+      const plaintext = decryptEnv(encPath, keyPath);
+      const dotenv = require('dotenv');
+      const parsed = dotenv.parse(plaintext);
+      dotenv.populate(process.env, parsed, { override: false });
+      console.log('[env] Variáveis carregadas de .env.encrypted');
+    } catch (err) {
+      process.stderr.write(`[env] Falha ao descriptografar .env.encrypted — verifique .env.key\n`);
+      process.stderr.write(`[env] Detalhe: ${err.message}\n`);
+      process.exit(1);
+    }
+  }
+})();
+
 require('dotenv').config();
 const express = require('express');
 const cookieParser = require('cookie-parser');

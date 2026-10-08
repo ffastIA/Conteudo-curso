@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "env:encrypt": "node scripts/env-crypto.js encrypt",
+    "env:decrypt": "node scripts/env-crypto.js decrypt"
   },
   "dependencies": {
     "cookie-parser": "^1.4.6",
