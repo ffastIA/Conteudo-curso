@@ -64,6 +64,32 @@ function goStep(n) {
 
   atualizarBotoesDependentesDaEtapa5();
   atualizarBotaoRoteiros();
+  if (n >= 5) atualizarEstimativas();
+}
+
+// Estimativa de tokens e custo ANTES das etapas pesadas (faixa, não valor exato).
+const ESTIMATIVAS = [
+  ['pesquisa-modulos', 'estimativaPesquisaModulos', 'Pesquisa por módulo'],
+  ['conteudo', 'estimativaConteudo', 'Geração do conteúdo'],
+  ['revisao', 'estimativaRevisao', 'Revisão de qualidade']
+];
+async function atualizarEstimativas() {
+  for (const [etapa, id, rotulo] of ESTIMATIVAS) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    try {
+      const r = await fetch(`/api/estimativa?etapa=${etapa}`);
+      const e = await r.json();
+      if (!r.ok || !e.unidades) { el.textContent = ''; continue; }
+      const faixa = e.custoUsd
+        ? `US$ ${e.custoUsd.minimo.toFixed(2)} a ${e.custoUsd.maximo.toFixed(2)}`
+        : 'custo indisponível (modelo sem preço cadastrado)';
+      const orcamento = e.orcamentoUsd ? ` · acumulado US$ ${e.custoProjetoUsd.toFixed(2)} de US$ ${e.orcamentoUsd.toFixed(2)}` : '';
+      el.textContent = `💲 ${rotulo} (estimativa): ${e.unidades} ${e.unidade}(s) · ~${e.tokens.minimo.toLocaleString('pt-BR')} a ${e.tokens.maximo.toLocaleString('pt-BR')} tokens · ${faixa}${orcamento}`;
+    } catch {
+      el.textContent = '';
+    }
+  }
 }
 
 document.getElementById('stepsNav').addEventListener('click', e => {
@@ -179,6 +205,7 @@ function mostrarCustoEtapa(panel, msg) {
   }
   panel.appendChild(div);
   panel.scrollTop = panel.scrollHeight;
+  atualizarEstimativas();
 }
 
 // ── SSE streaming genérico ───────────────────────────────────────────────────

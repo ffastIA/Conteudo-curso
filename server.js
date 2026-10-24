@@ -14,7 +14,7 @@
       const dotenv = require('dotenv');
       const parsed = dotenv.parse(plaintext);
       dotenv.populate(process.env, parsed, { override: false });
-      console.log('[env] Variáveis carregadas de .env.encrypted');
+      logger.info('[env] Variáveis carregadas de .env.encrypted');
     } catch (err) {
       process.stderr.write(`[env] Falha ao descriptografar .env.encrypted — verifique .env.key\n`);
       process.stderr.write(`[env] Detalhe: ${err.message}\n`);
@@ -36,13 +36,16 @@ const multer = require('multer');
 const mammoth = require('mammoth');
 const skills = require('./skills');
 const { obs: observabilidade } = require('./observabilidade');
+const { criarLogger } = require('./logger');
+const custo = require('./custo');
+const logger = criarLogger({ contexto: () => observabilidade.contexto() });
 const conteudoSecoes = require('./conteudo-secoes');
 const fundamentacao = require('./fundamentacao');
 const avaliacao = require('./avaliacao');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const bnccData = require('./bncc-data');
-console.log(`[BNCC] Carregado: ${bnccData.competenciasGerais.length} competências, ` +
+logger.info(`[BNCC] Carregado: ${bnccData.competenciasGerais.length} competências, ` +
   `${bnccData.habilidades.ef1.length} EF1, ${bnccData.habilidades.ef2.length} EF2, ` +
   `${bnccData.habilidades.em.length} EM`);
 const {
@@ -146,9 +149,21 @@ async function comRateLimit(fn, { signal, aoEsperar } = {}) {
 // ao SDK fora desta função. A observabilidade nunca altera nem atrasa o
 // resultado: o retorno é exatamente o do SDK (streams são repassados chunk a
 // chunk, sem modificação).
+const disjuntorApi = custo.criarDisjuntor({
+  limite: Number(process.env.DISJUNTOR_FALHAS) > 0 ? Number(process.env.DISJUNTOR_FALHAS) : 5,
+  esperaMs: Number(process.env.DISJUNTOR_ESPERA_MS) > 0 ? Number(process.env.DISJUNTOR_ESPERA_MS) : 60_000
+});
+
 async function chamarOpenAI(tipo, params, options, meta = {}) {
   const inicio = Date.now();
   const ctx = observabilidade.contexto();
+  // Trava de orçamento e disjuntor (só com ORCAMENTO_USD definido): barram a
+  // chamada ANTES de gastar, com mensagem clara que vira o erro SSE da etapa.
+  if (custo.lerOrcamento() !== null) {
+    const bloqueio = disjuntorApi.verificar() ||
+      custo.verificarOrcamento({ acumulado: ctx?.sess?.custoProjetoUsd || 0, estimativa: custo.estimarCustoChamada(params) });
+    if (bloqueio) throw bloqueio;
+  }
   const nome = meta.nome || `openai.${tipo}`;
   const parametros = {
     max_tokens: params?.max_tokens ?? params?.max_output_tokens,
@@ -187,8 +202,10 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
       });
   } catch (err) {
     registrar({ erro: err.message || String(err) });
+    if (!options?.signal?.aborted && err?.name !== 'APIUserAbortError') disjuntorApi.falha();
     throw err;
   }
+  disjuntorApi.sucesso();
 
   if (tipo === 'chat' && params?.stream) {
     return observabilidade.envolverStream(resultado, ({ texto, usage, finishReason, erro }) =>
@@ -488,7 +505,7 @@ function escreverPesquisaMeta(sess, meta) {
     fs.writeFileSync(tmp, JSON.stringify(meta, null, 2), 'utf-8');
     fs.renameSync(tmp, destino);
   } catch (err) {
-    console.error('[pesquisa] Erro ao gravar pesquisa.json:', err.message);
+    logger.error('[pesquisa] Erro ao gravar pesquisa.json:', err.message);
     try { fs.unlinkSync(tmp); } catch { /* temporário ausente */ }
     return;
   }
@@ -528,7 +545,7 @@ function verificarOrigem(req, res, next) {
   }
   if (!estranha && req.headers['sec-fetch-site'] === 'cross-site') estranha = true;
   if (!estranha) return next();
-  console.warn(`[fronteira] Requisição recusada: ${req.method} ${req.path} (Origin: ${origin || '-'}, Host: ${host || '-'})`);
+  logger.warn(`[fronteira] Requisição recusada: ${req.method} ${req.path} (Origin: ${origin || '-'}, Host: ${host || '-'})`);
   return res.status(403).json({ error: 'Origem não permitida.' });
 }
 app.use('/api', verificarOrigem);
@@ -1257,7 +1274,7 @@ function gravarUltimaPasta(pasta) {
   try {
     fs.writeFileSync(ultimaPastaFile(), JSON.stringify({ pasta, atualizadoEm: new Date().toISOString() }, null, 2), 'utf-8');
   } catch (err) {
-    console.warn(`[escolher-pasta] Não foi possível gravar a última pasta: ${err.message}`);
+    logger.warn(`[escolher-pasta] Não foi possível gravar a última pasta: ${err.message}`);
   }
 }
 
@@ -1363,7 +1380,7 @@ function restoreConteudoPorAula(sess) {
   if (!sess.aulas?.length && sess.config?.nome) {
     const reconstruidas = reconstruirAulasApartirDosArquivos(sess);
     if (reconstruidas.length) {
-      console.warn(`[restoreConteudoPorAula] projeto.json com "aulas" vazio para "${sess.config.nome}" — reconstruído a partir de ${reconstruidas.length} arquivo(s) aula*_conteudo.txt em disco.`);
+      logger.warn(`[restoreConteudoPorAula] projeto.json com "aulas" vazio para "${sess.config.nome}" — reconstruído a partir de ${reconstruidas.length} arquivo(s) aula*_conteudo.txt em disco.`);
       sess.aulas = reconstruidas;
       saveProject(sess);
     }
@@ -1408,6 +1425,7 @@ function saveProject(sess, stageInfo = null) {
   if (sess.estadoAulas) projeto.estadoAulas = sess.estadoAulas;
   // Gerações pendentes no Gamma/HeyGen (ids gravados ao criar) — retomadas após uma queda.
   if (sess.geracoesExternas) projeto.geracoesExternas = sess.geracoesExternas;
+  if (sess.custoProjetoUsd != null) projeto.custoProjetoUsd = Number(sess.custoProjetoUsd.toFixed(6));
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -1423,7 +1441,7 @@ function saveProject(sess, stageInfo = null) {
     fs.writeFileSync(tmpPath, JSON.stringify(projeto, null, 2), 'utf-8');
     fs.renameSync(tmpPath, projetoPath);
   } catch (err) {
-    console.error('[saveProject] Erro ao gravar projeto.json:', err.message);
+    logger.error('[saveProject] Erro ao gravar projeto.json:', err.message);
     try { fs.unlinkSync(tmpPath); } catch { /* temporário já ausente */ }
   }
 }
@@ -1440,7 +1458,7 @@ async function persistStage(sess, baseName, label, content, sites = [], fonte = 
     fs.writeFileSync(path.join(rootDir, `${baseName}.docx`), buffer);
     saveProject(sess, { baseName, fonte });
   } catch (err) {
-    console.error(`Erro ao persistir "${baseName}":`, err.message);
+    logger.error(`Erro ao persistir "${baseName}":`, err.message);
   }
 }
 
@@ -1594,7 +1612,7 @@ async function listarTemplatesGamma() {
       const data = await resp.json();
       return { id, title: data.title || id };
     } catch (err) {
-      console.warn(`[listarTemplatesGamma] Template ${id} indisponível: ${err.message}`);
+      logger.warn(`[listarTemplatesGamma] Template ${id} indisponível: ${err.message}`);
       return null;
     }
   }));
@@ -1910,12 +1928,16 @@ function anexarGeracaoLog(sess, entrada) {
     dados.push({ ...entrada, em: new Date().toISOString() });
     fs.writeFileSync(arquivo, JSON.stringify(dados.slice(-2000), null, 2), 'utf-8');
   } catch (err) {
-    console.warn('[geracao_log] não foi possível gravar geracao_log.json:', err.message);
+    logger.warn('[geracao_log] não foi possível gravar geracao_log.json:', err.message);
   }
 }
 
 // Uma linha por chamada ao LLM, com o traceId para cruzar com o painel do Langfuse.
 function registrarGeracaoLog(ctx, resumo) {
+  if (ctx?.sess && typeof resumo.custoUsd === 'number') {
+    ctx.sess.custoProjetoUsd = (ctx.sess.custoProjetoUsd || 0) + resumo.custoUsd;
+    persistirCustoProjeto(ctx.sess);
+  }
   anexarGeracaoLog(ctx?.sess, {
     traceId: resumo.traceId,
     etapa: ctx?.etapa,
@@ -1929,11 +1951,25 @@ function registrarGeracaoLog(ctx, resumo) {
   });
 }
 
+// Custo acumulado do projeto em projeto.json (só o campo, sem regravar o resto).
+function persistirCustoProjeto(sess) {
+  if (!sess?.config?.nome) return;
+  try {
+    const arquivo = path.join(courseScrDir(sess), 'projeto.json');
+    const projeto = JSON.parse(fs.readFileSync(arquivo, 'utf-8'));
+    projeto.custoProjetoUsd = Number((sess.custoProjetoUsd || 0).toFixed(6));
+    const tmp = `${arquivo}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(projeto, null, 2), 'utf-8');
+    fs.renameSync(tmp, arquivo);
+  } catch { /* sem projeto.json ainda: o custo vai junto no próximo saveProject */ }
+}
+
 // Resumo por aula: finish_reason, tokens de saída e palavras — para acompanhar
 // truncamento e tamanho dos cursos ao longo do tempo.
 function registrarGeracaoAula(sess, resumo) {
   const ctx = observabilidade.contexto();
   anexarGeracaoLog(sess, { tipo: 'aula', traceId: ctx?.traceId, etapa: 'conteudo', ...resumo });
+  logger.info('aula gerada', { aula: resumo.aula, estado: resumo.estado, palavras: resumo.palavras, finishReason: resumo.finishReason });
 }
 
 function addUsage(usage, sess) {
@@ -1978,7 +2014,7 @@ function persistTokenUsage(sess, usage) {
     const dados = acumulaTokenUsage(readTokenUsage(sess), usage, dia);
     fs.writeFileSync(path.join(courseScrDir(sess), 'token_usage.json'), JSON.stringify(dados, null, 2), 'utf-8');
   } catch (e) {
-    console.error('Erro ao persistir token_usage.json:', e.message);
+    logger.error('Erro ao persistir token_usage.json:', e.message);
   }
 }
 
@@ -2001,7 +2037,7 @@ function persistScoreHistorico(sess, registroCiclo) {
     dados.ciclos.push(registroCiclo);
     fs.writeFileSync(path.join(courseScrDir(sess), 'score_historico.json'), JSON.stringify(dados, null, 2), 'utf-8');
   } catch (e) {
-    console.error('Erro ao persistir score_historico.json:', e.message);
+    logger.error('Erro ao persistir score_historico.json:', e.message);
   }
 }
 
@@ -2056,10 +2092,10 @@ app.get('/api/metodologia', async (req, res) => {
     res.json({ ok: true, metodologia: getMetodologia(sess) });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração da metodologia — interrompendo /api/metodologia');
+      logger.warn('[sse] cliente desconectou durante a geração da metodologia — interrompendo /api/metodologia');
       return;
     }
-    console.error('Erro ao gerar metodologia:', err.message);
+    logger.error('Erro ao gerar metodologia:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2098,7 +2134,7 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
 
     res.json({ ok: true, ementa: sess.ementa });
   } catch (err) {
-    console.error('Erro ao confirmar metodologia:', err.message);
+    logger.error('Erro ao confirmar metodologia:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2146,10 +2182,10 @@ app.get('/api/qualidade', async (req, res) => {
     send(res, { type: 'done', fullText });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração do relatório de qualidade — interrompendo /api/qualidade');
+      logger.warn('[sse] cliente desconectou durante a geração do relatório de qualidade — interrompendo /api/qualidade');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar relatório de qualidade' });
   } finally {
     res.end();
@@ -2225,10 +2261,10 @@ app.get('/api/ppc', async (req, res) => {
     send(res, { type: 'done', fullText });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração do PPC — interrompendo /api/ppc');
+      logger.warn('[sse] cliente desconectou durante a geração do PPC — interrompendo /api/ppc');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar PPC' });
   } finally {
     res.end();
@@ -2260,7 +2296,7 @@ app.get('/api/estilos-visuais', async (req, res) => {
     }
     res.json({ estilos });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: err.message || 'Erro ao gerar estilos visuais.' });
   }
 });
@@ -2286,7 +2322,7 @@ app.get('/api/heygen/avatares', async (req, res) => {
     const { avatares, origem } = await listarAvataresHeygen();
     res.json({ avatares, legado: origem === 'v2' });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: err.message || 'Erro ao listar avatares do HeyGen.' });
   }
 });
@@ -2303,7 +2339,7 @@ app.get('/api/heygen/vozes', async (req, res) => {
     const vozes = await listarVozesHeygen({ type, language: language || HEYGEN_VOZES_LANGUAGE_DEFAULT, gender });
     res.json({ vozes });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: err.message || 'Erro ao listar vozes do HeyGen.' });
   }
 });
@@ -2348,7 +2384,7 @@ app.get('/api/slides/templates', async (req, res) => {
     const templates = await listarTemplatesGamma();
     res.json({ templates });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: err.message || 'Erro ao listar templates do Gamma.' });
   }
 });
@@ -2371,7 +2407,7 @@ app.post('/api/slides/template', async (req, res) => {
     saveProject(sess);
     res.json({ ok: true, template: sess.slidesTemplate });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: err.message || 'Erro ao salvar o template escolhido.' });
   }
 });
@@ -2514,10 +2550,10 @@ app.get('/api/slides/gerar', async (req, res) => {
     send(res, { type: 'done', index, numero, baseName, titulo: aula.titulo, proximoIndex });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração dos slides — interrompendo /api/slides/gerar');
+      logger.warn('[sse] cliente desconectou durante a geração dos slides — interrompendo /api/slides/gerar');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar slides' });
   } finally {
     res.end();
@@ -2580,7 +2616,7 @@ app.get('/api/roteiro/prompt', async (req, res) => {
       prompt
     });
   } catch (err) {
-    console.error('[roteiro] Erro ao montar prompt:', err.message);
+    logger.error('[roteiro] Erro ao montar prompt:', err.message);
     res.status(500).json({ error: 'Erro ao montar o prompt do roteiro: ' + err.message });
   }
 });
@@ -2665,10 +2701,10 @@ app.get('/api/roteiro/gerar', async (req, res) => {
     send(res, { type: 'done', fullText, index, numero, baseName, titulo: aula.titulo, proximoIndex });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração do roteiro — interrompendo /api/roteiro/gerar');
+      logger.warn('[sse] cliente desconectou durante a geração do roteiro — interrompendo /api/roteiro/gerar');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar roteiro' });
   } finally {
     res.end();
@@ -2789,10 +2825,10 @@ app.get('/api/video-avatar/roteiro/gerar', async (req, res) => {
     send(res, { type: 'done', fullText, index, numero, baseName, titulo: aula.titulo });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração do roteiro de avatar — interrompendo /api/video-avatar/roteiro/gerar');
+      logger.warn('[sse] cliente desconectou durante a geração do roteiro de avatar — interrompendo /api/video-avatar/roteiro/gerar');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar roteiro de avatar' });
   } finally {
     res.end();
@@ -2870,10 +2906,10 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
     send(res, { type: 'done', index, numero, baseName, titulo: aula.titulo });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração do vídeo — interrompendo /api/video-avatar/gerar');
+      logger.warn('[sse] cliente desconectou durante a geração do vídeo — interrompendo /api/video-avatar/gerar');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar vídeo do avatar' });
   } finally {
     res.end();
@@ -2913,7 +2949,7 @@ app.get('/api/escolher-pasta', async (req, res) => {
     if (pasta) gravarUltimaPasta(pasta);
     res.json({ pasta });
   } catch (err) {
-    console.error('[escolher-pasta] Erro ao abrir seletor nativo:', err.message);
+    logger.error('[escolher-pasta] Erro ao abrir seletor nativo:', err.message);
     res.status(500).json({ error: 'Não foi possível abrir o seletor de pasta. Digite o caminho manualmente.' });
   }
 });
@@ -2935,7 +2971,7 @@ app.post('/api/config', async (req, res) => {
     }
     const v = validarPastaProjeto(pasta, { anterior: pastaProjetoAnterior });
     if (!v.ok) return res.status(400).json({ error: v.erro });
-    console.log(`[config] pasta do projeto aceita: ${pasta}`);
+    logger.info(`[config] pasta do projeto aceita: ${pasta}`);
     try {
       fs.mkdirSync(pasta, { recursive: true });
       fs.accessSync(pasta, fs.constants.W_OK);
@@ -3088,7 +3124,7 @@ app.get('/api/search', async (req, res) => {
         const motivo = sitesCollected.length === 0
           ? 'A busca não retornou nenhuma fonte (a resposta pode ter vindo apenas da memória do modelo).'
           : `A busca retornou poucas fontes (${avaliacao.fontes} fonte(s) em ${avaliacao.dominios} domínio(s); mínimo ${PESQUISA_MIN_FONTES} em ${PESQUISA_MIN_DOMINIOS}).`;
-        console.warn(`[pesquisa] descartada: ${avaliacao.fontes} fonte(s), ${avaliacao.dominios} domínio(s)`);
+        logger.warn(`[pesquisa] descartada: ${avaliacao.fontes} fonte(s), ${avaliacao.dominios} domínio(s)`);
         falhaPesquisa(`${motivo} Nada foi gravado. Tente novamente ou continue sem pesquisa web.`);
         return;
       }
@@ -3121,10 +3157,10 @@ app.get('/api/search', async (req, res) => {
     send(res, { type: 'done', fullText, status: meta.status });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a pesquisa web — interrompendo /api/search');
+      logger.warn('[sse] cliente desconectou durante a pesquisa web — interrompendo /api/search');
       return;
     }
-    console.error(err);
+    logger.error(err);
     falhaPesquisa(err.message || 'Erro na pesquisa', err);
   } finally {
     res.end();
@@ -3187,10 +3223,10 @@ app.get('/api/plano-ensino', async (req, res) => {
     send(res, { type: 'done', fullText });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração do plano de ensino — interrompendo /api/plano-ensino');
+      logger.warn('[sse] cliente desconectou durante a geração do plano de ensino — interrompendo /api/plano-ensino');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar plano de ensino' });
   } finally {
     res.end();
@@ -3299,10 +3335,10 @@ app.get('/api/plano-aula', async (req, res) => {
     send(res, { type: 'done', fullText });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a geração do plano de aula — interrompendo /api/plano-aula');
+      logger.warn('[sse] cliente desconectou durante a geração do plano de aula — interrompendo /api/plano-aula');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar plano de aula' });
   } finally {
     res.end();
@@ -3345,7 +3381,7 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}, sig
 
   if (aulas.length !== numAulas && aulas.length > 0) {
     onProgress(`A IA retornou ${aulas.length} aula(s) em vez de ${numAulas}; tentando novamente...`);
-    console.warn(`[planLessons] Esperado ${numAulas} aulas, recebido ${aulas.length}. Tentando novamente com prompt de correção.`);
+    logger.warn(`[planLessons] Esperado ${numAulas} aulas, recebido ${aulas.length}. Tentando novamente com prompt de correção.`);
 
     const retryAulas = await chamarSkill(aulas.length);
     if (retryAulas.length > 0) {
@@ -3353,7 +3389,7 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}, sig
       const retryMaisProximo = Math.abs(retryAulas.length - numAulas) < Math.abs(aulas.length - numAulas);
       if (acertouRetry || retryMaisProximo) aulas = retryAulas;
       if (!acertouRetry) {
-        console.warn(`[planLessons] Segunda tentativa retornou ${retryAulas.length} aulas (esperado ${numAulas}). Prosseguindo com ${aulas.length} aula(s), o resultado mais próximo do esperado.`);
+        logger.warn(`[planLessons] Segunda tentativa retornou ${retryAulas.length} aulas (esperado ${numAulas}). Prosseguindo com ${aulas.length} aula(s), o resultado mais próximo do esperado.`);
       }
     }
   }
@@ -3405,7 +3441,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null
     clearTimeout(stallTimer);
   }
   if (meta.finishReason === 'length' && !meta.silenciarTruncamento) {
-    console.warn(`[stream] resposta truncada (${text.length} chars, finish_reason=length)`);
+    logger.warn(`[stream] resposta truncada (${text.length} chars, finish_reason=length)`);
     send(res, { type: 'warning', text: 'Resposta truncada pelo limite de tokens. O conteúdo gerado pode estar incompleto — revise o arquivo gerado.' });
   }
   return text;
@@ -3432,7 +3468,7 @@ function escreverPesquisaModulos(sess, meta) {
     fs.writeFileSync(tmp, JSON.stringify(meta, null, 2), 'utf-8');
     fs.renameSync(tmp, destino);
   } catch (err) {
-    console.error('[pesquisa-modulos] Erro ao gravar pesquisa_modulos.json:', err.message);
+    logger.error('[pesquisa-modulos] Erro ao gravar pesquisa_modulos.json:', err.message);
     try { fs.unlinkSync(tmp); } catch { /* temporário ausente */ }
   }
 }
@@ -3518,6 +3554,39 @@ app.post('/api/pesquisa-modulos/pular', (req, res) => {
   });
   saveProject(sess, { baseName: 'pesquisa_modulos', fonte: 'modelo_sem_busca' });
   res.json({ ok: true, status: 'pulada' });
+});
+
+// ── GET /api/estimativa — tokens e custo estimados ANTES de uma etapa pesada ──
+// ?etapa=pesquisa-modulos | conteudo | revisao. É estimativa (faixa), calibrada
+// com a linha de base; não inclui o custo por chamada da ferramenta web_search.
+app.get('/api/estimativa', (req, res) => {
+  const sess = getSession(req, res);
+  const etapa = String(req.query.etapa || '');
+  if (!custo.PERFIS[etapa]) return res.status(400).json({ error: 'etapa inválida (pesquisa-modulos, conteudo ou revisao)' });
+  const aulas = lerAulasDoProjeto(sess);
+  let unidades;
+  if (etapa === 'pesquisa-modulos') {
+    const anterior = lerPesquisaModulos(sess);
+    const ok = new Set((anterior?.modulos || []).filter(m => m.status === 'ok' && !anterior.pulada).map(m => m.id));
+    unidades = fundamentacao.agruparModulos(aulas).filter(m => !ok.has(m.id)).length;
+  } else if (etapa === 'conteudo') {
+    unidades = aulas.filter((a, i) => !aulaJaCompleta(sess, a, i)).length;
+    if (!aulas.length) {
+      const horas = Number(sess.config?.carga), min = Number(sess.config?.duracao);
+      unidades = horas > 0 && min > 0 ? Math.round(horas * 60 / min) : 0;
+    }
+  } else {
+    unidades = aulas.length;
+  }
+  const estimativa = custo.estimarEtapa(etapa, {
+    unidades,
+    modelos: { pesquisa: skills.modeloPesquisa(), economia: skills.MODEL_ECONOMY }
+  });
+  res.json({
+    ...estimativa,
+    custoProjetoUsd: Number((sess.custoProjetoUsd || 0).toFixed(4)),
+    orcamentoUsd: custo.lerOrcamento()
+  });
 });
 
 // ── GET /api/pesquisa-modulos (SSE) ─────────────────────────────────────────
@@ -3650,7 +3719,7 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
     send(res, { type: 'done', fullText, status: 'web', modulos: modulos.length });
   } catch (err) {
     if (client.disconnected) return;
-    console.error(err);
+    logger.error(err);
     falha(err.message || 'Erro na pesquisa por módulo', err);
   } finally {
     res.end();
@@ -3739,7 +3808,7 @@ function registrarRevisaoLog(sess, aulasLog, notasPorAula) {
     fs.writeFileSync(path.join(scr, 'notas_aulas.json'), JSON.stringify(notasPorAula, null, 2), 'utf-8');
     sess.notasAulas = notasPorAula;
   } catch (e) {
-    console.warn('[revisao] não foi possível gravar revisao_log.json/notas_aulas.json:', e.message);
+    logger.warn('[revisao] não foi possível gravar revisao_log.json/notas_aulas.json:', e.message);
   }
 }
 
@@ -4211,7 +4280,7 @@ app.get('/api/conteudo', async (req, res) => {
         if (!resultado) resultado = await gerarAulaPassadaUnica({ res: resAula, sess, client, ctxSkill });
       } catch (err) {
         if (client.disconnected) {
-          console.warn(`[sse] cliente desconectou durante a geração da aula ${i + 1} — interrompendo /api/conteudo`);
+          logger.warn(`[sse] cliente desconectou durante a geração da aula ${i + 1} — interrompendo /api/conteudo`);
           return;
         }
         if (err instanceof OpenAI.APIUserAbortError) {
@@ -4307,7 +4376,7 @@ app.get('/api/conteudo', async (req, res) => {
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText, estadoAulas, incompletas, puladas });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     if (!err.alreadyReported) {
       send(res, { type: 'error', message: err.message || 'Erro ao gerar conteúdo' });
     }
@@ -4338,9 +4407,9 @@ function migrarSeNecessario(slug) {
         fs.renameSync(path.join(legacyDir, file), path.join(scrDir, file));
       }
     }
-    console.log(`[migração] Projeto "${slug}" migrado para estrutura /scr`);
+    logger.info(`[migração] Projeto "${slug}" migrado para estrutura /scr`);
   } catch (err) {
-    console.error(`[migração] Erro ao migrar "${slug}":`, err.message);
+    logger.error(`[migração] Erro ao migrar "${slug}":`, err.message);
   }
 }
 
@@ -4400,7 +4469,7 @@ app.post('/api/carregar-projeto', (req, res) => {
   {
     const v = validarPastaProjeto(baseDir);
     if (!v.ok) return res.status(400).json({ error: v.erro });
-    console.log(`[carregar-projeto] pasta aceita: ${baseDir}`);
+    logger.info(`[carregar-projeto] pasta aceita: ${baseDir}`);
   }
 
   // Migração legada apenas para projetos dentro de saídas/ (estrutura antiga
@@ -4428,7 +4497,7 @@ app.post('/api/carregar-projeto', (req, res) => {
         fs.renameSync(projetoPath, bakPath);
         backupCorrompido = path.basename(bakPath);
       } catch (err) {
-        console.warn(`[carregar-projeto] Não foi possível preservar o projeto.json corrompido: ${err.message}`);
+        logger.warn(`[carregar-projeto] Não foi possível preservar o projeto.json corrompido: ${err.message}`);
       }
       avisoCorrompido = backupCorrompido
         ? `projeto.json corrompido — preservado como ${backupCorrompido}; campos estruturados (BNCC, metodologia) precisam ser revistos`
@@ -4455,6 +4524,7 @@ app.post('/api/carregar-projeto', (req, res) => {
     sess.videosAvatarGerados = p.videosAvatarGerados || [];
     sess.estadoAulas = p.estadoAulas || {};
     sess.geracoesExternas = p.geracoesExternas || {};
+    sess.custoProjetoUsd = p.custoProjetoUsd || 0;
     stages = p.stages || {};
   } else {
     // legado (ou projeto.json corrompido, já preservado como .bak acima):
@@ -4492,7 +4562,7 @@ app.post('/api/carregar-projeto', (req, res) => {
   if (!sess.aulas?.length) {
     const reconstruidas = reconstruirAulasApartirDosArquivos(sess);
     if (reconstruidas.length) {
-      console.warn(`[carregar-projeto] "aulas" vazio em projeto.json para "${sess.config?.nome}" — reconstruído a partir de ${reconstruidas.length} arquivo(s) em disco.`);
+      logger.warn(`[carregar-projeto] "aulas" vazio em projeto.json para "${sess.config?.nome}" — reconstruído a partir de ${reconstruidas.length} arquivo(s) em disco.`);
       sess.aulas = reconstruidas;
       saveProject(sess);
     }
@@ -4678,7 +4748,7 @@ app.post('/api/export/:step', async (req, res) => {
     fs.writeFileSync(fullPath, buffer);
     res.json({ ok: true, saved: true, path: fullPath });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -4943,10 +5013,10 @@ app.get('/api/revisao-qualidade', async (req, res) => {
     send(res, { type: 'done', fullText });
   } catch (err) {
     if (client.disconnected) {
-      console.warn('[sse] cliente desconectou durante a revisão de qualidade — interrompendo /api/revisao-qualidade');
+      logger.warn('[sse] cliente desconectou durante a revisão de qualidade — interrompendo /api/revisao-qualidade');
       return;
     }
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar revisão de qualidade' });
   } finally {
     res.end();
@@ -5040,7 +5110,7 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
             }
           }
         }
-      } catch (e) { console.error('Erro ao verificar duplicata de upload:', e.message); }
+      } catch (e) { logger.error('Erro ao verificar duplicata de upload:', e.message); }
     }
 
     try {
@@ -5049,7 +5119,7 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
         JSON.stringify({ dataUpload: new Date().toISOString(), aulas: observacoesPorAula }, null, 2),
         'utf-8'
       );
-    } catch (e) { console.error('Erro ao gravar observacoes_pendentes.json:', e.message); }
+    } catch (e) { logger.error('Erro ao gravar observacoes_pendentes.json:', e.message); }
     const comObservacoes = observacoesPorAula.filter(o => o.observacoes.length > 0);
     const totalMelhorias = observacoesPorAula.reduce((s, o) => s + (o.melhorias?.length || 0), 0);
 
@@ -5079,7 +5149,7 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
       ...avisoResposta
     });
   } catch (err) {
-    console.error('Erro ao processar .docx:', err.message);
+    logger.error('Erro ao processar .docx:', err.message);
     res.status(500).json({ error: 'Erro ao processar o arquivo .docx: ' + err.message });
   }
 });
@@ -5150,7 +5220,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       path.join(cicloDir, 'observacoes.json'),
       JSON.stringify({ aulas: observacoes }, null, 2), 'utf-8'
     );
-  } catch (e) { console.error(`Erro ao criar snapshot ciclo_${numeroCiclo}:`, e.message); }
+  } catch (e) { logger.error(`Erro ao criar snapshot ciclo_${numeroCiclo}:`, e.message); }
 
   const metricasPorAula = [];
   const reportSections = [];
@@ -5218,12 +5288,12 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         texto = await streamSkillToClient(res, skill, sess, meta, client);
       } catch (err) {
         if (client.disconnected) {
-          console.warn(`[sse] cliente desconectou durante melhorias da aula ${i + 1} — interrompendo /api/aplicar-melhorias/confirmar`);
+          logger.warn(`[sse] cliente desconectou durante melhorias da aula ${i + 1} — interrompendo /api/aplicar-melhorias/confirmar`);
           return;
         }
         throw err;
       }
-      console.log(`[melhorias] aula ${i + 1}: finish=${meta.finishReason || '?'} tokens=${meta.completionTokens ?? '?'}`);
+      logger.info(`[melhorias] aula ${i + 1}: finish=${meta.finishReason || '?'} tokens=${meta.completionTokens ?? '?'}`);
 
       // ── Guarda de integridade: resposta cortada por limite de tokens ───────
       // Até MAX_CONTINUACOES_MELHORIA tentativas de continuação; se ainda
@@ -5265,9 +5335,9 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
             texto += '\n' + contTexto;
           }
           meta.finishReason = cont.choices[0]?.finish_reason;
-          console.log(`[melhorias] aula ${i + 1}: continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA} finish=${meta.finishReason || '?'}`);
+          logger.info(`[melhorias] aula ${i + 1}: continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA} finish=${meta.finishReason || '?'}`);
         } catch (e) {
-          console.error(`[melhorias] aula ${i + 1}: falha na continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA}:`, e.message);
+          logger.error(`[melhorias] aula ${i + 1}: falha na continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA}:`, e.message);
           break;
         }
       }
@@ -5303,7 +5373,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       // julgamento de score sobre um candidato que já sabemos ser inválido.
       const rejeicaoDuplicacao = suspeitas.find(s => s.motivo === 'merge_rejeitado_duplicacao');
       if (rejeicaoDuplicacao) {
-        console.log(`[melhorias] aula ${i + 1}: merge rejeitado — duplicaria a seção "${rejeicaoDuplicacao.titulo}"`);
+        logger.info(`[melhorias] aula ${i + 1}: merge rejeitado — duplicaria a seção "${rejeicaoDuplicacao.titulo}"`);
         send(res, { type: 'progress', message: `Aula ${i + 1}: melhorias descartadas — a fusão duplicaria a seção "${rejeicaoDuplicacao.titulo}" — conteúdo anterior preservado` });
         reportSections.push(`## Aula ${i + 1}: ${aula.titulo}\n\n_(Fusão do patch rejeitada — duplicaria a seção "${rejeicaoDuplicacao.titulo}"; conteúdo anterior preservado; melhorias NÃO aplicadas nesta aula.)_`);
         metricasPorAula.push({ aulaIndex: i + 1, titulo: aula.titulo, similaridade: 1, mergeRejeitado: true });
@@ -5333,7 +5403,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       const forcadaPorUser = !sess.modoLegadoMelhorias && !!observacoes[i]?.forcado;
       if (forcadaPorUser) {
         aceita = true;
-        console.log(`[melhorias] aula ${i + 1}: aceite forçado por [user] — gate de score ignorado`);
+        logger.info(`[melhorias] aula ${i + 1}: aceite forçado por [user] — gate de score ignorado`);
       } else {
         try {
           // Juiz pareado com a aula INTEIRA: as duas versões completas quando cabem; senão
@@ -5354,9 +5424,9 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           aceita = scoreCandidato >= scoreOriginal + EPSILON_ACEITE;
           observabilidade.registrarScore('score_original', scoreOriginal, { comentario: `Aula ${i + 1}` });
           observabilidade.registrarScore('score_candidato', scoreCandidato, { comentario: `Aula ${i + 1}` });
-          console.log(`[melhorias] aula ${i + 1}: score original=${scoreOriginal} candidato=${scoreCandidato} aceita=${aceita}`);
+          logger.info(`[melhorias] aula ${i + 1}: score original=${scoreOriginal} candidato=${scoreCandidato} aceita=${aceita}`);
         } catch (e) {
-          console.error(`[melhorias] aula ${i + 1}: falha no julgamento de score:`, e.message);
+          logger.error(`[melhorias] aula ${i + 1}: falha no julgamento de score:`, e.message);
           aceita = false; // não avaliada — mesma política de preservação do conteúdo anterior
         }
       }
@@ -5483,7 +5553,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
             planoAula = replaceLessonBlock(planoAula, i, corpo);
             realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): seção do plano realinhada.`);
           } catch (e) {
-            console.error(`Erro ao realinhar plano da aula ${i + 1}:`, e.message);
+            logger.error(`Erro ao realinhar plano da aula ${i + 1}:`, e.message);
             realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): falha no realinhamento (${e.message}) — seção mantida.`);
           }
         }
@@ -5498,7 +5568,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         send(res, { type: 'progress', message: 'Plano de aula realinhado com o conteúdo melhorado' });
       }
     } catch (e) {
-      console.error('Erro na fase de realinhamento:', e.message);
+      logger.error('Erro na fase de realinhamento:', e.message);
       realinhamentoLog.push(`Falha geral no realinhamento: ${e.message} — melhorias já aplicadas foram preservadas.`);
     }
     if (realinhamentoLog.length) {
@@ -5549,7 +5619,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           similaridadePorAula: metricasPorAula,
           scoresPorAula
         }, null, 2), 'utf-8');
-      } catch (e) { console.error('Erro ao gravar meta.json:', e.message); }
+      } catch (e) { logger.error('Erro ao gravar meta.json:', e.message); }
     }
 
     // Histórico de scores (gate/convergência) — só considera aulas com score
@@ -5595,12 +5665,12 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       const reportDoc = buildDocx(sess.config, 'Relatório de Melhorias Aplicadas', reportText, []);
       const reportBuffer = await Packer.toBuffer(reportDoc);
       fs.writeFileSync(path.join(courseRootDir(sess), `melhorias_aplicadas_${ts}.docx`), reportBuffer);
-    } catch (e) { console.error('Erro ao gerar relatório timestampado:', e.message); }
+    } catch (e) { logger.error('Erro ao gerar relatório timestampado:', e.message); }
 
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText, ...(planoAulaAtualizado ? { planoAula: planoAulaAtualizado } : {}) });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao aplicar melhorias' });
   } finally {
     res.end();
@@ -5633,13 +5703,13 @@ app.post('/api/finalizar-conteudo', async (req, res) => {
     // (em pastaProjeto se configurado, ou em saídas/{slug}/).
     res.json({ ok: true, saved: true, path: path.join(rootDir, 'conteudo_final.docx') });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ── Dev seed (apenas fora de produção) ──────────────────────────────────────
-if (process.env.ENABLE_DEV_SEED === 'true' && process.env.NODE_ENV !== 'production') {
+if (process.env.ENABLE_DEV_SEED === 'true') {
   app.get('/api/dev/seed', (req, res) => {
     const sess = getSession(req, res);
 
@@ -5897,11 +5967,11 @@ else:
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
   const avisoModelo = validarModeloPesquisa();
-  if (avisoModelo) console.warn(`[pesquisa] ${avisoModelo}`);
+  if (avisoModelo) logger.warn(`[pesquisa] ${avisoModelo}`);
   const HOST = hostDeBind();
   setInterval(limparSessoesInativas, 30 * 60 * 1000).unref();
   app.listen(PORT, HOST, () => {
-    console.log(`Servidor rodando em http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (bind ${HOST})`);
+    logger.info(`Servidor rodando em http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (bind ${HOST})`);
   });
 }
 

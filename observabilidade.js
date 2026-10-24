@@ -390,4 +390,4 @@ if (obs.enabled) {
   process.once('beforeExit', () => { obs.shutdown(); });
 }
 
-module.exports = { criarObservabilidade, obs, mascarar, calcularCusto, amostrado, lerConfig };
+module.exports = { criarObservabilidade, obs, mascarar, calcularCusto, carregarPrecos, amostrado, lerConfig };

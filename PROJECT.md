@@ -373,9 +373,9 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | G03 | Segurança | ✅ Mitigado | `pastaProjeto` é validada contra `..`, caminhos dentro do diretório da aplicação e falta de permissão de escrita |
 | G04 | Persistência | Reduzido | Sessão continua in-memory, mas é totalmente reconstruível do disco sem chamada à OpenAI (`session-persistence`, `session-auto-restore`, `project-load`) |
 | G05 | Confiabilidade | ✅ Resolvido | Cliente OpenAI com `maxRetries: 6`, mais retry/fallback dedicado da pesquisa web (`web-search-resilience`) |
-| G06 | Observabilidade | Médio | Sem logging estruturado (apenas `console.log`) |
+| G06 | Observabilidade | ✅ Resolvido | Logger JSON próprio (`logger.js`, `LOG_LEVEL`) com `etapa`, `aula` e `reqId` (= `traceId`), sem segredos (`custo-e-logs`) |
 | G07 | Testes | Melhorado | Baseline estabelecida (`test-verification-baseline`): gate de cobertura 40%, 240 testes, mock da OpenAI compatível com contratos reais — ainda não é cobertura completa |
-| G08 | UX | Baixo | Sem estimativa de custo/tokens antes de iniciar etapa (só consumo acumulado, via `token-usage-tracking`) |
+| G08 | UX | ✅ Resolvido | `GET /api/estimativa` e a UI mostram a faixa de tokens/custo antes de pesquisa por módulo, conteúdo e revisão; custo acumulado em `projeto.json`; `ORCAMENTO_USD` opcional (`custo-e-logs`) |
 | G09 | Portabilidade | Baixo | Seletor nativo de pasta é Windows-only por design (PowerShell + `System.Windows.Forms`) |
 | G10 | Escalabilidade | Baixo | Sem rate limiting — múltiplos usuários podem esgotar quota da API |
 
