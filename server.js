@@ -219,7 +219,32 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
   return resultado;
 }
 
-const upload = multer({ storage: multer.memoryStorage() });
+const UPLOAD_MAX_BYTES = () => {
+  const n = Number(process.env.UPLOAD_MAX_BYTES);
+  return Number.isFinite(n) && n > 0 ? n : 20 * 1024 * 1024;
+};
+const uploadBase = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: UPLOAD_MAX_BYTES(), files: 1, fields: 20 },
+  fileFilter: (req, file, cb) => {
+    if (!/\.docx$/i.test(file.originalname || '')) {
+      return cb(Object.assign(new Error('Envie um arquivo .docx.'), { code: 'TIPO_INVALIDO' }));
+    }
+    cb(null, true);
+  }
+});
+// Erros do multer viram 4xx em JSON, sem processar o arquivo.
+const upload = {
+  single: (campo) => (req, res, next) => uploadBase.single(campo)(req, res, (err) => {
+    if (!err) return next();
+    const tamanho = err.code === 'LIMIT_FILE_SIZE';
+    res.status(tamanho ? 413 : 400).json({
+      error: tamanho
+        ? `Arquivo grande demais (máximo ${Math.round(UPLOAD_MAX_BYTES() / 1024 / 1024)} MB).`
+        : (err.message || 'Upload inválido.')
+    });
+  })
+};
 
 // ── Gamma (Etapa 8 — Slides) ────────────────────────────────────────────────
 // Único motor externo além da OpenAI neste projeto — mesmo padrão de chave
@@ -483,6 +508,31 @@ function lerPesquisaMeta(sess) {
 app.use(express.json());
 app.use(cookieParser());
 
+// ── Fronteira local ─────────────────────────────────────────────────────────
+// O app não tem autenticação (non-goal): por padrão só escuta em loopback e
+// recusa requisições /api vindas de outra origem (CSRF, DNS rebinding).
+const hostDeBind = () => (process.env.HOST || '127.0.0.1').trim() || '127.0.0.1';
+const ehLoopbackHost = (h) => /^(localhost|127(\.\d{1,3}){3}|\[?::1\]?)$/i.test(String(h || ''));
+const semPorta = (hostPort) => String(hostPort || '').replace(/:\d+$/, '');
+const ehLoopbackIp = (ip) => /^(::1|(::ffff:)?127(\.\d{1,3}){3})$/.test(String(ip || ''));
+
+function verificarOrigem(req, res, next) {
+  const host = req.headers.host || '';
+  const rebind = ehLoopbackHost(hostDeBind()) && !ehLoopbackHost(semPorta(host));
+  let estranha = rebind;
+  const origin = req.headers.origin;
+  if (!estranha && origin && origin !== 'null') {
+    try { estranha = new URL(origin).host !== host; } catch { estranha = true; }
+  } else if (!estranha && origin === 'null') {
+    estranha = true;
+  }
+  if (!estranha && req.headers['sec-fetch-site'] === 'cross-site') estranha = true;
+  if (!estranha) return next();
+  console.warn(`[fronteira] Requisição recusada: ${req.method} ${req.path} (Origin: ${origin || '-'}, Host: ${host || '-'})`);
+  return res.status(403).json({ error: 'Origem não permitida.' });
+}
+app.use('/api', verificarOrigem);
+
 // Etapa 5 bloqueada: enquanto houver aula de conteúdo incompleto (resposta
 // cortada), as etapas que dependem do conteúdo não rodam — a aula precisa ser
 // regenerada antes (GET /api/conteudo?aulas=N). Rotas SSE respondem com o evento
@@ -525,8 +575,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ── Sessões em memória ──────────────────────────────────────────────────────
 const sessions = {};
 
+// Sessões inativas são descartadas (padrão 12 h; SESSAO_TTL_HORAS ajusta).
+const sessaoTtlMs = () => {
+  const h = Number(process.env.SESSAO_TTL_HORAS);
+  return (Number.isFinite(h) && h > 0 ? h : 12) * 3600 * 1000;
+};
+function limparSessoesInativas(agora = Date.now()) {
+  let removidas = 0;
+  for (const id of Object.keys(sessions)) {
+    if (agora - (sessions[id].ultimoAcesso || 0) > sessaoTtlMs()) { delete sessions[id]; removidas++; }
+  }
+  return removidas;
+}
+
 function getSession(req, res) {
   let id = req.cookies?.sessionId;
+  if (id && sessions[id]) sessions[id].ultimoAcesso = Date.now();
   if (!id || !sessions[id]) {
     id = uuidv4();
     sessions[id] = {
@@ -551,9 +615,10 @@ function getSession(req, res) {
       // Agente de qualidade e PPC
       relatorioQualidade: '',
       // Inputs do usuário por etapa (Etapas 2–4)
-      inputs: {}
+      inputs: {},
+      ultimoAcesso: Date.now()
     };
-    res.cookie('sessionId', id, { httpOnly: true });
+    res.cookie('sessionId', id, { httpOnly: true, sameSite: 'lax' });
   }
   return sessions[id];
 }
@@ -2815,8 +2880,34 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
   }
 });
 
+// Pasta de projeto aceita: inexistente, vazia, já projeto (scr/projeto.json) ou
+// dentro de saídas/ (legado). Qualquer outra pasta com conteúdo é recusada.
+function validarPastaProjeto(dir, { anterior = '' } = {}) {
+  const pasta = path.resolve(dir);
+  if (anterior && pasta === path.resolve(anterior)) return { ok: true, pasta };
+  if (!fs.existsSync(pasta)) return { ok: true, pasta };
+  let st;
+  try { st = fs.statSync(pasta); } catch { return { ok: false, pasta, erro: `Pasta não acessível: ${pasta}` }; }
+  if (!st.isDirectory()) return { ok: false, pasta, erro: `O caminho não é uma pasta: ${pasta}` };
+  if (fs.existsSync(path.join(pasta, 'scr', 'projeto.json'))) return { ok: true, pasta };
+  // projeto.json corrompido é preservado como .bak (ver carregar-projeto): ainda é um projeto.
+  try {
+    if (fs.readdirSync(path.join(pasta, 'scr')).some(f => /^projeto\.json\.corrompido-.*\.bak$/.test(f))) return { ok: true, pasta };
+  } catch { /* sem scr/ */ }
+  if (pasta === SAIDAS_ROOT || pasta.startsWith(SAIDAS_ROOT + path.sep)) return { ok: true, pasta };
+  if (fs.readdirSync(pasta).length === 0) return { ok: true, pasta };
+  return {
+    ok: false, pasta,
+    erro: 'A pasta não está vazia e não é um projeto existente (falta scr/projeto.json). Escolha uma pasta vazia ou a pasta de um projeto.'
+  };
+}
+
 // ── GET /api/escolher-pasta — abre o seletor nativo de pasta do Windows ─────
 app.get('/api/escolher-pasta', async (req, res) => {
+  // O seletor abre uma janela na máquina do servidor: só faz sentido local.
+  if (!ehLoopbackIp(req.socket?.remoteAddress)) {
+    return res.status(403).json({ error: 'O seletor de pasta só está disponível na máquina do servidor.' });
+  }
   try {
     const pasta = await escolherPastaWindows(lerUltimaPasta());
     if (pasta) gravarUltimaPasta(pasta);
@@ -2842,6 +2933,9 @@ app.post('/api/config', async (req, res) => {
     if (pasta === path.resolve(__dirname) || pasta.startsWith(path.resolve(__dirname) + path.sep)) {
       return res.status(400).json({ error: 'Caminho inválido: não pode apontar para o diretório da aplicação.' });
     }
+    const v = validarPastaProjeto(pasta, { anterior: pastaProjetoAnterior });
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    console.log(`[config] pasta do projeto aceita: ${pasta}`);
     try {
       fs.mkdirSync(pasta, { recursive: true });
       fs.accessSync(pasta, fs.constants.W_OK);
@@ -4303,6 +4397,11 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const baseDir = path.resolve(pasta.trim());
   if (!fs.existsSync(baseDir)) return res.status(404).json({ error: 'Pasta não encontrada' });
+  {
+    const v = validarPastaProjeto(baseDir);
+    if (!v.ok) return res.status(400).json({ error: v.erro });
+    console.log(`[carregar-projeto] pasta aceita: ${baseDir}`);
+  }
 
   // Migração legada apenas para projetos dentro de saídas/ (estrutura antiga
   // sem /scr, anterior à introdução de pastaProjeto).
@@ -5540,7 +5639,7 @@ app.post('/api/finalizar-conteudo', async (req, res) => {
 });
 
 // ── Dev seed (apenas fora de produção) ──────────────────────────────────────
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.ENABLE_DEV_SEED === 'true' && process.env.NODE_ENV !== 'production') {
   app.get('/api/dev/seed', (req, res) => {
     const sess = getSession(req, res);
 
@@ -5799,13 +5898,19 @@ const PORT = process.env.PORT || 3000;
 if (require.main === module) {
   const avisoModelo = validarModeloPesquisa();
   if (avisoModelo) console.warn(`[pesquisa] ${avisoModelo}`);
-  app.listen(PORT, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
+  const HOST = hostDeBind();
+  setInterval(limparSessoesInativas, 30 * 60 * 1000).unref();
+  app.listen(PORT, HOST, () => {
+    console.log(`Servidor rodando em http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (bind ${HOST})`);
   });
 }
 
 module.exports = app;
 module.exports.slugify = slugify;
+module.exports.hostDeBind = hostDeBind;
+module.exports.limparSessoesInativas = limparSessoesInativas;
+module.exports.validarPastaProjeto = validarPastaProjeto;
+module.exports.sessions = sessions;
 module.exports.clientAbort = clientAbort;
 module.exports.combineSignals = combineSignals;
 module.exports.streamSkillToClient = streamSkillToClient;

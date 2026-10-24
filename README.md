@@ -44,6 +44,11 @@ node server.js
 
 Acesse: [http://localhost:3000](http://localhost:3000)
 
+> Por padrão o servidor escuta só em `127.0.0.1`. Em container ou rede local,
+> defina `HOST=0.0.0.0` (ex.: `HOST=0.0.0.0` no compose) — o app não tem
+> autenticação, então exponha apenas em rede confiável. Requisições `/api` com
+> `Origin` de outro site são recusadas (403).
+
 > A chave da API é lida apenas no backend (via `dotenv`) e nunca é exposta
 > ao frontend.
 

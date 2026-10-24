@@ -369,7 +369,7 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | ID | Área | Severidade | Descrição |
 |----|------|-----------|-----------|
 | G01 | Segurança | ✅ Resolvido | `.env` está no `.gitignore` e não é rastreado pelo git |
-| G02 | Segurança | Alto | Sem autenticação — qualquer um acessa a API (aceito como constraint de uso local, ver `native-folder-picker`) |
+| G02 | Segurança | Reduzido | Sem autenticação (aceito como constraint de uso local, ver `native-folder-picker`), mas o bind padrão é `127.0.0.1` (`HOST`), cookie `SameSite=Lax`, checagem de `Origin`/`Host` em `/api`, seletor de pasta só em loopback, pastas validadas (`validarPastaProjeto`), upload limitado a `.docx` de 20 MB, `/api/dev/seed` só com `ENABLE_DEV_SEED=true` e sessões inativas expiram em 12 h (`endurecer-fronteira-local`) |
 | G03 | Segurança | ✅ Mitigado | `pastaProjeto` é validada contra `..`, caminhos dentro do diretório da aplicação e falta de permissão de escrita |
 | G04 | Persistência | Reduzido | Sessão continua in-memory, mas é totalmente reconstruível do disco sem chamada à OpenAI (`session-persistence`, `session-auto-restore`, `project-load`) |
 | G05 | Confiabilidade | ✅ Resolvido | Cliente OpenAI com `maxRetries: 6`, mais retry/fallback dedicado da pesquisa web (`web-search-resilience`) |
@@ -382,6 +382,10 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 > Ao propor uma nova funcionalidade, **referencie o Gap ID** caso ela resolva algum deles.
 
 ---
+
+### Decisão: `.env.encrypted` versionado
+
+O `.env.encrypted` (AES com passphrase em `.env.key`, fora do git — ver `env-encryption`) continua no repositório: é o meio de levar as chaves a outras máquinas/AWS sem expô-las em texto. A segurança depende só do sigilo da passphrase; se ela vazar, gire-a (`env:keygen` + `env:encrypt`) e revogue as chaves de API. Reavaliar se o repositório deixar de ser privado.
 
 ## 10. O que não fazer (non-goals permanentes)
 
