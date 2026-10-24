@@ -84,7 +84,8 @@ function caudaAberta(texto) {
   const ultima = (linhas[linhas.length - 1] || '').trim();
   if (!ultima) return false;
   if (/^([-*•]|\d+[.)])$/.test(ultima)) return true;
-  return /[:,;]$/.test(ultima) || /\b(e|ou|de|do|da|que|para|com|em)$/i.test(ultima);
+  // conector solto no fim ("…para"), sem confundir com URL ou domínio ("…site.com")
+  return /[:,;]$/.test(ultima) || /\s(e|ou|de|do|da|que|para|com|em)$/i.test(ultima);
 }
 
 function blocoDeCodigoAberto(texto) {

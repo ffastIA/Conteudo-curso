@@ -558,6 +558,82 @@ document.getElementById('btnPlanoAula').addEventListener('click', () => {
 });
 
 // ── STEP 5 — Conteúdo ────────────────────────────────────────────────────────
+// ── STEP 5 — Pesquisa por módulo (antes do conteúdo) ─────────────────────────
+// A Etapa 5 exige a pesquisa por módulo concluída ou a escolha explícita de gerar
+// sem pesquisa por módulo (o servidor recusa /api/conteudo enquanto estiver pendente).
+const ROTULO_PESQUISA_MODULOS = {
+  ok: '✅ Pesquisa por módulo concluída',
+  pulada: '⚠️ Sem pesquisa por módulo (escolha explícita) — o conteúdo não citará fontes',
+  legado: 'Projeto anterior à pesquisa por módulo — o conteúdo é gerado como antes',
+  pendente: '⏳ Pendente — pesquise por módulo ou escolha gerar sem pesquisa'
+};
+
+async function atualizarStatusPesquisaModulos() {
+  const el = document.getElementById('pesquisaModulosStatus');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/pesquisa-modulos/status');
+    const data = await r.json();
+    el.textContent = ROTULO_PESQUISA_MODULOS[data.status] || '';
+    document.getElementById('btnPesquisaModulosPular').style.display = data.status === 'pulada' ? 'none' : '';
+  } catch {
+    el.textContent = '';
+  }
+}
+
+document.getElementById('btnPesquisaModulos').addEventListener('click', () => {
+  const logPanel = initLog('logPesquisaModulos');
+  const sites = document.getElementById('pesquisaModulosSites');
+  sites.innerHTML = '';
+  sites.style.display = 'none';
+  const btn = document.getElementById('btnPesquisaModulos');
+  btn.disabled = true;
+  document.getElementById('resultConteudo').innerHTML = '';
+
+  streamSSE('/api/pesquisa-modulos', {
+    logPanel,
+    resultEl: 'resultConteudo',
+    onSite(site) {
+      sites.style.display = 'block';
+      const item = document.createElement('div');
+      item.className = 'site-item';
+      const a = document.createElement('a');
+      a.href = site.url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = site.title || site.url;
+      item.appendChild(a);
+      sites.appendChild(item);
+    },
+    onDone() {
+      btn.disabled = false;
+      document.getElementById('conteudoResultCard').style.display = 'block';
+      atualizarStatusPesquisaModulos();
+    },
+    onError(_msg, extra) {
+      btn.disabled = false;
+      if (extra?.semPesquisaDisponivel) {
+        addLog(logPanel, '💡 Tente novamente (módulos já pesquisados são reaproveitados) ou escolha "Gerar sem pesquisa por módulo".');
+      }
+      atualizarStatusPesquisaModulos();
+    }
+  });
+});
+
+document.getElementById('btnPesquisaModulosPular').addEventListener('click', async () => {
+  if (!confirm('Gerar o conteúdo SEM pesquisa por módulo? As aulas não citarão fontes nem referências.')) return;
+  try {
+    const r = await fetch('/api/pesquisa-modulos/pular', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Erro ao registrar a escolha');
+  } catch (err) {
+    alert('Erro: ' + err.message);
+  }
+  atualizarStatusPesquisaModulos();
+});
+
+document.querySelector('.step-pill[data-step="5"]')?.addEventListener('click', atualizarStatusPesquisaModulos);
+
 // Estado de completude por aula: completa, curta (abaixo da meta de palavras,
 // não bloqueia) ou incompleta (resposta cortada — bloqueia a Etapa 6 até a aula
 // ser regenerada).

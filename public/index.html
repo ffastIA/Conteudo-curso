@@ -316,8 +316,23 @@
         ⏱ Cursos com muitas aulas podem levar vários minutos para serem concluídos —
         acompanhe o progresso no log abaixo.
       </p>
+      <div id="pesquisaModulosBox" style="margin-top:12px;padding:12px;border:1px solid #e0e0e6;border-radius:8px">
+        <strong>1. Pesquisa por módulo</strong>
+        <p class="field-hint" style="margin:4px 0 8px">
+          Uma pesquisa na web por módulo do plano de ensino: o conteúdo de cada aula passa a
+          citar as fontes do próprio módulo ([F1], [F2]…) e termina com a seção de referências.
+          Módulos já pesquisados não são refeitos se a pesquisa for interrompida.
+        </p>
+        <div class="btn-row" style="justify-content:flex-start">
+          <button id="btnPesquisaModulos" class="btn btn-secondary">🔎 Pesquisar por módulo</button>
+          <button id="btnPesquisaModulosPular" class="btn btn-ghost btn-sm">Gerar sem pesquisa por módulo</button>
+          <span id="pesquisaModulosStatus" class="field-hint"></span>
+        </div>
+        <div class="log-panel" id="logPesquisaModulos" style="margin-top:8px"></div>
+        <div id="pesquisaModulosSites" class="sites-list" style="display:none"></div>
+      </div>
       <div class="btn-row">
-        <button id="btnConteudo" class="btn btn-primary">✏️ Gerar conteúdo de todas as aulas</button>
+        <button id="btnConteudo" class="btn btn-primary">✏️ 2. Gerar conteúdo de todas as aulas</button>
       </div>
     </div>
 

@@ -271,7 +271,7 @@ const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodolo
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodologia, bnccContext, modalidade }) => ({
+const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodologia, bnccContext, modalidade, preRequisitos }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional. Escreva ementas de curso ' +
@@ -286,12 +286,13 @@ const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodolo
     `Curso: ${nome}\nPúblico-alvo: ${publico}\nCarga horária: ${carga}h\n` +
     `Duração por aula: ${duracao} min\nNível: ${nivel}\n` +
     (modalidade ? `Modalidade: ${modalidade}\n` : '') +
-    `Objetivos informados: ${objetivos || 'não especificados'}` +
+    `Objetivos informados: ${objetivos || 'não especificados'}\n` +
+    blocoPreRequisitos(preRequisitos) +
     nivelBlock(nivel) +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, ementa, pesquisa, ajustes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
+const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, ementa, pesquisa, ajustes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade, preRequisitos, pesquisaBloco = '' }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional para cursos de formação ' +
@@ -304,9 +305,10 @@ const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, eme
     `Duração por aula: ${duracao} min\nNível: ${nivel}\n` +
     (modalidade ? `Modalidade: ${modalidade}\n` : '') +
     `Objetivos: ${objetivos || 'não especificados'}\n` +
+    blocoPreRequisitos(preRequisitos) +
     (proporcaoTeoricoPratico ? `Proporção teórico/prático: ${proporcaoTeoricoPratico}\n` : '') +
     `Ementa do curso: ${ementa || 'não gerada'}\n` +
-    `Referências pesquisadas: ${pesquisa || 'nenhuma'}\n` +
+    (pesquisaBloco ? `Referências pesquisadas: veja "Fontes e achados da pesquisa" ao final deste pedido.\n` : `Referências pesquisadas: ${pesquisa || 'nenhuma'}\n`) +
     `Ajustes: ${ajustes || 'nenhum'}\n\n` +
     `Inicie o documento com um cabeçalho de identificação em linhas curtas ` +
     `(Curso, Carga horária${modalidade ? ', Modalidade' : ''}${nivel ? ', Nível' : ''}), antes das seções do plano.\n` +
@@ -315,6 +317,7 @@ const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, eme
     `bibliografia. Os módulos listados aqui serão a referência oficial usada nas ` +
     `próximas etapas — não introduza, nesta etapa, temas que fujam da ementa.` +
     nivelBlock(nivel) +
+    pesquisaBloco +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
@@ -444,7 +447,7 @@ function truncateAula(texto, max = 1500) {
   return texto.length > max ? texto.slice(0, max) + '...' : texto;
 }
 
-const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
+const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade, preRequisitos, pesquisaBloco = '' }) => ({
   model: MODEL_ECONOMY,
   system:
     'Você é especialista em design instrucional. Crie planos de aula ' +
@@ -456,7 +459,8 @@ const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, eme
     `Módulo do plano de ensino: ${aula.modulo || 'não especificado'}\n` +
     `Duração: ${duracao} min\nNível: ${nivel}\nPúblico: ${publico}\n` +
     (modalidade ? `Modalidade: ${modalidade}\n` : '') +
-    `Objetivos desta aula: ${aula.objetivos || 'não especificados'}\n\n` +
+    `Objetivos desta aula: ${aula.objetivos || 'não especificados'}\n` +
+    blocoPreRequisitos(preRequisitos) + `\n` +
     `Ementa do curso: ${ementa || 'não gerada'}\n\n` +
     `Plano de ensino (referência oficial — completo):\n${planoEnsino || 'não gerado'}\n\n` +
     `Mapa das demais aulas do curso (apenas título e objetivos — use só para se ` +
@@ -472,10 +476,11 @@ const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, eme
     `Inclua: objetivos, pré-requisitos, sequência didática com tempos ` +
     `(abertura/desenvolvimento/encerramento), atividades, recursos e avaliação.` +
     nivelBlock(nivel) +
+    pesquisaBloco +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
-const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
+const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade, preRequisitos, pesquisaBloco = '' }) => ({
   model: modeloConteudo(),
   system:
     'Você é um especialista técnico e educador, com profundo domínio do ' +
@@ -490,7 +495,8 @@ const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, emen
     `Módulo do plano de ensino: ${aula.modulo || 'não especificado'}\n` +
     `Duração: ${duracao} min\nNível: ${nivel}\nPúblico: ${publico}\n` +
     (modalidade ? `Modalidade: ${modalidade}\n` : '') +
-    `Objetivos de aprendizagem desta aula: ${aula.objetivos || 'não especificados'}\n\n` +
+    `Objetivos de aprendizagem desta aula: ${aula.objetivos || 'não especificados'}\n` +
+    blocoPreRequisitos(preRequisitos) + `\n` +
     `Ementa do curso: ${ementa || 'não gerada'}\n\n` +
     `Plano de aula desta aula (referência — trecho específico desta aula):\n${planoAulaTrecho || 'não disponível'}\n\n` +
     `Mapa das demais aulas do curso (apenas título e objetivos — para você se ` +
@@ -507,6 +513,64 @@ const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, emen
     `mercado, erros comuns e pontos de atenção, e uma síntese consolidando o que o ` +
     `instrutor deve garantir que os alunos compreendam ao final.` +
     nivelBlock(nivel) +
+    pesquisaBloco +
+    pedagCtxBlock(metodologia, bnccContext)
+});
+
+// ── Fundamentação do conteúdo em pesquisa (change conteudo-fundamentado-em-pesquisa) ──
+
+// Bloco "## Fontes e achados da pesquisa" para os prompts — IDs locais [F1],
+// [F2]…, título, domínio e resumo. `achados`/`fontes` já vêm selecionados (ver
+// selecionarFontesParaAula): nada é cortado no meio de um achado. Sempre usado
+// junto com pedagCtxBlock (o contexto pedagógico nunca é omitido).
+// `citar: true` acrescenta as regras de citação (skills geradoras de conteúdo);
+// em modo 'sem_web' devolve a regra oposta (não citar nem simular referências).
+function pesquisaBlock(achados, fontes, { modo = 'web', citar = false } = {}) {
+  if (modo === 'sem_web') {
+    return citar
+      ? '\n\n## Pesquisa web\nEste projeto está SEM pesquisa web: NÃO cite fontes, NÃO use marcadores [F#], ' +
+        'NÃO escreva seção de referências e NÃO invente referências, links, estatísticas ou dados de mercado.'
+      : '';
+  }
+  if (!achados?.length || !fontes?.length) return '';
+  const linhasFontes = fontes.map(f => `[${f.id}] ${f.titulo}${f.dominio ? ` — ${f.dominio}` : ''}`).join('\n');
+  const linhasAchados = achados.map(a =>
+    `- ${a.tema}: ${a.resumo}${a.fonteIds?.length ? ` (fontes: ${a.fonteIds.map(id => `[${id}]`).join(', ')})` : ''}`).join('\n');
+  const regras = citar
+    ? `\n\n### Regras de citação (obrigatórias)\n` +
+      `- Use os achados acima quando forem relevantes ao tema.\n` +
+      `- Marque com [F#] as afirmações factuais (dados, números, datas, versões, estatísticas, normas).\n` +
+      `- Cite APENAS os IDs listados em "Fontes"; nunca invente fonte, link ou ID.\n` +
+      `- Ao longo do texto, apoie-se em pelo menos 2 fontes distintas do dossiê, preferindo as mais relevantes ao tema.\n` +
+      `- NÃO escreva a lista de referências: o sistema acrescenta ao final da aula a seção "### Referências da aula" ` +
+      `com as fontes efetivamente citadas.`
+    : '';
+  return `\n\n## Fontes e achados da pesquisa\n\n### Fontes\n${linhasFontes}\n\n### Achados\n${linhasAchados}${regras}`;
+}
+
+// Linha de pré-requisitos do curso (ementa, plano de ensino, plano de aula e
+// conteúdo passam a considerá-los, não só o PPC).
+const blocoPreRequisitos = (preRequisitos) =>
+  (preRequisitos && String(preRequisitos).trim() ? `Pré-requisitos do curso: ${String(preRequisitos).trim()}\n` : '');
+
+// Pesquisa focada em UM módulo do plano de ensino: título do módulo, objetivos
+// das aulas, nível e público. Compatível com executarPesquisaWeb.
+const pesquisaModuloSkill = ({ nome, nivel, publico, modulo, ano = new Date().getFullYear(), metodologia, bnccContext, modalidade }) => ({
+  model: modeloPesquisa(),
+  searchContextSize: 'medium',
+  system:
+    'Você é especialista em educação tecnológica. Pesquise na web e sintetize conteúdos ' +
+    'técnicos para fundamentar o material de um módulo de curso. Responda em português. ' +
+    'Priorize fontes primárias (documentação oficial, normas, livros, instituições de ensino e pesquisa) ' +
+    'e descarte blogs genéricos quando houver fonte melhor. Cite as fontes consultadas.',
+  user:
+    `Pesquise conteúdos atuais (${ano}) para fundamentar o módulo "${modulo.titulo}" do curso "${nome}".\n` +
+    `Nível: ${nivel}\nPúblico: ${publico}\n` +
+    (modalidade ? `Modalidade: ${modalidade}\n` : '') +
+    `Objetivos das aulas do módulo:\n${(modulo.objetivos || []).map(o => `- ${o}`).join('\n') || '- não especificados'}\n\n` +
+    nivelBlock(nivel) +
+    `\nForneça: conceitos-chave e terminologia correta, versões e ferramentas atuais, boas práticas, ` +
+    `exemplos reais e dados atualizados relevantes a esses objetivos, sempre indicando a fonte de cada afirmação.` +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
@@ -516,13 +580,14 @@ const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, emen
 // sua própria chamada, com teto de saída por seção (não por aula inteira).
 
 // Contexto comum às duas passadas (dados da aula, plano, mapa das demais aulas).
-function contextoAulaConteudo({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, proporcaoTeoricoPratico, modalidade }) {
+function contextoAulaConteudo({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, proporcaoTeoricoPratico, modalidade, preRequisitos }) {
   return (
     `Curso: ${nome}\nAula ${index + 1} de ${total}: ${aula.titulo}\n` +
     `Módulo do plano de ensino: ${aula.modulo || 'não especificado'}\n` +
     `Duração: ${duracao} min\nNível: ${nivel}\nPúblico: ${publico}\n` +
     (modalidade ? `Modalidade: ${modalidade}\n` : '') +
-    `Objetivos de aprendizagem desta aula: ${aula.objetivos || 'não especificados'}\n\n` +
+    `Objetivos de aprendizagem desta aula: ${aula.objetivos || 'não especificados'}\n` +
+    blocoPreRequisitos(preRequisitos) + `\n` +
     `Ementa do curso: ${ementa || 'não gerada'}\n\n` +
     `Plano de aula desta aula (referência — trecho específico desta aula):\n${planoAulaTrecho || 'não disponível'}\n\n` +
     `Mapa das demais aulas do curso (apenas título e objetivos — para se situar na ` +
@@ -547,6 +612,7 @@ const roteiroAulaSkill = ({ metaPalavras, ...ctx }) => ({
     (ctx.proporcaoTeoricoPratico ? `- Indique em "tipo" se a seção é "teorica" ou "pratica", respeitando a proporção teórico/prático.\n` : '') +
     `\nResponda SOMENTE com este JSON:\n` +
     `{"secoes": [{"titulo": "string", "objetivo": "o que esta seção cobre", "tipo": "teorica|pratica|sintese"}]}` +
+    (ctx.pesquisaDossie || '') +
     nivelBlock(ctx.nivel) +
     pedagCtxBlock(ctx.metodologia, ctx.bnccContext)
 });
@@ -565,13 +631,17 @@ const secaoConteudoSkill = ({ secao, secoesPlanejadas, resumoEscritas, metaPalav
       `Seções planejadas para a aula (na ordem):\n${secoesPlanejadas.map((t, n) => `${n + 1}. ${t}`).join('\n')}\n\n` +
       `Resumo das seções já escritas (não repita o que já foi dito):\n${resumoEscritas || 'nenhuma — esta é a primeira seção'}\n\n` +
       `SEÇÃO A REDIGIR AGORA: "${secao.titulo}"${secao.objetivo ? ` — ${secao.objetivo}` : ''}\n` +
-      `Meta: cerca de ${metaPalavras} palavras. Escreva a seção COMPLETA, sem interrompê-la, e não escreva outras seções.\n\n` +
+      `Meta: cerca de ${metaPalavras} palavras. Escreva a seção COMPLETA, sem interrompê-la, e não escreva outras seções.\n` +
+      (ctx.pesquisaBloco && ctx.pesquisaBloco.includes('Regras de citação')
+        ? `Nesta seção, cite com [F#] pelo menos uma fonte do dossiê (de preferência duas) nas afirmações factuais aplicáveis.\n`
+        : '') + `\n` +
       `Formato: comece exatamente com a linha "## ${secao.titulo}". ` +
       (sintese
         ? `Consolide em tópicos o que o instrutor deve garantir que os alunos compreendam ao final da aula.`
         : `Depois use as subseções "### Fundamentação técnica" (definições, princípios, terminologia correta), ` +
           `"### Exemplos práticos" (exemplos, analogias e casos reais do mercado) e ` +
           `"### Erros comuns e pontos de atenção".`) +
+      (ctx.pesquisaBloco || '') +
       nivelBlock(ctx.nivel) +
       pedagCtxBlock(ctx.metodologia, ctx.bnccContext)
   };
@@ -594,7 +664,7 @@ const expandirSecaoSkill = ({ secao, textoAtual, metaPalavras, palavrasAtuais, a
 
 // Analisa a qualidade de uma aula individualmente comparando com os documentos
 // de referência do curso. Usa Jaccard como reporte e inclui espaço para revisor.
-const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaIndex, aulaTitulo, aulaObjetivos, aulaConteudo, sobreposicoes, metodologia, bnccContext }) => {
+const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaIndex, aulaTitulo, aulaObjetivos, aulaConteudo, sobreposicoes, metodologia, bnccContext, pesquisaBloco = '' }) => {
   const sobreposicoesStr = sobreposicoes && sobreposicoes.length > 0
     ? sobreposicoes.map(s => `- Aula ${s.indice}: ${s.titulo} (similaridade: ${s.similaridade}%)`).join('\n')
     : 'Nenhuma sobreposição significativa detectada.';
@@ -618,6 +688,7 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `## Conteúdo Gerado da Aula\n${aulaConteudo}\n\n` +
       `## Sobreposições Detectadas (Jaccard ≥ 55%)\n${sobreposicoesStr}\n` +
       (bnccContext ? `\n${bnccContext}\n` : '') +
+      (pesquisaBloco ? `${pesquisaBloco}\n` : '') +
       `\nProduza a revisão com EXATAMENTE as seguintes seções:\n\n` +
       `### Compatibilidade com o Plano de Aula\n` +
       `Avalie se o conteúdo gerado cobre os objetivos definidos no plano de aula. ` +
@@ -767,7 +838,7 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
 // comparar dois scores de chamadas separadas (uma antes, uma depois) é
 // exatamente o padrão que se mostrou pouco confiável antes desta mudança.
 // Machine-only: sem prosa, JSON estrito, existe só para alimentar o gate.
-const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandidato, planoAulaTrecho, ementa, planoEnsino, nivel, publico, modalidade }) => ({
+const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandidato, planoAulaTrecho, ementa, planoEnsino, nivel, publico, modalidade, pesquisaBloco = '' }) => ({
   model: MODEL_ECONOMY,
   response_format: { type: 'json_object' },
   system:
@@ -787,6 +858,7 @@ const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandida
     `Modalidade: ${modalidade || 'não informada'}\n\n` +
     `## Versão ORIGINAL\n${textoOriginal}\n\n` +
     `## Versão CANDIDATA (revisada)\n${textoCandidato}\n\n` +
+    (pesquisaBloco ? `${pesquisaBloco.trim()}\n\n` : '') +
     `Critérios (0 a 10 cada):\n` +
     `1. planoAula — aderência aos objetivos e à sequência do plano de aula\n` +
     `2. planoEnsinoEmenta — aderência ao escopo do módulo, plano de ensino e ementa\n` +
@@ -885,7 +957,7 @@ const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico
     `5. **Atenção especial** (1 ponto crítico dado o perfil do público e a proporção teórico/prático)`
 });
 
-const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, metodologia, bncc }) => {
+const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, metodologia, bncc, pesquisaBloco = '' }) => {
   const bnccSection = bncc?.ativo && bncc.itens?.length
     ? `\n\n## Competências/Habilidades BNCC Selecionadas\n` +
       bncc.itens.map(i => `- ${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('\n')
@@ -910,6 +982,7 @@ const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, 
       `## Plano de Ensino\n${planoEnsino || 'não gerado'}\n\n` +
       `## Plano de Aula\n${planoAula || 'não gerado'}\n\n` +
       `## Resumo do Conteúdo por Aula\n${resumosAulas || 'não gerado'}\n\n` +
+      (pesquisaBloco ? `${pesquisaBloco.trim()}\n\n` : '') +
       `Produza o relatório com EXATAMENTE as seguintes seções:\n\n` +
       `### 1. Parecer Geral\n` +
       `Síntese executiva (3 a 5 parágrafos) sobre a qualidade pedagógica geral do material.\n\n` +
@@ -1001,7 +1074,7 @@ const infraestruturaSkill = ({ config, conteudo }) => ({
     `5. **Recursos para EaD** (se aplicável à modalidade)`
 });
 
-const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, metodologia, bncc, perfilEgresso, competencias, perfilDocente, infraestrutura }) => {
+const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, metodologia, bncc, perfilEgresso, competencias, perfilDocente, infraestrutura, pesquisaBloco = '' }) => {
   const bnccSection = bncc?.ativo && bncc.itens?.length
     ? `\nAlinhamento BNCC (${bncc.nivel}): ` +
       bncc.itens.map(i => `${i.codigo || i.titulo || i.descricao?.slice(0, 60)}`).join(', ')
@@ -1025,7 +1098,8 @@ const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, me
       `Alinhamento BNCC: ${bnccSection}\n\n` +
       `## Conteúdo Gerado (use para as seções do PPC)\n` +
       `EMENTA: ${ementa || 'não gerada'}\n\n` +
-      `JUSTIFICATIVA (baseada na pesquisa de mercado): ${pesquisa || 'não disponível'}\n\n` +
+      `JUSTIFICATIVA (baseada na pesquisa de mercado): ${pesquisaBloco ? 'use os achados estruturados e as fontes abaixo' : (pesquisa || 'não disponível')}\n\n` +
+      (pesquisaBloco ? `${pesquisaBloco.trim()}\n\n` : '') +
       `ESTRUTURA CURRICULAR: ${planoEnsino || 'não gerado'}\n\n` +
       `METODOLOGIA: ${metodologia || 'não definida'}\n\n` +
       `PERFIL DO EGRESSO: ${perfilEgresso || 'não gerado'}\n\n` +
@@ -1044,6 +1118,9 @@ const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, me
 
 module.exports = {
   MODEL_RESEARCH,
+  pesquisaBlock,
+  blocoPreRequisitos,
+  pesquisaModuloSkill,
   modeloConteudo,
   roteiroAulaSkill,
   secaoConteudoSkill,

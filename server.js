@@ -37,6 +37,7 @@ const mammoth = require('mammoth');
 const skills = require('./skills');
 const { obs: observabilidade } = require('./observabilidade');
 const conteudoSecoes = require('./conteudo-secoes');
+const fundamentacao = require('./fundamentacao');
 const bnccData = require('./bncc-data');
 console.log(`[BNCC] Carregado: ${bnccData.competenciasGerais.length} competências, ` +
   `${bnccData.habilidades.ef1.length} EF1, ${bnccData.habilidades.ef2.length} EF2, ` +
@@ -166,6 +167,10 @@ const SEARCH_RETRY_TIMEOUT_MS = 60_000;
 // Novas tentativas da mesma consulta de pesquisa após falha transitória.
 const PESQUISA_MAX_RETENTATIVAS = 2;
 const SEARCH_FALLBACK_TIMEOUT_MS = 30_000;
+// Pausa entre aulas consecutivas (proteção simples contra rate limit; padrão 4 s).
+// CONTEUDO_PAUSA_MS=0 desliga — usado nos testes. A espera adaptativa por 429
+// (change geracao-retomavel) substitui esta pausa fixa.
+const PAUSA_ENTRE_AULAS_MS = Number(process.env.CONTEUDO_PAUSA_MS ?? 4000);
 const STALL_TIMEOUT_MS = 45_000;
 const CONTEUDO_SEARCH_TIMEOUT_MS = 90_000;
 // Teto de tokens de saída por aula, uniforme em todas as gerações de conteúdo
@@ -1841,7 +1846,8 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
       const skill = skills.ementaSkill({
         nome, publico, carga, duracao, nivel, objetivos, modalidade,
         metodologia: getMetodologia(sess),
-        bnccContext: sess.bncc?.ativo ? sess.bncc.itens.map(i => `${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('; ') : ''
+        preRequisitos: sess.config.preRequisitos,
+        bnccContext: buildPedagogicalContext(sess)
       });
       const completion = await chamarOpenAI('chat', {
         model: skill.model,
@@ -1886,7 +1892,8 @@ app.get('/api/qualidade', async (req, res) => {
     planoAula: sess.planoAula,
     resumosAulas,
     metodologia: getMetodologia(sess),
-    bncc: sess.bncc
+    bncc: sess.bncc,
+    pesquisaBloco: blocoPesquisaGeral(sess)
   });
 
   try {
@@ -1970,7 +1977,8 @@ app.get('/api/ppc', async (req, res) => {
     send(res, { type: 'progress', message: 'Montando documento PPC...' });
 
     const assemblySkill = skills.ppcAssemblySkill({
-      config: sess.config, ementa: sess.ementa, pesquisa: truncate(sess.pesquisa, 1500),
+      config: sess.config, ementa: sess.ementa,
+      pesquisa: blocoPesquisaGeral(sess) ? '' : truncate(sess.pesquisa, 1500), pesquisaBloco: blocoPesquisaGeral(sess),
       planoEnsino: truncate(sess.planoEnsino, 2000), planoAula: truncate(sess.planoAula, 1500),
       metodologia: getMetodologia(sess), bncc: sess.bncc,
       perfilEgresso, competencias, perfilDocente, infraestrutura
@@ -2218,12 +2226,12 @@ app.get('/api/slides/gerar', async (req, res) => {
         `Público-alvo: ${sess.config.publico || 'não especificado'}. Nível do curso: ${sess.config.nivel || 'não especificado'} — ` +
           `adeque a densidade de informação e o vocabulário a esse nível, com tom leve, descontraído e acolhedor, adequado à faixa etária do público-alvo.`,
         `Gere exatamente ${quantidade} card(s) de conteúdo para esta aula, além dos cards fixos do template.`,
-        `Conteúdo da aula "${aula.titulo}":\n${aula.texto}`,
+        `Conteúdo da aula "${aula.titulo}":\n${fundamentacao.limparParaMidia(aula.texto)}`,
         ...(texto ? [`Observações complementares desta aula: ${texto}`] : [])
       ].join('\n\n'),
       exportAs: 'pptx'
     } : {
-      inputText: aula.texto,
+      inputText: fundamentacao.limparParaMidia(aula.texto),
       textMode: 'condense',
       format: 'presentation',
       numCards: quantidade,
@@ -2504,7 +2512,7 @@ app.get('/api/video-avatar/roteiro/gerar', async (req, res) => {
 
     const skill = skills.roteiroAvatarSkill({
       aulaTitulo: aula.titulo,
-      aulaTexto: aula.texto,
+      aulaTexto: fundamentacao.limparParaMidia(aula.texto),
       segundos,
       publico: sess.config?.publico,
       nivel: sess.config?.nivel,
@@ -2859,6 +2867,7 @@ app.get('/api/plano-ensino', async (req, res) => {
 
   const skill = skills.planoEnsinoSkill({
     nome, publico, carga, duracao, nivel, objetivos, modalidade, ementa, pesquisa, ajustes,
+    preRequisitos: sess.config.preRequisitos, pesquisaBloco: blocoPesquisaGeral(sess),
     metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess),
     proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
   });
@@ -2956,6 +2965,7 @@ app.get('/api/plano-aula', async (req, res) => {
       const skill = skills.planoAulaSkill({
         nome, duracao, nivel, publico, modalidade, aula, index: i, total: aulas.length,
         ementa, planoEnsino, lessonSummaries, observacoes,
+        preRequisitos: sess.config.preRequisitos, pesquisaBloco: blocoPesquisaGeral(sess),
         metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess),
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
       });
@@ -3097,6 +3107,252 @@ async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null
   }
   return text;
 }
+
+// ── Pesquisa por módulo e fundamentação do conteúdo (change conteudo-fundamentado-em-pesquisa) ──
+// Entre a Etapa 4 e a 5: uma consulta de pesquisa web por MÓDULO do plano de
+// ensino (não por aula, para controlar custo e tempo). O resultado alimenta o
+// conteúdo das aulas com fontes e achados citáveis por [F#].
+const PESQUISA_MODULOS_PAUSA_MS = Number(process.env.PESQUISA_MODULOS_PAUSA_MS ?? 1500);
+
+function lerPesquisaModulos(sess) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'pesquisa_modulos.json'), 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function escreverPesquisaModulos(sess, meta) {
+  const destino = path.join(courseScrDir(sess), 'pesquisa_modulos.json');
+  const tmp = `${destino}.tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(meta, null, 2), 'utf-8');
+    fs.renameSync(tmp, destino);
+  } catch (err) {
+    console.error('[pesquisa-modulos] Erro ao gravar pesquisa_modulos.json:', err.message);
+    try { fs.unlinkSync(tmp); } catch { /* temporário ausente */ }
+  }
+}
+
+// 'ok' (pesquisado), 'pulada' (escolha explícita de gerar sem pesquisa por
+// módulo), 'legado' (projeto anterior à funcionalidade, com conteúdo já gerado) ou
+// 'pendente' (a Etapa 5 ainda exige a pesquisa por módulo).
+function statusPesquisaModulos(sess) {
+  const meta = lerPesquisaModulos(sess);
+  if (meta?.pulada) return 'pulada';
+  if (meta?.completo) return 'ok';
+  if (meta) return 'pendente';
+  return readMemory(sess, 'aula01_conteudo') ? 'legado' : 'pendente';
+}
+
+// A Etapa 5 exige a pesquisa por módulo (ou a escolha explícita de pular).
+// PESQUISA_MODULOS_OBRIGATORIA=false desliga a exigência (usado nos testes
+// herdados; projetos legados com conteúdo já gerado nunca são bloqueados).
+const exigePesquisaModulos = (sess) =>
+  process.env.PESQUISA_MODULOS_OBRIGATORIA !== 'false' && statusPesquisaModulos(sess) === 'pendente';
+
+function lerAulasDoProjeto(sess) {
+  if (sess.aulas?.length) return sess.aulas;
+  try {
+    const p = JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'projeto.json'), 'utf-8'));
+    return Array.isArray(p.aulas) ? p.aulas : [];
+  } catch {
+    return [];
+  }
+}
+
+// Dossiê da pesquisa geral (Etapa 2) no formato dos prompts: IDs em maiúsculas
+// (f1 → F1). Só existe quando a pesquisa foi feita na web.
+function dossieDaPesquisaGeral(sess) {
+  const meta = sess.pesquisaMeta || lerPesquisaMeta(sess);
+  if (!meta || meta.status !== 'web' || !meta.fontes?.length) return null;
+  const up = (id) => String(id).toUpperCase();
+  return {
+    fontes: meta.fontes.map(f => ({ id: up(f.id), url: f.url, titulo: f.titulo, dominio: f.dominio })),
+    achados: (meta.achados || []).map(a => ({ tema: a.tema, resumo: a.resumo, fonteIds: (a.fonteIds || []).map(up) }))
+  };
+}
+
+function blocoPesquisaGeral(sess) {
+  const d = dossieDaPesquisaGeral(sess);
+  return d ? skills.pesquisaBlock(d.achados, d.fontes) : '';
+}
+
+// Dossiê DESTA aula: achados do módulo dela + gerais mais próximos, com IDs
+// [F#] locais. Modos: 'web' (cita), 'sem_web' (pesquisa por módulo pulada: não
+// cita nem simula referências) e 'nenhum' (projeto legado: prompts como antes).
+function dossieDaAula(sess, aula, aulas) {
+  const modulos = lerPesquisaModulos(sess);
+  if (modulos?.pulada) return { modo: 'sem_web', achados: [], fontes: [] };
+  if (!modulos?.completo) return { modo: 'nenhum', achados: [], fontes: [] };
+  const geral = (() => { const m = sess.pesquisaMeta || lerPesquisaMeta(sess); return m?.status === 'web' ? m : null; })();
+  const { achados, fontes } = fundamentacao.selecionarFontesParaAula({ aula, aulas, pesquisaModulos: modulos, pesquisaGeral: geral });
+  return fontes.length ? { modo: 'web', achados, fontes } : { modo: 'nenhum', achados: [], fontes: [] };
+}
+
+const blocoPesquisa = (dossie, citar) => skills.pesquisaBlock(dossie.achados, dossie.fontes, { modo: dossie.modo, citar });
+
+// GET /api/pesquisa-modulos/status — estado da pesquisa por módulo (para a UI).
+app.get('/api/pesquisa-modulos/status', (req, res) => {
+  const sess = getSession(req, res);
+  const meta = (sess.config?.nome || sess.config?.pastaProjeto) ? lerPesquisaModulos(sess) : null;
+  res.json({
+    status: (sess.config?.nome || sess.config?.pastaProjeto) ? statusPesquisaModulos(sess) : 'pendente',
+    modulos: (meta?.modulos || []).map(m => ({ titulo: m.titulo, status: m.status, erro: m.erro })),
+    obrigatoria: process.env.PESQUISA_MODULOS_OBRIGATORIA !== 'false'
+  });
+});
+
+// POST /api/pesquisa-modulos/pular — escolha explícita de gerar o conteúdo SEM
+// pesquisa por módulo: marca o projeto com fonte 'modelo_sem_busca' e as aulas
+// passam a ser geradas sem citar nem simular referências.
+app.post('/api/pesquisa-modulos/pular', (req, res) => {
+  const sess = getSession(req, res);
+  if (!sess.config?.nome && !sess.config?.pastaProjeto) return res.status(400).json({ error: 'Configure o curso (Etapa 1) antes.' });
+  escreverPesquisaModulos(sess, {
+    status: 'sem_web', fonte: 'modelo_sem_busca', modelo: null, geradoEm: new Date().toISOString(),
+    completo: true, pulada: true, modulos: [], consultas: [], fontes: [], achados: []
+  });
+  saveProject(sess, { baseName: 'pesquisa_modulos', fonte: 'modelo_sem_busca' });
+  res.json({ ok: true, status: 'pulada' });
+});
+
+// ── GET /api/pesquisa-modulos (SSE) ─────────────────────────────────────────
+// Uma pesquisa web por módulo do plano de ensino (título, objetivos das aulas,
+// nível e público). Retomável: módulos já pesquisados (status 'ok' no
+// pesquisa_modulos.json) não são refeitos; `?refazer=1` ignora o cache. Grava
+// scr/pesquisa_modulos.json (consultas, fontes e achados por módulo) e
+// pesquisa_modulos.txt/.docx. Módulo sem nenhuma citação conta como falha.
+app.get('/api/pesquisa-modulos', async (req, res) => {
+  const sess = getSession(req, res);
+  const aulas = lerAulasDoProjeto(sess);
+  if (!aulas.length) return sseError(res, 'Conclua a Etapa 4 (plano de aula) antes de pesquisar por módulo.');
+  sseHeaders(res);
+  const client = clientAbort(res);
+  const { nome, nivel, publico, modalidade } = sess.config;
+  const falha = (message, err = null) => send(res, {
+    type: 'error', message, status: 'falhou',
+    semPesquisaDisponivel: !(err instanceof OpenAI.AuthenticationError)
+  });
+
+  try {
+    const modulos = fundamentacao.agruparModulos(aulas);
+    const ano = new Date().getFullYear();
+    const anterior = req.query.refazer === '1' ? null : lerPesquisaModulos(sess);
+    const idsOk = new Set((anterior?.modulos || []).filter(m => m.status === 'ok' && !anterior.pulada).map(m => m.id));
+    // Parte do que já foi pesquisado com sucesso (cache/retomada por módulo).
+    const meta = {
+      status: 'web', fonte: 'ia', modelo: skills.modeloPesquisa(), geradoEm: new Date().toISOString(),
+      completo: false, pulada: false,
+      modulos: (anterior?.modulos || []).filter(m => idsOk.has(m.id)),
+      consultas: (anterior?.consultas || []).filter(c => idsOk.has(c.moduloId)),
+      achados: (anterior?.achados || []).filter(a => idsOk.has(a.moduloId)),
+      fontes: []
+    };
+    const idsUsados = new Set(meta.achados.flatMap(a => a.fonteIds || []));
+    meta.fontes = (anterior?.fontes || []).filter(f => idsUsados.has(f.id));
+    const fontePorUrl = new Map(meta.fontes.map(f => [f.url, f]));
+    let proximo = meta.fontes.reduce((max, f) => Math.max(max, parseInt(String(f.id).replace(/\D/g, ''), 10) || 0), 0) + 1;
+    const falhas = [];
+    let pesquisadosAgora = 0;
+
+    send(res, { type: 'progress', message: `${modulos.length} módulo(s) no plano de ensino${idsOk.size ? ` — ${idsOk.size} já pesquisado(s), retomando os demais` : ''}.` });
+
+    for (let k = 0; k < modulos.length; k++) {
+      if (client.disconnected) return;
+      const modulo = modulos[k];
+      if (idsOk.has(modulo.id)) {
+        send(res, { type: 'progress', message: `Módulo ${k + 1}/${modulos.length}: ${modulo.titulo} — já pesquisado (cache).` });
+        continue;
+      }
+      if (pesquisadosAgora > 0 && PESQUISA_MODULOS_PAUSA_MS > 0) await new Promise(r => setTimeout(r, PESQUISA_MODULOS_PAUSA_MS));
+      send(res, { type: 'progress', message: `Pesquisando módulo ${k + 1}/${modulos.length}: ${modulo.titulo}...` });
+      observabilidade.definirContexto({ modulo: modulo.titulo });
+      const skill = skills.pesquisaModuloSkill({
+        nome, nivel, publico, modalidade, modulo, ano,
+        metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess)
+      });
+
+      let completion;
+      try {
+        completion = await executarPesquisaWeb(skill, {
+          clientCtx: client,
+          onRetry: () => send(res, { type: 'progress', message: 'Reconectando...' })
+        });
+      } catch (err) {
+        if (err.configInvalida || err instanceof OpenAI.AuthenticationError || client.disconnected) throw err;
+        falhas.push({ titulo: modulo.titulo, erro: err.message });
+        send(res, { type: 'progress', message: `⚠️ Módulo "${modulo.titulo}" falhou: ${err.message}` });
+        continue;
+      }
+      pesquisadosAgora++;
+      addUsage(completion.usage, sess);
+
+      const message = completion.choices[0]?.message || {};
+      const texto = (message.content || '').trim();
+      const fonteIds = new Set();
+      for (const ann of message.annotations || []) {
+        if (ann.type !== 'url_citation' || !ann.url_citation?.url) continue;
+        const url = limparUrlFonte(ann.url_citation.url);
+        if (!fontePorUrl.has(url)) {
+          const fonte = { id: `f${proximo++}`, url, titulo: ann.url_citation.title || url, dominio: dominioDe(url), moduloId: modulo.id };
+          meta.fontes.push(fonte);
+          fontePorUrl.set(url, fonte);
+        }
+        fonteIds.add(fontePorUrl.get(url).id);
+      }
+      if (!fonteIds.size || !texto) {
+        falhas.push({ titulo: modulo.titulo, erro: 'a busca não retornou fontes (resposta de memória do modelo)' });
+        send(res, { type: 'progress', message: `⚠️ Módulo "${modulo.titulo}" não retornou fontes — será tentado de novo na próxima execução.` });
+        continue;
+      }
+      meta.modulos.push({ id: modulo.id, titulo: modulo.titulo, aulas: modulo.aulas, status: 'ok' });
+      meta.consultas.push({ id: `c${meta.consultas.length + 1}`, moduloId: modulo.id, texto: `Módulo "${modulo.titulo}": ${modulo.objetivos.join(' | ')}` });
+      meta.achados.push({ moduloId: modulo.id, tema: modulo.titulo, resumo: texto, fonteIds: [...fonteIds] });
+      escreverPesquisaModulos(sess, meta); // progresso persistido: se o servidor cair, estes módulos não são refeitos
+    }
+    if (client.disconnected) return;
+
+    const okCount = meta.modulos.filter(m => m.status === 'ok').length;
+    if (okCount < modulos.length) {
+      meta.modulos = [...meta.modulos, ...falhas.map(f => ({ id: null, titulo: f.titulo, status: 'falhou', erro: f.erro }))];
+      escreverPesquisaModulos(sess, meta);
+      falha(`Pesquisa concluída para ${okCount} de ${modulos.length} módulo(s). Falharam: ${falhas.map(f => f.titulo).join(', ')}. ` +
+        `Os módulos concluídos serão reaproveitados ao tentar de novo; ou escolha gerar sem pesquisa por módulo.`);
+      return;
+    }
+    const sites = meta.fontes.map(f => ({ url: f.url, title: f.titulo }));
+    const avaliacao = avaliarFontesPesquisa(sites);
+    if (!avaliacao.ok) {
+      escreverPesquisaModulos(sess, meta);
+      falha(`A pesquisa por módulo retornou poucas fontes (${avaliacao.fontes} fonte(s) em ${avaliacao.dominios} domínio(s); mínimo ${PESQUISA_MIN_FONTES} em ${PESQUISA_MIN_DOMINIOS}). ` +
+        `Tente novamente ou escolha gerar sem pesquisa por módulo.`);
+      return;
+    }
+
+    send(res, { type: 'progress', message: 'Lendo fontes...' });
+    for (const site of sites) send(res, { type: 'site', ...site });
+
+    const fullText = meta.modulos.map(m => `## Módulo: ${m.titulo}\n\n${meta.achados.find(a => a.moduloId === m.id)?.resumo || ''}`).join('\n\n') +
+      '\n\n## Fontes consultadas\n' + meta.fontes.map(f => `- [${f.id.toUpperCase()}] ${f.titulo} — ${f.url}`).join('\n');
+    for (const trecho of fullText.match(/.{1,24}/gs) || []) {
+      if (client.disconnected) return;
+      send(res, { type: 'token', text: trecho });
+    }
+    meta.completo = true;
+    meta.geradoEm = new Date().toISOString();
+    await persistStage(sess, 'pesquisa_modulos', 'Pesquisa por Módulo', fullText, sites, 'ia');
+    escreverPesquisaModulos(sess, meta);
+    send(res, { type: 'progress', message: 'Concluído' });
+    send(res, { type: 'done', fullText, status: 'web', modulos: modulos.length });
+  } catch (err) {
+    if (client.disconnected) return;
+    console.error(err);
+    falha(err.message || 'Erro na pesquisa por módulo', err);
+  } finally {
+    res.end();
+  }
+});
 
 // ── Geração do conteúdo de uma aula (change conteudo-completo-por-secoes) ────
 // Duas passadas: (1) roteiro da aula em JSON planeja as seções; (2) cada seção
@@ -3288,6 +3544,9 @@ function parseAulasAlvo(valor, total) {
 // bloqueada (evento `done` traz `incompletas`; rotas dependentes respondem erro).
 app.get('/api/conteudo', async (req, res) => {
   const sess = getSession(req, res);
+  if (exigePesquisaModulos(sess)) {
+    return sseError(res, 'Antes de gerar o conteúdo, faça a pesquisa por módulo (ou escolha "gerar sem pesquisa por módulo").');
+  }
   sseHeaders(res);
   const client = clientAbort(res);
   const { nome, nivel, publico, duracao, modalidade } = sess.config;
@@ -3333,7 +3592,7 @@ app.get('/api/conteudo', async (req, res) => {
         continue;
       }
 
-      if (geradas > 0) await new Promise(r => setTimeout(r, 4000));
+      if (geradas > 0) await new Promise(r => setTimeout(r, PAUSA_ENTRE_AULAS_MS));
       if (client.disconnected) break;
       observabilidade.definirContexto({ aula: i + 1 });
 
@@ -3349,11 +3608,16 @@ app.get('/api/conteudo', async (req, res) => {
       // Ajuste 3 — mapa enxuto (título + objetivos) das demais aulas.
       const lessonSummaries = skills.summarizeLessons(aulas, { excludeIndex: i });
 
+      // Dossiê de fontes DESTA aula (achados do módulo + gerais mais próximos), com IDs [F#] locais.
+      const dossie = dossieDaAula(sess, aula, aulas);
       const ctxSkill = {
         nome, duracao, nivel, publico, modalidade, aula, index: i, total: aulas.length,
         ementa, planoAulaTrecho, lessonSummaries,
         metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess),
-        proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
+        proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico,
+        preRequisitos: sess.config.preRequisitos,
+        pesquisaBloco: blocoPesquisa(dossie, true),
+        pesquisaDossie: blocoPesquisa(dossie, false)
       };
 
       let resultado = null;
@@ -3379,11 +3643,25 @@ app.get('/api/conteudo', async (req, res) => {
       geradas++;
       if (client.disconnected) return;
 
-      const { texto, estado } = resultado;
+      let { texto } = resultado;
+      const { estado } = resultado;
+      // Fundamentação: verificação mecânica das citações e referências autoritativas
+      // (URL e título do dossiê, só das fontes citadas). Sem pesquisa: sem [F#] nem referências.
+      let citacoes = null;
+      if (estado !== 'incompleta') {
+        if (dossie.modo === 'web') {
+          citacoes = fundamentacao.verificarCitacoes(texto, dossie.fontes);
+          texto = fundamentacao.substituirReferencias(texto, dossie.fontes, citacoes.usadas);
+        } else if (dossie.modo === 'sem_web') {
+          texto = fundamentacao.limparParaMidia(texto);
+        }
+      }
       sess.estadoAulas[numero] = {
         estado, modo: resultado.modo, palavras: resultado.palavras, finishReason: resultado.finishReason,
         completionTokens: resultado.completionTokens, continuacoes: resultado.continuacoes, motivos: resultado.motivos,
         secoes: resultado.secoes?.map(s => ({ titulo: s.titulo, palavras: conteudoSecoes.contarPalavras(s.texto), meta: s.meta })),
+        dossie: dossie.modo === 'nenhum' ? undefined : { modo: dossie.modo, fontes: dossie.fontes },
+        citacoes: citacoes || undefined,
         geradoEm: new Date().toISOString()
       };
       const partialPath = path.join(courseScrDir(sess), `aula${numero}_conteudo.partial.txt`);
@@ -3396,14 +3674,22 @@ app.get('/api/conteudo', async (req, res) => {
       } else {
         fs.rmSync(partialPath, { force: true });
         // Persiste o conteúdo desta aula como arquivo independente.
-        await persistStage(sess, `aula${numero}_conteudo`, `Conteúdo — Aula ${i + 1}: ${titulo}`, texto);
+        const fontesCitadas = citacoes ? dossie.fontes.filter(f => citacoes.usadas.includes(f.id)).map(f => ({ url: f.url, title: `${f.id} — ${f.titulo}` })) : [];
+        await persistStage(sess, `aula${numero}_conteudo`, `Conteúdo — Aula ${i + 1}: ${titulo}`, texto, fontesCitadas);
+        if (citacoes) {
+          // Falhas de citação vão para o relatório/aviso, sem bloquear a gravação.
+          if (citacoes.idsInvalidos.length) send(res, { type: 'warning', text: `Aula ${i + 1} cita fonte(s) inexistente(s) no dossiê: ${citacoes.idsInvalidos.map(id => `[${id}]`).join(', ')}.` });
+          if (!citacoes.minimoAtingido) send(res, { type: 'warning', text: `Aula ${i + 1} cita ${citacoes.distintas} fonte(s) distinta(s) — o esperado é ao menos 2.` });
+          if (citacoes.numerosSemCitacao) send(res, { type: 'warning', text: `Aula ${i + 1}: ${citacoes.numerosSemCitacao} trecho(s) com dado numérico sem citação [F#].` });
+        }
         if (estado === 'curta') {
           send(res, { type: 'warning', text: `Aula ${i + 1} ficou curta (${resultado.palavras} palavras; seções abaixo da meta: ${resultado.curtas.join(', ')}).` });
         }
       }
       registrarGeracaoAula(sess, {
         aula: i + 1, estado, modo: resultado.modo, finishReason: resultado.finishReason,
-        completionTokens: resultado.completionTokens, palavras: resultado.palavras, continuacoes: resultado.continuacoes
+        completionTokens: resultado.completionTokens, palavras: resultado.palavras, continuacoes: resultado.continuacoes,
+        citacoes: citacoes ? { distintas: citacoes.distintas, idsInvalidos: citacoes.idsInvalidos.length, numerosSemCitacao: citacoes.numerosSemCitacao } : undefined
       });
 
       fullText += heading + texto;
@@ -3460,6 +3746,7 @@ function migrarSeNecessario(slug) {
 const ARQUIVO_LABELS = {
   ementa: 'Ementa',
   pesquisa: 'Pesquisa Web',
+  pesquisa_modulos: 'Pesquisa por Módulo',
   plano_de_ensino: 'Plano de Ensino',
   plano_de_aula: 'Plano de Aula',
   revisao_qualidade: 'Revisão de Qualidade',
@@ -3963,7 +4250,8 @@ app.get('/api/revisao-qualidade', async (req, res) => {
         aulaConteudo: truncate(aula.texto, 2000),
         sobreposicoes: sobreposicoesPorAula[i],
         metodologia: getMetodologia(sess),
-        bnccContext
+        bnccContext,
+        pesquisaBloco: blocoPesquisa(dossieDaAula(sess, aula, aulas), false)
       });
 
       const texto = await streamSkillToClient(res, skill, sess, {}, client);
@@ -4279,7 +4567,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         continue;
       }
 
-      if (i > 0) await new Promise(r => setTimeout(r, 4000));
+      if (i > 0) await new Promise(r => setTimeout(r, PAUSA_ENTRE_AULAS_MS));
       if (client.disconnected) break;
 
       send(res, {
@@ -4436,7 +4724,8 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
             planoEnsino: planoEnsinoScoreRef,
             nivel: sess.config.nivel,
             publico: sess.config.publico,
-            modalidade: sess.config.modalidade
+            modalidade: sess.config.modalidade,
+            pesquisaBloco: blocoPesquisa(dossieDaAula(sess, aula, aulas), false)
           });
           const completionScore = await chamarOpenAI('chat', {
             model: skillScore.model,
@@ -4545,7 +4834,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           const i = m.aulaIndex - 1;
           const aula = novasPorAula[i];
           if (!aula) continue;
-          await new Promise(r => setTimeout(r, 4000));
+          await new Promise(r => setTimeout(r, PAUSA_ENTRE_AULAS_MS));
           send(res, { type: 'progress', message: `Realinhando plano da aula ${i + 1} de ${novasPorAula.length}: ${aula.titulo}` });
           try {
             const planoAulaTrechoAtual = extractLessonBlock(planoAula, i);

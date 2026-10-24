@@ -5,3 +5,12 @@
 // chamadas por aula e é coberta por tests/integration/conteudo-secoes.test.js,
 // que ativa CONTEUDO_MODO=secoes explicitamente.
 process.env.CONTEUDO_MODO = 'unico';
+
+// Idem para a pesquisa por módulo: os testes herdados chamam /api/conteudo direto,
+// sem a etapa de pesquisa por módulo, e sem pausa entre módulos.
+// tests/integration/pesquisa-modulos.test.js liga a exigência explicitamente.
+process.env.PESQUISA_MODULOS_OBRIGATORIA = 'false';
+process.env.PESQUISA_MODULOS_PAUSA_MS = '0';
+
+// Sem a pausa fixa de 4 s entre aulas: acelera os testes e evita timeouts sob carga.
+process.env.CONTEUDO_PAUSA_MS = '0';

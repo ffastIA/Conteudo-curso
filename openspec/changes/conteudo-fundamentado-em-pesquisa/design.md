@@ -15,6 +15,12 @@
 - **D4**: verificação mecânica em função pura `verificarCitacoes(texto, fontes)` → `{ idsInvalidos, fontesDistintas, numerosSemCitacao }`, registrada em `geracao_log.json` e no relatório.
 - **D5**: `removerMarcadoresFonte(texto)` aplicado ao montar prompts de slides/roteiro/vídeo.
 
+- **D6**: IDs `[F#]` são LOCAIS a cada aula (renumerados F1..Fk a partir das fontes selecionadas para ela) — os IDs da pesquisa geral (`f1…`) e da pesquisa por módulo colidiriam. O dossiê usado fica em `estadoAulas[NN].dossie` do `projeto.json`.
+- **D7**: a seção `### Referências da aula` é montada pelo sistema (título e URL do dossiê, só das fontes citadas), substituindo qualquer lista escrita pelo modelo; o prompt instrui o modelo a não escrevê-la. Em `sem_web` o texto sai sem `[F#]` nem referências.
+- **D8**: a exigência da pesquisa por módulo não bloqueia projetos legados (conteúdo já gerado sem `pesquisa_modulos.json`); `PESQUISA_MODULOS_OBRIGATORIA=false` desliga a exigência (usado nos testes herdados em `tests/setup-env.js`).
+- **D9**: dado numérico sem citação é contado por frase; slides, roteiro de avatar e vídeo recebem o texto sem `[F#]` e sem a seção de referências (`limparParaMidia`).
+- **D10**: lógica pura em `fundamentacao.js`; rotas `GET /api/pesquisa-modulos`, `GET /api/pesquisa-modulos/status` e `POST /api/pesquisa-modulos/pular`.
+
 ## Risks / Trade-offs
 
 - Modelo inventa `[F#]` → IDs só do dossiê + verificação mecânica.

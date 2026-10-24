@@ -135,6 +135,10 @@ describe('auxiliares', () => {
     expect(caudaAberta('Fim.')).toBe(false);
     expect(caudaAberta('Veja:')).toBe(true);
     expect(caudaAberta('1.')).toBe(true);
+    expect(caudaAberta('Texto que termina em para')).toBe(true);
+    // URL ou domínio terminando em "com" não é conector solto
+    expect(caudaAberta('- fonte — https://exemplo.com')).toBe(false);
+    expect(caudaAberta('Veja o site exemplo.com.br')).toBe(false);
     expect(blocoDeCodigoAberto('```a\n```')).toBe(false);
     expect(blocoDeCodigoAberto('```a')).toBe(true);
   });
