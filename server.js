@@ -38,6 +38,7 @@ const skills = require('./skills');
 const { obs: observabilidade } = require('./observabilidade');
 const conteudoSecoes = require('./conteudo-secoes');
 const fundamentacao = require('./fundamentacao');
+const avaliacao = require('./avaliacao');
 const bnccData = require('./bncc-data');
 console.log(`[BNCC] Carregado: ${bnccData.competenciasGerais.length} competências, ` +
   `${bnccData.habilidades.ef1.length} EF1, ${bnccData.habilidades.ef2.length} EF2, ` +
@@ -488,14 +489,9 @@ function buildPedagogicalContext(sess) {
   return parts.join('\n\n');
 }
 
-function truncate(text, max = 1500) {
-  if (!text) return '';
-  return text.length > max ? text.slice(0, max) + '...' : text;
-}
-
 // Extrai o bloco de texto de UMA aula específica dentro do texto integral do
 // plano de aula (que é organizado em seções "# Aula N: Título"). Evita o
-// problema de truncate() sempre devolver o início do texto (≈ Aula 1).
+// problema de devolver sempre o início do texto (≈ Aula 1).
 function extractLessonBlock(fullText, index) {
   if (!fullText) return '';
   const matches = [...fullText.matchAll(/^# Aula (\d+):.*$/gm)];
@@ -948,7 +944,7 @@ const SECOES_ESPERADAS_CONTEUDO = [
 // 1 - max(0, maiorSimilaridadeComOutraAula - 0.55), mesmo limiar já usado
 // no sistema; (3) completude estrutural — fração das seções esperadas
 // detectáveis por título tolerante no texto.
-function computeScoreDeterministico(texto, aula, sobreposicaoMaxima = 0) {
+function computeScoreDeterministico(texto, aula, sobreposicaoMaxima = 0, fundamentacaoScore = null) {
   const textoNorm = normalizeTitulo(texto);
 
   const termosObjetivo = normalizeTitulo(aula?.objetivos)
@@ -963,10 +959,16 @@ function computeScoreDeterministico(texto, aula, sobreposicaoMaxima = 0) {
   const secoesPresentes = SECOES_ESPERADAS_CONTEUDO.filter(s => textoNorm.includes(s)).length;
   const completudeEstrutural = secoesPresentes / SECOES_ESPERADAS_CONTEUDO.length;
 
-  const determ = (cobertura + penalidadeSobreposicao + completudeEstrutural) / 3;
+  // Fundamentação em fontes: componente extra, ativo só com pesquisa em `web`
+  // (fundamentacaoScore numérico). Entra na média do determinístico — o peso de 30%
+  // do determinístico na nota composta e a rubrica de 5 critérios não mudam.
+  const componentesBase = [cobertura, penalidadeSobreposicao, completudeEstrutural];
+  const comFundamentacao = typeof fundamentacaoScore === 'number';
+  if (comFundamentacao) componentesBase.push(fundamentacaoScore);
+  const determ = componentesBase.reduce((a, b) => a + b, 0) / componentesBase.length;
   return {
     determ: Math.max(0, Math.min(1, determ)),
-    componentes: { cobertura, penalidadeSobreposicao, completudeEstrutural }
+    componentes: { cobertura, penalidadeSobreposicao, completudeEstrutural, ...(comFundamentacao ? { fundamentacao: fundamentacaoScore } : {}) }
   };
 }
 
@@ -1881,22 +1883,11 @@ app.get('/api/qualidade', async (req, res) => {
   const client = clientAbort(res);
   send(res, { type: 'progress', message: 'Iniciando análise pedagógica...' });
 
-  const resumosAulas = (sess.conteudoPorAula || [])
-    .map((c, i) => `Aula ${i + 1}: ${c.titulo}\n${truncate(c.texto, 1500)}`)
-    .join('\n\n---\n\n');
-
-  const skill = skills.qualidadeSkill({
-    config: sess.config,
-    ementa: sess.ementa,
-    planoEnsino: sess.planoEnsino,
-    planoAula: sess.planoAula,
-    resumosAulas,
-    metodologia: getMetodologia(sess),
-    bncc: sess.bncc,
-    pesquisaBloco: blocoPesquisaGeral(sess)
-  });
-
   try {
+    // Conteúdo integral das aulas + notas por aula e documentos de referência completos:
+    // chamada única quando cabe; senão análise por módulo (etapa 1) e síntese final (etapa 2).
+    const { skill } = await montarContextoQualidade({ res, sess, client });
+    if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Analisando coerência pedagógica...' });
     const stream = await chamarOpenAI('chat', {
       model: skill.model,
@@ -1969,7 +1960,9 @@ app.get('/api/ppc', async (req, res) => {
     if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Infraestrutura...' });
 
-    const infraestruturaSkill = skills.infraestruturaSkill({ config: sess.config, conteudo: truncate(sess.conteudo, 3000) });
+    const conteudoInfra = await conteudoParaInfraestrutura({ res, sess, client });
+    if (client.disconnected) return;
+    const infraestruturaSkill = skills.infraestruturaSkill({ config: sess.config, conteudo: conteudoInfra });
     const infraestruturaResp = await chamarOpenAI('chat', { model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] }, { signal: client.signal });
     addUsage(infraestruturaResp.usage, sess);
     const infraestrutura = infraestruturaResp.choices[0]?.message?.content?.trim() || '';
@@ -1978,8 +1971,8 @@ app.get('/api/ppc', async (req, res) => {
 
     const assemblySkill = skills.ppcAssemblySkill({
       config: sess.config, ementa: sess.ementa,
-      pesquisa: blocoPesquisaGeral(sess) ? '' : truncate(sess.pesquisa, 1500), pesquisaBloco: blocoPesquisaGeral(sess),
-      planoEnsino: truncate(sess.planoEnsino, 2000), planoAula: truncate(sess.planoAula, 1500),
+      pesquisa: blocoPesquisaGeral(sess) ? '' : (sess.pesquisa || ''), pesquisaBloco: blocoPesquisaGeral(sess),
+      planoEnsino: sess.planoEnsino, planoAula: sess.planoAula,
       metodologia: getMetodologia(sess), bncc: sess.bncc,
       perfilEgresso, competencias, perfilDocente, infraestrutura
     });
@@ -3354,6 +3347,246 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
   }
 });
 
+// ── Avaliação sobre o conteúdo integral (change avaliacao-conteudo-integral) ──
+// Nenhuma skill de avaliação recebe texto cortado por contagem de caracteres.
+// Cabendo na janela (AVALIACAO_MAX_TOKENS_ENTRADA, ~24 mil tokens por padrão), a
+// avaliação segue em chamada única com o texto inteiro; não cabendo, ela é DIVIDIDA
+// (map-reduce por seção) — nunca encurtada. Um teste estático proíbe qualquer corte por caracteres
+// nas rotas de revisão, score, qualidade e PPC (e a função de corte foi removida).
+
+// Fundamentação em fontes (0 a 1) — só com pesquisa em `web`; senão null e o
+// componente fica de fora do determinístico (peso de 30% inalterado).
+function fundamentacaoDaAula(sess, aula, aulas, texto) {
+  const dossie = dossieDaAula(sess, aula, aulas);
+  return dossie.modo === 'web' ? fundamentacao.calcularFundamentacao(texto, dossie.fontes).score : null;
+}
+
+function parseJsonSeguro(texto) {
+  try { return JSON.parse(texto || '{}'); } catch { return {}; }
+}
+
+// Revisão de UMA aula: chamada única (texto inteiro) ou map-reduce por seção.
+// Devolve o texto da revisão e o registro de leitura (100% das seções lidas).
+async function revisarAula({ res, sess, client, aula, i, ctxRev }) {
+  const limite = avaliacao.limiteTokensEntrada();
+  const skillUnica = skills.revisaoQualidadeSkill({ ...ctxRev, aulaConteudo: aula.texto });
+  const tokensEstimados = avaliacao.estimarTokens(skillUnica.system + skillUnica.user);
+  const secoesLidas = avaliacao.dividirEmPartes(aula.texto, Number.MAX_SAFE_INTEGER)
+    .map(p => ({ titulo: p.titulo, palavras: avaliacao.contarPalavras(p.texto), lida: true }));
+
+  if (tokensEstimados <= limite) {
+    const texto = await streamSkillToClient(res, skillUnica, sess, {}, client);
+    return { texto, modo: 'unica', tokensEstimados, secoes: secoesLidas, notasConsolidadas: null };
+  }
+
+  // Map: cada parte da aula avaliada com os 5 critérios + contexto de referência.
+  const base = avaliacao.estimarTokens(skills.revisaoSecaoSkill({ ...ctxRev, aulaTitulo: aula.titulo, aulaObjetivos: aula.objetivos, secao: { titulo: '', texto: '' }, indice: 0, total: 1 }).user);
+  const maxParte = Math.max(500, Math.floor(limite - base - 600));
+  const partes = avaliacao.dividirEmPartes(aula.texto, maxParte);
+  send(res, { type: 'progress', message: `Aula ${i + 1}: conteúdo longo (~${tokensEstimados} tokens) — avaliando em ${partes.length} parte(s) e consolidando...` });
+  const resultados = [];
+  for (let n = 0; n < partes.length; n++) {
+    if (client.disconnected) break;
+    const sk = skills.revisaoSecaoSkill({ ...ctxRev, aulaTitulo: aula.titulo, aulaObjetivos: aula.objetivos, secao: partes[n], indice: n, total: partes.length });
+    const comp = await chamarOpenAI('chat', {
+      model: sk.model, response_format: sk.response_format,
+      messages: [{ role: 'system', content: sk.system }, { role: 'user', content: sk.user }]
+    }, { signal: client.signal }, { nome: 'revisao.secao' });
+    addUsage(comp.usage, sess);
+    const r = parseJsonSeguro(comp.choices[0]?.message?.content);
+    resultados.push({
+      titulo: partes[n].titulo, peso: avaliacao.contarPalavras(partes[n].texto),
+      criterios: r.criterios || {}, observacoes: r.observacoes || '',
+      melhorias: Array.isArray(r.melhorias) ? r.melhorias : [],
+      citacoesFracas: Array.isArray(r.citacoesFracas) ? r.citacoesFracas : []
+    });
+  }
+  const notas = avaliacao.mediaPonderadaCriterios(resultados.map(r => ({ criterios: r.criterios, peso: r.peso })));
+  const notasFixas = {};
+  for (const [chave, valor] of Object.entries(notas)) if (valor !== null) notasFixas[ROTULOS_CRITERIOS[chave]] = valor;
+  const avaliacoesSecoes = resultados.map((r, n) =>
+    `### Seção ${n + 1} de ${resultados.length}: ${r.titulo} (${r.peso} palavras)\n` +
+    `Notas: ${Object.entries(r.criterios).map(([k, v]) => `${ROTULOS_CRITERIOS[k] || k}: ${v}/10`).join('; ') || 'não avaliada'}\n` +
+    `Observações: ${r.observacoes || '—'}\n` +
+    `Melhorias propostas:\n${r.melhorias.map(m => `- ${m}`).join('\n') || '- nenhuma'}\n` +
+    `Alertas de citação: ${r.citacoesFracas.join('; ') || 'nenhum'}`
+  ).join('\n\n');
+
+  // Reduce: uma chamada final produz a revisão da aula, o resumo de melhorias e a
+  // nota (fórmula existente: 0,7 × rubrica + 0,3 × determinístico, no caller).
+  const skillReduce = skills.revisaoQualidadeSkill({ ...ctxRev, aulaConteudo: '', avaliacoesSecoes, notasFixas: Object.keys(notasFixas).length ? notasFixas : null });
+  const texto = await streamSkillToClient(res, skillReduce, sess, {}, client);
+  return { texto, modo: 'map-reduce', tokensEstimados, secoes: secoesLidas, notasConsolidadas: notas, partes: partes.length };
+}
+
+function registrarRevisaoLog(sess, aulasLog, notasPorAula) {
+  try {
+    const scr = courseScrDir(sess);
+    fs.writeFileSync(path.join(scr, 'revisao_log.json'), JSON.stringify({
+      geradoEm: new Date().toISOString(), formulaVersao: avaliacao.FORMULA_VERSAO,
+      limiteTokensEntrada: avaliacao.limiteTokensEntrada(), aulas: aulasLog
+    }, null, 2), 'utf-8');
+    fs.writeFileSync(path.join(scr, 'notas_aulas.json'), JSON.stringify(notasPorAula, null, 2), 'utf-8');
+    sess.notasAulas = notasPorAula;
+  } catch (e) {
+    console.warn('[revisao] não foi possível gravar revisao_log.json/notas_aulas.json:', e.message);
+  }
+}
+
+// Notas por aula da última revisão (sessão ou disco) em texto, para o relatório técnico.
+function notasAulasTexto(sess) {
+  let notas = sess.notasAulas;
+  if (!notas) {
+    try { notas = JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'notas_aulas.json'), 'utf-8')); } catch { notas = null; }
+  }
+  if (!Array.isArray(notas) || !notas.length) return '';
+  return notas.map(n => {
+    const crit = n.criterios ? ` | ${Object.entries(n.criterios).map(([k, v]) => `${ROTULOS_CRITERIOS[k] || k}: ${v}/10`).join('; ')}` : '';
+    return `- Aula ${n.numero}: ${n.titulo} — Nota: ${n.nota !== null && n.nota !== undefined ? Number(n.nota).toFixed(2) : 'N/A'}${crit}`;
+  }).join('\n');
+}
+
+// Julgamento pareado original × candidato do gate de score. Cabendo, uma chamada
+// com as DUAS versões inteiras (a melhoria no fim da aula é vista). Não cabendo,
+// o gate avalia por seção alterada (pares emparelhados, sem cortar) e agrega
+// por média ponderada, mais uma checagem global de coerência com o resumo de TODAS
+// as seções. Mesmo modelo de nota composta; EPSILON_ACEITE e a regra [user] intactos.
+async function julgarVersoes({ sess, aula, aulas, textoAntigo, textoMesclado, planoAulaTrecho, ementa, planoEnsino, client }) {
+  const limite = avaliacao.limiteTokensEntrada();
+  const alter = avaliacao.secoesAlteradas(textoAntigo, textoMesclado);
+  const base = {
+    aulaTitulo: aula.titulo, aulaObjetivos: aula.objetivos, planoAulaTrecho, ementa, planoEnsino,
+    nivel: sess.config.nivel, publico: sess.config.publico, modalidade: sess.config.modalidade,
+    pesquisaBloco: blocoPesquisa(dossieDaAula(sess, aula, aulas), false)
+  };
+  const chamar = async (skill, nome) => {
+    const comp = await chamarOpenAI('chat', {
+      model: skill.model, response_format: skill.response_format,
+      messages: [{ role: 'system', content: skill.system }, { role: 'user', content: skill.user }]
+    }, client ? { signal: client.signal } : undefined, { nome });
+    addUsage(comp.usage, sess);
+    return JSON.parse(comp.choices[0]?.message?.content || '{}');
+  };
+
+  const unica = skills.scoreAulaSkill({ ...base, textoOriginal: textoAntigo, textoCandidato: textoMesclado, secoesAlteradas: alter.alteradas.map(a => a.titulo) });
+  if (avaliacao.estimarTokens(unica.system + unica.user) <= limite) {
+    const julgamento = await chamar(unica, 'score.pareado');
+    const vistas = [...new Set([...avaliacao.dividirEmPartes(textoAntigo, Number.MAX_SAFE_INTEGER).map(p => p.secao), ...alter.titulos])];
+    return { julgamento, modo: 'unica', secoesVistas: vistas, secoesAlteradas: alter.alteradas.map(a => a.titulo) };
+  }
+
+  const semTextos = skills.scoreAulaSkill({ ...base, textoOriginal: '', textoCandidato: '' });
+  const maxLado = Math.max(300, Math.floor((limite - avaliacao.estimarTokens(semTextos.system + semTextos.user) - 600) / 2));
+  const itens = [];
+  const vistas = [];
+  for (const sec of alter.alteradas) {
+    for (const par of avaliacao.emparelharPartes(sec.original, sec.candidato, maxLado)) {
+      const sk = skills.scoreAulaSkill({
+        ...base, secoesAlteradas: [sec.titulo],
+        textoOriginal: par.original || '(esta seção não existia na versão original)',
+        textoCandidato: par.candidato || '(esta seção foi removida na versão candidata)'
+      });
+      const j = await chamar(sk, 'score.pareado-secao');
+      itens.push({ original: j.original, candidato: j.candidato, peso: Math.max(avaliacao.contarPalavras(par.original), avaliacao.contarPalavras(par.candidato)) });
+    }
+    vistas.push(sec.titulo);
+  }
+  const coerencia = await chamar(
+    skills.coerenciaGlobalSkill({
+      aulaTitulo: aula.titulo, aulaObjetivos: aula.objetivos,
+      resumoOriginal: avaliacao.resumoSecoes(textoAntigo), resumoCandidato: avaliacao.resumoSecoes(textoMesclado)
+    }), 'score.coerencia-global');
+  const agregar = (lado) => {
+    const c = avaliacao.mediaPonderadaCriterios(itens.map(it => ({ criterios: it[lado], peso: it.peso })));
+    const global = typeof coerencia[lado] === 'number' ? coerencia[lado] : null;
+    if (global !== null) c.clarezaEstrutura = c.clarezaEstrutura === null ? global : Math.round(((c.clarezaEstrutura + global) / 2) * 100) / 100;
+    return c;
+  };
+  return {
+    julgamento: { original: agregar('original'), candidato: agregar('candidato') },
+    modo: 'por-secao',
+    secoesVistas: [...vistas, 'coerência global (resumo de todas as seções)'],
+    secoesAlteradas: alter.alteradas.map(a => a.titulo)
+  };
+}
+
+// Aulas (título + texto) para a infraestrutura do PPC, a partir da sessão.
+function aulasParaInfra(sess) {
+  if (sess.conteudoPorAula?.length) return sess.conteudoPorAula.map((a, i) => ({ titulo: a.titulo || `Aula ${i + 1}`, texto: a.texto || '' }));
+  return String(sess.conteudo || '').split(/^# Aula \d+:\s*/m).filter(Boolean)
+    .map((bloco, i) => ({ titulo: `Aula ${i + 1}`, texto: bloco }));
+}
+
+// Contexto de conteúdo para a skill de infraestrutura: o conteúdo INTEGRAL quando
+// cabe; senão o resumo por aula + a lista de recursos mencionados em TODAS as
+// seções (map por aula).
+async function conteudoParaInfraestrutura({ res, sess, client }) {
+  const limite = avaliacao.limiteTokensEntrada();
+  if (avaliacao.estimarTokens(sess.conteudo) <= limite - 2000) return sess.conteudo;
+  const aulas = aulasParaInfra(sess);
+  const resumos = [];
+  const recursos = new Set();
+  for (let n = 0; n < aulas.length; n++) {
+    if (client.disconnected) break;
+    send(res, { type: 'progress', message: `Gerando PPC — Infraestrutura: lendo a aula ${n + 1} de ${aulas.length}...` });
+    const sk = skills.recursosAulaSkill({ aulaTitulo: aulas[n].titulo, texto: aulas[n].texto });
+    const comp = await chamarOpenAI('chat', {
+      model: sk.model, response_format: sk.response_format,
+      messages: [{ role: 'system', content: sk.system }, { role: 'user', content: sk.user }]
+    }, { signal: client.signal }, { nome: 'ppc.recursos-aula' });
+    addUsage(comp.usage, sess);
+    const r = parseJsonSeguro(comp.choices[0]?.message?.content);
+    resumos.push(`Aula ${n + 1} — ${aulas[n].titulo}: ${r.resumo || '(sem resumo)'}`);
+    (Array.isArray(r.recursos) ? r.recursos : []).forEach(x => recursos.add(String(x).trim()));
+  }
+  return `Resumo por aula:\n${resumos.join('\n')}\n\nRecursos mencionados em todas as seções de todas as aulas:\n${[...recursos].filter(Boolean).map(r => `- ${r}`).join('\n') || '- nenhum identificado'}`;
+}
+
+// Relatório técnico-pedagógico: chamada única com o conteúdo integral quando
+// cabe; senão análise por módulo (etapa 1) e síntese final (etapa 2).
+async function montarContextoQualidade({ res, sess, client }) {
+  const limite = avaliacao.limiteTokensEntrada();
+  const aulas = sess.conteudoPorAula || [];
+  const notasAulas = notasAulasTexto(sess);
+  const integral = aulas.length
+    ? aulas.map((c, i) => `### Aula ${i + 1}: ${c.titulo}\n${c.texto}`).join('\n\n---\n\n')
+    : (sess.conteudo || '');
+  const args = {
+    config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino, planoAula: sess.planoAula,
+    metodologia: getMetodologia(sess), bncc: sess.bncc, pesquisaBloco: blocoPesquisaGeral(sess), notasAulas
+  };
+  const unica = skills.qualidadeSkill({ ...args, resumosAulas: integral });
+  if (avaliacao.estimarTokens(unica.system + unica.user) <= limite || !aulas.length) return { skill: unica, modo: 'unica' };
+
+  // Etapa 1: análise por módulo, com o conteúdo integral das aulas do módulo.
+  const modulos = fundamentacao.agruparModulos(sess.aulas?.length ? sess.aulas : aulas);
+  const baseTokens = avaliacao.estimarTokens(skills.qualidadeModuloSkill({ config: sess.config, modulo: { titulo: '' }, conteudoModulo: '', notasAulas: '' }).user);
+  const analises = [];
+  for (let k = 0; k < modulos.length; k++) {
+    if (client.disconnected) break;
+    const m = modulos[k];
+    send(res, { type: 'progress', message: `Analisando o módulo ${k + 1} de ${modulos.length}: ${m.titulo}...` });
+    const aulasDoModulo = m.aulas.map(idx => ({ idx, titulo: aulas[idx]?.titulo, texto: aulas[idx]?.texto || '' }));
+    let conteudoModulo = aulasDoModulo.map(a => `### Aula ${a.idx + 1}: ${a.titulo}\n${a.texto}`).join('\n\n---\n\n');
+    if (avaliacao.estimarTokens(conteudoModulo) > limite - baseTokens - 800) {
+      // Módulo grande demais: cada aula entra como resumo de TODAS as suas seções.
+      conteudoModulo = aulasDoModulo.map(a => `### Aula ${a.idx + 1}: ${a.titulo}\n${avaliacao.resumoSecoes(a.texto, 80)}`).join('\n\n');
+    }
+    const notasModulo = notasAulasTexto(sess).split('\n').filter(l => m.aulas.some(idx => l.startsWith(`- Aula ${idx + 1}:`))).join('\n');
+    const sk = skills.qualidadeModuloSkill({ config: sess.config, modulo: m, conteudoModulo, notasAulas: notasModulo });
+    const comp = await chamarOpenAI('chat', {
+      model: sk.model, messages: [{ role: 'system', content: sk.system }, { role: 'user', content: sk.user }]
+    }, { signal: client.signal }, { nome: 'qualidade.modulo' });
+    addUsage(comp.usage, sess);
+    analises.push(`## Módulo: ${m.titulo}\n${comp.choices[0]?.message?.content?.trim() || ''}`);
+  }
+  const skill = skills.qualidadeSkill({
+    ...args, resumosAulas: analises.join('\n\n'),
+    rotuloConteudo: 'Análise por Módulo (feita sobre o conteúdo integral das aulas)'
+  });
+  return { skill, modo: 'duas-etapas' };
+}
+
 // ── Geração do conteúdo de uma aula (change conteudo-completo-por-secoes) ────
 // Duas passadas: (1) roteiro da aula em JSON planeja as seções; (2) cada seção
 // é redigida em sua própria chamada em streaming, com teto de saída por seção.
@@ -4224,6 +4457,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
   let fullText = '';
   const notasPorAula = [];
   const resumosMelhoriasPorAula = [];
+  const logRevisao = []; // registro de leitura: todas as seções de cada aula
 
   try {
     for (let i = 0; i < aulas.length; i++) {
@@ -4239,34 +4473,43 @@ app.get('/api/revisao-qualidade', async (req, res) => {
       send(res, { type: 'token', text: heading });
       fullText += heading;
 
-      const skill = skills.revisaoQualidadeSkill({
+      // Aula e documentos de referência INTEIROS (sem cortes por caracteres): cabendo na janela,
+      // chamada única; senão, map-reduce por seção (ver revisarAula).
+      const ctxRev = {
         config: sess.config,
         ementa,
-        planoEnsino: truncate(planoEnsino, 1500),
+        planoEnsino,
         planoAulaTrecho: extractLessonBlock(planoAula, i),
         aulaIndex: i,
         aulaTitulo: aula.titulo,
         aulaObjetivos: aula.objetivos,
-        aulaConteudo: truncate(aula.texto, 2000),
         sobreposicoes: sobreposicoesPorAula[i],
         metodologia: getMetodologia(sess),
         bnccContext,
         pesquisaBloco: blocoPesquisa(dossieDaAula(sess, aula, aulas), false)
-      });
-
-      const texto = await streamSkillToClient(res, skill, sess, {}, client);
+      };
+      const revisao = await revisarAula({ res, sess, client, aula, i, ctxRev });
+      const texto = revisao.texto;
       fullText += texto;
+      logRevisao.push({
+        aula: i + 1, titulo: aula.titulo, modo: revisao.modo, tokensEstimados: revisao.tokensEstimados,
+        partesAvaliadas: revisao.partes, secoes: revisao.secoes,
+        secoesLidas: revisao.secoes.filter(x => x.lida).length, totalSecoes: revisao.secoes.length
+      });
 
       // Nota calculada pela fórmula de score (quality-scoring): rubrica de 5
       // critérios (LLM) + determinístico (cobertura/sobreposição/estrutura).
       // Fallback para o formato antigo de nota holística "Nota: X.XX" se o
       // modelo não seguir o formato de rubrica pedido.
-      const rubrica = parseRubricaCriterios(texto);
+      // Em map-reduce, as notas consolidadas (média ponderada das seções) são a fonte
+      // autoritativa; o texto do reduce só vale se elas estiverem incompletas.
+      const rubrica = (revisao.notasConsolidadas && Object.values(revisao.notasConsolidadas).every(v => v !== null)
+        ? { criterios: revisao.notasConsolidadas } : null) || parseRubricaCriterios(texto);
       let nota = null;
       if (rubrica) {
         const sobreposicaoMaxima = (sobreposicoesPorAula[i] || [])
           .reduce((max, o) => Math.max(max, o.similaridade / 100), 0);
-        const { determ } = computeScoreDeterministico(aula.texto, aula, sobreposicaoMaxima);
+        const { determ } = computeScoreDeterministico(aula.texto, aula, sobreposicaoMaxima, fundamentacaoDaAula(sess, aula, aulas, aula.texto));
         nota = computeScoreComposto(rubrica.criterios, determ).score;
         observabilidade.registrarScore('nota_aula', nota, { comentario: `Aula ${i + 1}` });
         observabilidade.registrarScore('determinístico', determ, { comentario: `Aula ${i + 1}` });
@@ -4286,12 +4529,13 @@ app.get('/api/revisao-qualidade', async (req, res) => {
         const notaMatch = texto.match(/Nota:\s*([01](?:\.\d+)?)/i);
         nota = notaMatch ? Math.max(0, Math.min(1, parseFloat(notaMatch[1]))) : null;
       }
-      notasPorAula.push({ numero: i + 1, titulo: aula.titulo, nota });
+      notasPorAula.push({ numero: i + 1, titulo: aula.titulo, nota, criterios: rubrica?.criterios || null });
       resumosMelhoriasPorAula.push(extractResumoMelhorias(texto));
     }
     if (client.disconnected) return;
 
     notasPorAula.sort((a, b) => a.numero - b.numero);
+    registrarRevisaoLog(sess, logRevisao, notasPorAula);
     let resumoNotas = '\n\n<!--PAGEBREAK-->\n\n# Notas de Qualidade por Aula\n\n';
     for (const n of notasPorAula) {
       resumoNotas += `- Aula ${n.numero}: ${n.titulo} — Nota: ${n.nota !== null ? n.nota.toFixed(2) : 'N/A'}\n`;
@@ -4438,7 +4682,9 @@ app.post('/api/aplicar-melhorias', upload.single('arquivo'), async (req, res) =>
     // o score médio, avisa antes de rodar mais um ciclo de ganho marginal.
     let avisoConvergencia = null;
     const historico = readScoreHistorico(sess);
-    const ultimoCiclo = historico.ciclos[historico.ciclos.length - 1];
+    // Ciclos de versões diferentes da fórmula de score não são comparáveis.
+    const ciclosComparaveis = historico.ciclos.filter(c => (c.formulaVersao || '1') === avaliacao.FORMULA_VERSAO);
+    const ultimoCiclo = ciclosComparaveis[ciclosComparaveis.length - 1];
     if (ultimoCiclo && ultimoCiclo.ganhoMedio < EPSILON_CONVERGENCIA) {
       avisoConvergencia = {
         ciclo: ultimoCiclo.ciclo,
@@ -4506,8 +4752,8 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
   // Referências para o gate de score (julgamento pareado) — hoistadas para
   // antes do loop principal; antes só eram lidas na fase de realinhamento,
   // mais tarde no fluxo.
-  const ementaScoreRef = truncate(sess.ementa || readMemory(sess, 'ementa'), 1200);
-  const planoEnsinoScoreRef = truncate(sess.planoEnsino || readMemory(sess, 'plano_de_ensino'), 1200);
+  const ementaScoreRef = sess.ementa || readMemory(sess, 'ementa');
+  const planoEnsinoScoreRef = sess.planoEnsino || readMemory(sess, 'plano_de_ensino');
   const planoAulaScoreRef = sess.planoAula || readMemory(sess, 'plano_de_aula');
   const scoresPorAula = [];
 
@@ -4704,6 +4950,8 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       let aceita = true;
       let scoreOriginal = null;
       let scoreCandidato = null;
+      let modoJulgamento = null; // 'unica' | 'por-secao' — como o juiz leu as versões
+      let secoesVistas = null;   // seções efetivamente vistas pelo juiz (auditoria)
       // Item forçado por [user]: revisor pediu aplicação incondicional —
       // ignora o gate de score inteiramente (sem chamar o julgamento
       // pareado), mas mantém as demais redes de segurança já checadas acima
@@ -4714,32 +4962,19 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         console.log(`[melhorias] aula ${i + 1}: aceite forçado por [user] — gate de score ignorado`);
       } else {
         try {
-          const skillScore = skills.scoreAulaSkill({
-            aulaTitulo: aula.titulo,
-            aulaObjetivos: aula.objetivos,
-            textoOriginal: truncate(textoAntigo, 4000),
-            textoCandidato: truncate(textoMesclado, 4000),
-            planoAulaTrecho: truncate(extractLessonBlock(planoAulaScoreRef, i), 800),
-            ementa: ementaScoreRef,
-            planoEnsino: planoEnsinoScoreRef,
-            nivel: sess.config.nivel,
-            publico: sess.config.publico,
-            modalidade: sess.config.modalidade,
-            pesquisaBloco: blocoPesquisa(dossieDaAula(sess, aula, aulas), false)
+          // Juiz pareado com a aula INTEIRA: as duas versões completas quando cabem; senão
+          // por seção alterada + checagem global de coerência (nada é cortado).
+          const julgado = await julgarVersoes({
+            sess, aula, aulas, textoAntigo, textoMesclado,
+            planoAulaTrecho: extractLessonBlock(planoAulaScoreRef, i),
+            ementa: ementaScoreRef, planoEnsino: planoEnsinoScoreRef, client
           });
-          const completionScore = await chamarOpenAI('chat', {
-            model: skillScore.model,
-            response_format: skillScore.response_format,
-            messages: [
-              { role: 'system', content: skillScore.system },
-              { role: 'user', content: skillScore.user }
-            ]
-          });
-          addUsage(completionScore.usage, sess);
-          const julgamento = JSON.parse(completionScore.choices[0]?.message?.content || '{}');
+          const julgamento = julgado.julgamento;
+          modoJulgamento = julgado.modo;
+          secoesVistas = julgado.secoesVistas;
 
-          const determOriginal = computeScoreDeterministico(textoAntigo, aula, maiorSobreposicao(textoAntigo)).determ;
-          const determCandidato = computeScoreDeterministico(textoMesclado, aula, maiorSobreposicao(textoMesclado)).determ;
+          const determOriginal = computeScoreDeterministico(textoAntigo, aula, maiorSobreposicao(textoAntigo), fundamentacaoDaAula(sess, aula, aulas, textoAntigo)).determ;
+          const determCandidato = computeScoreDeterministico(textoMesclado, aula, maiorSobreposicao(textoMesclado), fundamentacaoDaAula(sess, aula, aulas, textoMesclado)).determ;
           scoreOriginal = computeScoreComposto(julgamento.original, determOriginal).score;
           scoreCandidato = computeScoreComposto(julgamento.candidato, determCandidato).score;
           aceita = scoreCandidato >= scoreOriginal + EPSILON_ACEITE;
@@ -4751,7 +4986,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           aceita = false; // não avaliada — mesma política de preservação do conteúdo anterior
         }
       }
-      scoresPorAula.push({ aula: i + 1, titulo: aula.titulo, scoreOriginal, scoreCandidato, aceita, forcada: forcadaPorUser });
+      scoresPorAula.push({ aula: i + 1, titulo: aula.titulo, scoreOriginal, scoreCandidato, aceita, forcada: forcadaPorUser, modoJulgamento, secoesVistas });
 
       if (!aceita) {
         const motivoScore = scoreOriginal === null
@@ -4826,8 +5061,8 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         realinhamentoLog.push('Plano de aula não encontrado (sessão e disco) — realinhamento pulado.');
       } else {
         let planoAula = planoAulaBase;
-        const ementaRef = truncate(sess.ementa || readMemory(sess, 'ementa'), 1200);
-        const planoEnsinoRef = truncate(sess.planoEnsino || readMemory(sess, 'plano_de_ensino'), 1200);
+        const ementaRef = sess.ementa || readMemory(sess, 'ementa');
+        const planoEnsinoRef = sess.planoEnsino || readMemory(sess, 'plano_de_ensino');
         const alertasEscopo = [];
 
         for (const m of alteradas) {
@@ -4843,7 +5078,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
               nivel: sess.config.nivel, publico: sess.config.publico,
               aula, index: i, total: novasPorAula.length,
               planoAulaTrechoAtual,
-              conteudoMelhorado: truncate(aula.texto, 3000),
+              conteudoMelhorado: aula.texto,
               ementa: ementaRef, planoEnsinoResumo: planoEnsinoRef,
               melhorias: observacoes[i]?.melhorias,
               metodologia: getMetodologia(sess), bnccContext
@@ -4955,6 +5190,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       persistScoreHistorico(sess, {
         ciclo: Number(numeroCiclo),
         dataHora: new Date().toISOString(),
+        formulaVersao: avaliacao.FORMULA_VERSAO,
         porAula: scoresPorAula,
         ganhoMedio
       });
@@ -5317,6 +5553,7 @@ module.exports.parseSecoesFixas = parseSecoesFixas;
 module.exports.removerEcoTitulo = removerEcoTitulo;
 module.exports.buildDocx = buildDocx;
 module.exports.limparUrlFonte = limparUrlFonte;
+module.exports.fundamentacaoDaAula = fundamentacaoDaAula;
 module.exports.obs = observabilidade;
 module.exports.validarModeloPesquisa = validarModeloPesquisa;
 module.exports.lerPesquisaMeta = lerPesquisaMeta;

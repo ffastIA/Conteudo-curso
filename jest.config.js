@@ -14,6 +14,7 @@ module.exports = {
     'skills.js',
     'conteudo-secoes.js',
     'fundamentacao.js',
+    'avaliacao.js',
     'observabilidade.js'
   ],
   moduleNameMapper: {

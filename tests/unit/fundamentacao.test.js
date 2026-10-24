@@ -3,7 +3,7 @@
 const {
   agruparModulos, selecionarFontesParaAula, similaridade, verificarCitacoes,
   montarReferencias, substituirReferencias, removerSecaoReferencias,
-  removerMarcadoresFonte, limparParaMidia
+  removerMarcadoresFonte, limparParaMidia, calcularFundamentacao
 } = require('../../fundamentacao');
 
 const AULAS = [
@@ -161,5 +161,38 @@ describe('limpeza para slides, roteiros e vídeo', () => {
 
   test('texto sem marcadores permanece igual', () => {
     expect(limparParaMidia('Texto normal.')).toBe('Texto normal.');
+  });
+});
+
+describe('calcularFundamentacao', () => {
+  const fontes = [{ id: 'F1', url: 'https://a.com' }, { id: 'F2', url: 'https://b.com' }];
+
+  test('texto bem fundamentado (dados citados, 2 fontes, IDs válidos) tem score 1', () => {
+    const r = calcularFundamentacao('Cresceu 35% [F1]. Há 120 mil vagas [F2]. Conceito sem número.', fontes);
+    expect(r.score).toBe(1);
+    expect(r.fontesDistintas).toBe(2);
+  });
+
+  test('dado sem citação, fonte única e ID inválido reduzem o score', () => {
+    const bom = calcularFundamentacao('Cresceu 35% [F1]. Há 120 mil vagas [F2].', fontes).score;
+    const semCitar = calcularFundamentacao('Cresceu 35%. Há 120 mil vagas [F2].', fontes);
+    expect(semCitar.score).toBeLessThan(bom);
+    expect(semCitar.numerosSemCitacao).toBe(1);
+    const invalido = calcularFundamentacao('Cresceu 35% [F9]. Há 120 mil vagas [F2].', fontes);
+    expect(invalido.score).toBeLessThan(bom);
+    expect(invalido.idsInvalidos).toEqual(['F9']);
+    const umaFonte = calcularFundamentacao('Cresceu 35% [F1]. Há 120 mil vagas [F1].', fontes);
+    expect(umaFonte.score).toBeLessThan(bom);
+  });
+
+  test('a seção de referências não conta como citação', () => {
+    const texto = 'Texto sem citar nada.\n\n### Referências da aula\n\n- [F1] Fonte A — https://a.com\n- [F2] Fonte B — https://b.com\n';
+    expect(calcularFundamentacao(texto, fontes).fontesDistintas).toBe(0);
+  });
+
+  test('score sempre entre 0 e 1', () => {
+    const r = calcularFundamentacao('Nada citado, 50% e 2026.', fontes);
+    expect(r.score).toBeGreaterThanOrEqual(0);
+    expect(r.score).toBeLessThanOrEqual(1);
   });
 });

@@ -662,9 +662,92 @@ const expandirSecaoSkill = ({ secao, textoAtual, metaPalavras, palavrasAtuais, a
     pedagCtxBlock(metodologia, bnccContext)
 });
 
+// ── Avaliação sobre o conteúdo integral (change avaliacao-conteudo-integral) ──
+// Map: cada seção da aula é avaliada com os 5 critérios da rubrica. Reduce: uma
+// chamada final consolida (ver revisaoQualidadeSkill com `avaliacoesSecoes`).
+
+const CRITERIOS_JSON =
+  `{"criterios": {"planoAula": N, "planoEnsinoEmenta": N, "nivelPublicoModalidade": N, ` +
+  `"qualidadeDidatica": N, "clarezaEstrutura": N}, "observacoes": "1 a 3 frases", ` +
+  `"melhorias": ["ação concreta", "..."], "citacoesFracas": ["trecho ou [F#] que a fonte não sustenta"]}`;
+
+const revisaoSecaoSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaTitulo, aulaObjetivos, secao, indice, total, metodologia, bnccContext, pesquisaBloco = '' }) => ({
+  model: MODEL_ECONOMY,
+  response_format: { type: 'json_object' },
+  system:
+    'Você é um revisor pedagógico sênior especializado em design instrucional. Avalie UMA seção de uma ' +
+    'aula, de forma objetiva, comparando-a com os documentos de referência. Responda APENAS com JSON válido.',
+  user:
+    `Avalie a seção ${indice + 1} de ${total} ("${secao.titulo}") da aula "${aulaTitulo}" do curso "${config?.nome || '?'}".\n\n` +
+    `## Dados da Aula\nObjetivos: ${aulaObjetivos || 'não especificados'}\n` +
+    (config?.modalidade ? `Modalidade do curso: ${config.modalidade}\n` : '') +
+    (config?.nivel ? `Nível declarado do curso: ${config.nivel}\n` : '') +
+    (config?.publico ? `Público: ${config.publico}\n` : '') + `\n` +
+    `## Plano de Aula desta Aula (referência)\n${planoAulaTrecho || 'não disponível'}\n\n` +
+    `## Plano de Ensino do Curso (referência)\n${planoEnsino || 'não disponível'}\n\n` +
+    `## Ementa do Curso (referência)\n${ementa || 'não gerada'}\n\n` +
+    (bnccContext ? `${bnccContext}\n\n` : '') +
+    `## Seção a avaliar\n${secao.texto}\n` +
+    (pesquisaBloco ? `${pesquisaBloco}\n` : '') + `\n` +
+    `Dê uma nota de 0 a 10 para CADA critério considerando SOMENTE esta seção:\n` +
+    `1. planoAula — aderência aos objetivos e à sequência do plano de aula\n` +
+    `2. planoEnsinoEmenta — aderência ao escopo do módulo, plano de ensino e ementa\n` +
+    `3. nivelPublicoModalidade — adequação a nível, público e modalidade\n` +
+    `4. qualidadeDidatica — fundamentação, exemplos, erros comuns\n` +
+    `5. clarezaEstrutura — organização, progressão, ausência de redundância\n` +
+    (pesquisaBloco ? `Se houver citações [F#], confira se a fonte realmente sustenta a afirmação e liste as fracas em "citacoesFracas".\n` : '') +
+    `\nResponda SOMENTE com este JSON:\n${CRITERIOS_JSON}`
+});
+
+// Checagem global de coerência da aula completa quando o texto não cabe inteiro
+// numa chamada: o juiz vê o resumo de TODAS as seções das duas versões.
+const coerenciaGlobalSkill = ({ aulaTitulo, aulaObjetivos, resumoOriginal, resumoCandidato }) => ({
+  model: MODEL_ECONOMY,
+  response_format: { type: 'json_object' },
+  system:
+    'Você é um avaliador pedagógico técnico. Avalie a coerência global de duas versões de uma aula ' +
+    '(progressão entre as seções, ausência de redundância e contradição). Responda APENAS com JSON válido.',
+  user:
+    `Compare a coerência global das duas versões da aula "${aulaTitulo}" (objetivos: ${aulaObjetivos || 'não especificados'}), ` +
+    `a partir do resumo de TODAS as seções de cada versão. Nota de 0 a 10 para cada versão.\n\n` +
+    `## Versão ORIGINAL (seções)\n${resumoOriginal}\n\n## Versão CANDIDATA (seções)\n${resumoCandidato}\n\n` +
+    `Responda SOMENTE com: {"original": N, "candidato": N}`
+});
+
+// Etapa 1 do relatório técnico-pedagógico em duas etapas: análise de UM módulo
+// a partir do conteúdo integral das aulas dele (ou do resumo de todas as seções).
+const qualidadeModuloSkill = ({ config, modulo, conteudoModulo, notasAulas }) => ({
+  model: MODEL_ECONOMY,
+  system:
+    'Você é um especialista sênior em design instrucional e avaliação de cursos. Analise criticamente ' +
+    'UM módulo de um curso, fundamentando cada apontamento. Responda em português.',
+  user:
+    `Analise o módulo "${modulo.titulo}" do curso "${config?.nome || '?'}" ` +
+    `(público: ${config?.publico || '?'} | nível: ${config?.nivel || '?'} | modalidade: ${config?.modalidade || '?'}).\n\n` +
+    (notasAulas ? `## Notas de qualidade das aulas do módulo\n${notasAulas}\n\n` : '') +
+    `## Conteúdo das aulas do módulo\n${conteudoModulo}\n\n` +
+    `Produza uma análise com: (1) cobertura dos objetivos de cada aula, (2) pontos fortes, ` +
+    `(3) lacunas e problemas — cada um com aula e seção afetadas, (4) coerência e progressão dentro do módulo, ` +
+    `(5) aderência à carga horária e à proporção teórico/prático. Seja específico: cite aula e seção.`
+});
+
+// Extrai, de UMA aula, o resumo e os recursos mencionados (ferramentas, software,
+// hardware, materiais) — alimenta a infraestrutura do PPC quando o conteúdo
+// completo não cabe numa chamada.
+const recursosAulaSkill = ({ aulaTitulo, texto }) => ({
+  model: MODEL_ECONOMY,
+  response_format: { type: 'json_object' },
+  system: 'Você extrai informações de material didático. Responda APENAS com JSON válido.',
+  user:
+    `Da aula "${aulaTitulo}" abaixo, extraia um resumo de 2 a 3 frases e a lista de TODOS os recursos mencionados ` +
+    `(ferramentas, software, hardware, equipamentos, materiais, plataformas) em qualquer seção.\n\n` +
+    `## Aula\n${texto}\n\n` +
+    `Responda SOMENTE com: {"resumo": "string", "recursos": ["string"]}`
+});
+
 // Analisa a qualidade de uma aula individualmente comparando com os documentos
 // de referência do curso. Usa Jaccard como reporte e inclui espaço para revisor.
-const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaIndex, aulaTitulo, aulaObjetivos, aulaConteudo, sobreposicoes, metodologia, bnccContext, pesquisaBloco = '' }) => {
+const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaIndex, aulaTitulo, aulaObjetivos, aulaConteudo, sobreposicoes, metodologia, bnccContext, pesquisaBloco = '', avaliacoesSecoes = '', notasFixas = null }) => {
   const sobreposicoesStr = sobreposicoes && sobreposicoes.length > 0
     ? sobreposicoes.map(s => `- Aula ${s.indice}: ${s.titulo} (similaridade: ${s.similaridade}%)`).join('\n')
     : 'Nenhuma sobreposição significativa detectada.';
@@ -685,7 +768,9 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `## Plano de Aula desta Aula (referência)\n${planoAulaTrecho || 'não disponível'}\n\n` +
       `## Plano de Ensino do Curso (referência)\n${planoEnsino || 'não disponível'}\n\n` +
       `## Ementa do Curso (referência)\n${ementa || 'não gerada'}\n\n` +
-      `## Conteúdo Gerado da Aula\n${aulaConteudo}\n\n` +
+      (avaliacoesSecoes
+        ? `## Avaliação por seção (a aula foi analisada seção a seção — considere TODAS as seções abaixo)\n${avaliacoesSecoes}\n\n`
+        : `## Conteúdo Gerado da Aula\n${aulaConteudo}\n\n`) +
       `## Sobreposições Detectadas (Jaccard ≥ 55%)\n${sobreposicoesStr}\n` +
       (bnccContext ? `\n${bnccContext}\n` : '') +
       (pesquisaBloco ? `${pesquisaBloco}\n` : '') +
@@ -723,6 +808,10 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
         : '') +
       `### Deficiências e Melhorias Sugeridas\n` +
       `Liste as principais deficiências identificadas e proponha melhorias concretas e objetivas.\n\n` +
+      (pesquisaBloco
+        ? `### Alertas de Citação\nConfira se as fontes citadas ([F#]) realmente sustentam o texto de cada seção. ` +
+          `Liste as citações fracas, ausentes ou inexistentes no dossiê (ou escreva "Nenhum alerta").\n\n`
+        : '') +
       `### Nota de Qualidade\n` +
       `Avalie separadamente CADA um dos 5 critérios abaixo, em escala de 0 a 10, com uma frase ` +
       `curta de justificativa por critério. Responda com uma linha isolada por critério, no ` +
@@ -735,7 +824,11 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
       `- Qualidade Didática: 0-10\n` +
       `- Clareza e Estrutura: 0-10\n\n` +
       `NÃO calcule nem informe uma nota final única — o sistema calcula a nota consolidada a ` +
-      `partir dos 5 critérios acima.\n\n`+
+      `partir dos 5 critérios acima.\n\n` +
+      (notasFixas
+        ? `Use EXATAMENTE estas notas consolidadas (média ponderada das notas por seção), sem alterá-las:\n` +
+          Object.entries(notasFixas).map(([nome, v]) => `${nome}: ${v}/10`).join('\n') + `\n\n`
+        : '') +
       `### Resumo de Melhorias Propostas\n` +
       `Liste em bullets curtos, UM POR LINHA, cada melhoria concreta proposta nesta revisão, ` +
       `contendo apenas a ação a executar, sem prosa nem justificativa. REGRA DE PRIORIZAÇÃO ` +
@@ -838,7 +931,7 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
 // comparar dois scores de chamadas separadas (uma antes, uma depois) é
 // exatamente o padrão que se mostrou pouco confiável antes desta mudança.
 // Machine-only: sem prosa, JSON estrito, existe só para alimentar o gate.
-const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandidato, planoAulaTrecho, ementa, planoEnsino, nivel, publico, modalidade, pesquisaBloco = '' }) => ({
+const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandidato, planoAulaTrecho, ementa, planoEnsino, nivel, publico, modalidade, pesquisaBloco = '', secoesAlteradas = null }) => ({
   model: MODEL_ECONOMY,
   response_format: { type: 'json_object' },
   system:
@@ -856,6 +949,7 @@ const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandida
     `Plano de Ensino (resumo): ${planoEnsino || 'não disponível'}\n` +
     `Nível: ${nivel || 'não informado'} | Público: ${publico || 'não informado'} | ` +
     `Modalidade: ${modalidade || 'não informada'}\n\n` +
+    (secoesAlteradas?.length ? `Seções alteradas nesta versão (foco da comparação; o restante é idêntico): ${secoesAlteradas.join(', ')}\n\n` : '') +
     `## Versão ORIGINAL\n${textoOriginal}\n\n` +
     `## Versão CANDIDATA (revisada)\n${textoCandidato}\n\n` +
     (pesquisaBloco ? `${pesquisaBloco.trim()}\n\n` : '') +
@@ -957,7 +1051,7 @@ const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico
     `5. **Atenção especial** (1 ponto crítico dado o perfil do público e a proporção teórico/prático)`
 });
 
-const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, metodologia, bncc, pesquisaBloco = '' }) => {
+const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, metodologia, bncc, pesquisaBloco = '', rotuloConteudo = 'Conteúdo Integral das Aulas', notasAulas = '' }) => {
   const bnccSection = bncc?.ativo && bncc.itens?.length
     ? `\n\n## Competências/Habilidades BNCC Selecionadas\n` +
       bncc.itens.map(i => `- ${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('\n')
@@ -981,7 +1075,8 @@ const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, 
       `\n\n## Ementa\n${ementa || 'não gerada'}\n\n` +
       `## Plano de Ensino\n${planoEnsino || 'não gerado'}\n\n` +
       `## Plano de Aula\n${planoAula || 'não gerado'}\n\n` +
-      `## Resumo do Conteúdo por Aula\n${resumosAulas || 'não gerado'}\n\n` +
+      `## ${rotuloConteudo}\n${resumosAulas || 'não gerado'}\n\n` +
+      (notasAulas ? `## Notas de Qualidade por Aula (revisão da Etapa 6)\n${notasAulas}\n\n` : '') +
       (pesquisaBloco ? `${pesquisaBloco.trim()}\n\n` : '') +
       `Produza o relatório com EXATAMENTE as seguintes seções:\n\n` +
       `### 1. Parecer Geral\n` +
@@ -1118,6 +1213,10 @@ const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, me
 
 module.exports = {
   MODEL_RESEARCH,
+  revisaoSecaoSkill,
+  coerenciaGlobalSkill,
+  qualidadeModuloSkill,
+  recursosAulaSkill,
   pesquisaBlock,
   blocoPreRequisitos,
   pesquisaModuloSkill,

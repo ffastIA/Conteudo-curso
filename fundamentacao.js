@@ -123,6 +123,27 @@ function verificarCitacoes(texto, fontes) {
   };
 }
 
+// Componente determinístico de fundamentação (0 a 1): média de (a) proporção de
+// frases com dado numérico que estão citadas, (b) fontes distintas usadas
+// (2 ou mais = 1) e (c) proporção de [F#] válidos. Só faz sentido com pesquisa
+// em `web` — quem chama decide; a seção de referências não conta como citação.
+function calcularFundamentacao(texto, fontes) {
+  const corpo = removerSecaoReferencias(texto);
+  const v = verificarCitacoes(corpo, fontes);
+  const totalCitados = [...corpo.matchAll(/\[F\d+\]/g)].length;
+  const frasesComDado = paragrafosForaDeCodigo(corpo)
+    .flatMap(p => p.split(/(?<=[.!?])\s+/))
+    .filter(frase => RE_NUMERO.test(frase)).length;
+  const proporcaoCitada = frasesComDado ? Math.max(0, (frasesComDado - v.numerosSemCitacao) / frasesComDado) : 1;
+  const distintas = Math.min(1, v.distintas / 2);
+  const validos = totalCitados ? 1 - v.idsInvalidos.length / Math.max(1, new Set([...corpo.matchAll(/\[F(\d+)\]/g)].map(m => m[1])).size) : 1;
+  const score = (proporcaoCitada + distintas + Math.max(0, validos)) / 3;
+  return {
+    score: Math.round(Math.max(0, Math.min(1, score)) * 1000) / 1000,
+    proporcaoCitada, fontesDistintas: v.distintas, idsInvalidos: v.idsInvalidos, numerosSemCitacao: v.numerosSemCitacao
+  };
+}
+
 // ── Referências e limpeza do texto ──────────────────────────────────────────
 const RE_SECAO_REFERENCIAS = /^#{2,4}\s*Refer[eê]ncias da aula\b[^\n]*\n[\s\S]*?(?=^#{1,4}\s|(?![\s\S]))/gim;
 
@@ -155,7 +176,7 @@ function limparParaMidia(texto) {
 }
 
 module.exports = {
-  agruparModulos, selecionarFontesParaAula, similaridade, verificarCitacoes,
+  agruparModulos, selecionarFontesParaAula, similaridade, verificarCitacoes, calcularFundamentacao,
   montarReferencias, substituirReferencias, removerSecaoReferencias,
   removerMarcadoresFonte, limparParaMidia, dominioDe, MODULO_PADRAO, MAX_ACHADOS_POR_AULA
 };

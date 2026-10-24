@@ -16,6 +16,11 @@ Pontos com `truncate(` em `server.js`: 1490, 1576, 1584-1585, 3295, 3300, 3553-3
 - **D5**: `score_historico.json` ganha `formulaVersao` e `secoesVistas`; ciclos de versões diferentes não são comparados.
 - **D6**: teste estático percorre o trecho das rotas de avaliação e falha ao encontrar `truncate(`.
 
+- **D7**: orçamento `AVALIACAO_MAX_TOKENS_ENTRADA` (padrão 24.000 tokens por chamada): cabendo, chamada única com o texto inteiro; senão map-reduce por seção. Divisão sem perda em `avaliacao.js` (`dividirEmPartes`: as partes juntas reproduzem o texto).
+- **D8**: o juiz do gate vê as duas versões inteiras quando cabem (a melhoria no fim é vista) e, senão, as seções alteradas em pares emparelhados + checagem global de coerência com o resumo de TODAS as seções; `clarezaEstrutura` agrega a nota por seção com a de coerência. `score_historico.json` guarda `formulaVersao: '2'`, `modoJulgamento` e `secoesVistas`.
+- **D9**: em map-reduce as notas consolidadas (média ponderada por palavras) são a fonte autoritativa da nota da aula; `revisao_log.json` registra as seções lidas e `notas_aulas.json` alimenta o relatório.
+- **D10**: componente determinístico de fundamentação (`calcularFundamentacao`) entra como 4º item da média do determinístico só com pesquisa em `web`; a função `truncate` foi removida do servidor.
+
 ## Risks / Trade-offs
 
 - Mais chamadas e custo → map-reduce só quando não cabe; estimativa prévia em `custo-e-logs`.
