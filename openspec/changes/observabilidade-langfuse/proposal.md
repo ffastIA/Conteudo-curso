@@ -4,7 +4,7 @@ Custo, latência, tokens e qualidade das chamadas ao LLM só aparecem em logs so
 
 ## What Changes
 
-- Módulo próprio `observabilidade.js` com `fetch` nativo (API de ingestão em lote do Langfuse), sem SDK.
+- Módulo próprio `observabilidade.js` com `fetch` nativo, sem SDK, enviando spans OTLP/HTTP JSON ao endpoint `/api/public/otel/v1/traces` do **Langfuse autohospedado** (a API de ingestão em lote `/api/public/ingestion` está obsoleta e indisponível no Langfuse v4 em `events_only`). Notas de qualidade vão por `POST /api/public/scores`.
 - Variáveis: `LANGFUSE_ENABLED`, `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_CAPTURE` (`completo|metadados`, padrão `metadados`), `LANGFUSE_SAMPLE_RATE`. Desligado sem chaves.
 - Fila assíncrona em memória, envio em lote, timeout curto e flush no encerramento; falha do Langfuse nunca interrompe nem atrasa a geração.
 - Um trace por operação do usuário (sessionId = sessão do projeto, traceId = id da requisição); spans por etapa/módulo/aula/seção; cada chamada OpenAI vira `generation` (modelo, parâmetros, usage, finish_reason, latência, tentativas, custo); chamadas Gamma/HeyGen/downloads viram spans.
@@ -23,7 +23,7 @@ Custo, latência, tokens e qualidade das chamadas ao LLM só aparecem em logs so
 
 ## Impact
 
-- **`observabilidade.js`** (novo), **`server.js`** (wrapper `chamarOpenAI`, `addUsage`, rotas SSE), **`.env.example`**, **`public/app.js`** (custo/link)
+- **`observabilidade.js`** (novo), **`config/precos-modelos.json`** (novo), **`server.js`** (wrapper `chamarOpenAI`, `fetchObs`, middleware de trace, `send`), **`.env.example`**, **`public/app.js`** (custo/link), **`docs/langfuse-autohospedado.md`**, **`scripts/langfuse-dataset.js`**
 - Depende de `pesquisa-web-real` (busca centralizada). Sem dependência npm nova.
 
 ## Non-goals

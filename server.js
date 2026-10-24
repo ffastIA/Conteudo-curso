@@ -35,6 +35,7 @@ const { execFile } = require('child_process');
 const multer = require('multer');
 const mammoth = require('mammoth');
 const skills = require('./skills');
+const { obs: observabilidade } = require('./observabilidade');
 const bnccData = require('./bncc-data');
 console.log(`[BNCC] Carregado: ${bnccData.competenciasGerais.length} competências, ` +
   `${bnccData.habilidades.ef1.length} EF1, ${bnccData.habilidades.ef2.length} EF2, ` +
@@ -47,6 +48,74 @@ const {
 
 const app = express();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 6 });
+
+// Ponto único de chamada à OpenAI (change observabilidade-langfuse): toda
+// chamada passa por aqui para virar uma `generation` (modelo, parâmetros,
+// usage, finish_reason, latência, custo) no trace da requisição atual. Um teste
+// estático (tests/unit/observabilidade-wrapper.test.js) proíbe chamadas diretas
+// ao SDK fora desta função. A observabilidade nunca altera nem atrasa o
+// resultado: o retorno é exatamente o do SDK (streams são repassados chunk a
+// chunk, sem modificação).
+async function chamarOpenAI(tipo, params, options, meta = {}) {
+  const inicio = Date.now();
+  const ctx = observabilidade.contexto();
+  const nome = meta.nome || `openai.${tipo}`;
+  const parametros = {
+    max_tokens: params?.max_tokens ?? params?.max_output_tokens,
+    temperature: params?.temperature,
+    stream: !!params?.stream,
+    ferramenta: tipo === 'responses' ? 'web_search' : undefined
+  };
+  const entrada = tipo === 'responses'
+    ? { instructions: params?.instructions, input: params?.input }
+    : params?.messages;
+
+  const registrar = (r) => {
+    const resumo = observabilidade.registrarGeneration({
+      nome, modelo: params?.model, parametros, input: entrada, inicio, ...r, extra: { tentativa: meta.tentativa }
+    });
+    if (resumo) registrarGeracaoLog(ctx, resumo);
+  };
+
+  let resultado;
+  try {
+    resultado = tipo === 'responses'
+      ? await openai.responses.create(params, options)
+      : await openai.chat.completions.create(params, options);
+  } catch (err) {
+    registrar({ erro: err.message || String(err) });
+    throw err;
+  }
+
+  if (tipo === 'chat' && params?.stream) {
+    return observabilidade.envolverStream(resultado, ({ texto, usage, finishReason, erro }) =>
+      registrar({ output: texto, usage, finishReason, erro: erro ? (erro.message || String(erro)) : null }));
+  }
+  if (tipo === 'responses') {
+    let texto = '';
+    for (const item of resultado?.output || []) {
+      if (item.type !== 'message') continue;
+      for (const c of item.content || []) if (typeof c.text === 'string') texto += c.text;
+    }
+    registrar({
+      output: texto || resultado?.output_text || '',
+      usage: resultado?.usage ? {
+        prompt_tokens: resultado.usage.input_tokens || 0,
+        completion_tokens: resultado.usage.output_tokens || 0,
+        total_tokens: resultado.usage.total_tokens || 0
+      } : undefined,
+      finishReason: resultado?.status === 'incomplete' ? 'length' : 'stop'
+    });
+    return resultado;
+  }
+  registrar({
+    output: resultado?.choices?.[0]?.message?.content,
+    usage: resultado?.usage,
+    finishReason: resultado?.choices?.[0]?.finish_reason
+  });
+  return resultado;
+}
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ── Gamma (Etapa 8 — Slides) ────────────────────────────────────────────────
@@ -203,7 +272,7 @@ const SELO_SEM_PESQUISA_WEB =
 // content e annotations url_citation, mais usage) que a rota /api/search já consome.
 async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null, maxOutputTokens = 3000) {
   const timeoutSignal = makeAbortSignal(timeoutMs);
-  const resp = await openai.responses.create(
+  const resp = await chamarOpenAI('responses', 
     {
       model: skill.model,
       tools: [{ type: 'web_search', search_context_size: skill.searchContextSize || 'medium' }],
@@ -310,6 +379,25 @@ function lerPesquisaMeta(sess) {
 
 app.use(express.json());
 app.use(cookieParser());
+
+// Um trace de observabilidade por requisição /api (operação do usuário): o id da
+// requisição é o traceId (32 hex), usado também nos eventos SSE `done`. A sessão
+// do projeto vira o sessionId do trace (slug do curso, ou o cookie antes da
+// configuração). O contexto trafega por AsyncLocalStorage até chamarOpenAI.
+app.use('/api', (req, res, next) => {
+  const etapa = req.path.replace(/^\/+/, '').replace(/\//g, '_') || 'raiz';
+  const ctx = observabilidade.criarContexto({
+    etapa,
+    sessionId: () => {
+      const s = sessions[req.cookies?.sessionId];
+      return s?.config?.nome ? slugify(s.config.nome) : (req.cookies?.sessionId || null);
+    }
+  });
+  Object.defineProperty(ctx, 'sess', { enumerable: false, get: () => sessions[req.cookies?.sessionId] });
+  req.id = ctx.traceId;
+  res.on('close', () => observabilidade.finalizarContexto(ctx));
+  observabilidade.executar(ctx, next);
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Sessões em memória ──────────────────────────────────────────────────────
@@ -1165,7 +1253,7 @@ async function persistStage(sess, baseName, label, content, sites = [], fonte = 
 async function criarGeracaoGamma(payload, client = null, endpointPath = '/generations') {
   requireApiKey(GAMMA_API_KEY, 'GAMMA_API_KEY');
   const timeoutSignal = makeAbortSignal(30_000);
-  const resp = await fetch(`${GAMMA_API_BASE}${endpointPath}`, {
+  const resp = await fetchObs(`${GAMMA_API_BASE}${endpointPath}`, {
     method: 'POST',
     headers: { 'X-API-KEY': GAMMA_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1187,7 +1275,7 @@ async function aguardarGeracaoGamma(generationId, client) {
     if (client.disconnected) throw new Error('Cliente desconectado durante a geração dos slides.');
 
     const timeoutSignal = makeAbortSignal(30_000);
-    const resp = await fetch(`${GAMMA_API_BASE}/generations/${generationId}`, {
+    const resp = await fetchObs(`${GAMMA_API_BASE}/generations/${generationId}`, {
       headers: { 'X-API-KEY': GAMMA_API_KEY },
       signal: combineSignals(client.signal, timeoutSignal)
     });
@@ -1210,7 +1298,7 @@ async function aguardarGeracaoGamma(generationId, client) {
 // exportUrl é um link de download efêmero (~1 semana) sem controle de acesso;
 // nunca é logado nem devolvido ao cliente — o download acontece só aqui.
 async function persistGammaSlidesStage(sess, baseName, exportUrl) {
-  const resp = await fetch(exportUrl);
+  const resp = await fetchObs(exportUrl);
   if (!resp.ok) {
     throw new Error(`Falha ao baixar o .pptx gerado pelo Gamma (status ${resp.status}).`);
   }
@@ -1234,7 +1322,7 @@ async function listarTemplatesGamma() {
   const templates = await Promise.all(GAMMA_TEMPLATE_IDS.map(async (id) => {
     try {
       const timeoutSignal = makeAbortSignal(30_000);
-      const resp = await fetch(`${GAMMA_API_BASE}/gammas/${id}`, {
+      const resp = await fetchObs(`${GAMMA_API_BASE}/gammas/${id}`, {
         headers: { 'X-API-KEY': GAMMA_API_KEY },
         signal: timeoutSignal
       });
@@ -1265,7 +1353,7 @@ async function paginarHeygen(path, baseParams = {}, { maxPaginas = 100 } = {}) {
     const params = new URLSearchParams(baseParams);
     if (token) params.set('token', token);
     const timeoutSignal = makeAbortSignal(30_000);
-    const resp = await fetch(`${HEYGEN_API_BASE}${path}?${params.toString()}`, {
+    const resp = await fetchObs(`${HEYGEN_API_BASE}${path}?${params.toString()}`, {
       headers: { 'x-api-key': HEYGEN_API_KEY },
       signal: timeoutSignal
     });
@@ -1312,7 +1400,7 @@ function extrairListaHeygenV3(json, chaves) {
 }
 
 async function listarAvataresHeygenV3() {
-  const respGrupos = await fetch(`${HEYGEN_API_BASE}/v3/avatar_groups?include_public=false`, {
+  const respGrupos = await fetchObs(`${HEYGEN_API_BASE}/v3/avatar_groups?include_public=false`, {
     headers: { 'x-api-key': HEYGEN_API_KEY },
     signal: makeAbortSignal(30_000)
   });
@@ -1326,7 +1414,7 @@ async function listarAvataresHeygenV3() {
 
   const looksPorGrupo = [];
   for (const grupo of grupos) {
-    const resp = await fetch(`${HEYGEN_API_BASE}/v3/avatar_groups/${grupo.id}/avatars`, {
+    const resp = await fetchObs(`${HEYGEN_API_BASE}/v3/avatar_groups/${grupo.id}/avatars`, {
       headers: { 'x-api-key': HEYGEN_API_KEY },
       signal: makeAbortSignal(30_000)
     });
@@ -1350,7 +1438,7 @@ async function listarAvataresHeygenV3() {
 
 async function listarAvataresHeygenV2() {
   const timeoutSignalGrupos = makeAbortSignal(30_000);
-  const respGrupos = await fetch(`${HEYGEN_API_BASE}/v2/avatar_group.list?include_public=false`, {
+  const respGrupos = await fetchObs(`${HEYGEN_API_BASE}/v2/avatar_group.list?include_public=false`, {
     headers: { 'x-api-key': HEYGEN_API_KEY },
     signal: timeoutSignalGrupos
   });
@@ -1363,7 +1451,7 @@ async function listarAvataresHeygenV2() {
 
   const looksPorGrupo = await Promise.all(grupos.map(async (grupo) => {
     const timeoutSignal = makeAbortSignal(30_000);
-    const resp = await fetch(`${HEYGEN_API_BASE}/v2/avatar_group/${grupo.id}/avatars`, {
+    const resp = await fetchObs(`${HEYGEN_API_BASE}/v2/avatar_group/${grupo.id}/avatars`, {
       headers: { 'x-api-key': HEYGEN_API_KEY },
       signal: timeoutSignal
     });
@@ -1423,7 +1511,7 @@ async function listarVozesHeygen({ type, language, gender } = {}) {
 async function criarVideoHeygen(payload, client = null) {
   requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
   const timeoutSignal = makeAbortSignal(30_000);
-  const resp = await fetch(`${HEYGEN_API_BASE}/v3/videos`, {
+  const resp = await fetchObs(`${HEYGEN_API_BASE}/v3/videos`, {
     method: 'POST',
     headers: { 'x-api-key': HEYGEN_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1446,7 +1534,7 @@ async function aguardarVideoHeygen(videoId, client) {
     if (client.disconnected) throw new Error('Cliente desconectado durante a geração do vídeo.');
 
     const timeoutSignal = makeAbortSignal(30_000);
-    const resp = await fetch(`${HEYGEN_API_BASE}/v3/videos/${videoId}`, {
+    const resp = await fetchObs(`${HEYGEN_API_BASE}/v3/videos/${videoId}`, {
       headers: { 'x-api-key': HEYGEN_API_KEY },
       signal: combineSignals(client.signal, timeoutSignal)
     });
@@ -1466,7 +1554,7 @@ async function aguardarVideoHeygen(videoId, client) {
 // Baixa o .mp4 pronto e grava em videos/aula{NN}_video.mp4 dentro da pasta do
 // projeto — mesmo contrato de persistGammaSlidesStage, mas em videosDir().
 async function persistHeygenVideoStage(sess, baseName, videoUrl) {
-  const resp = await fetch(videoUrl);
+  const resp = await fetchObs(videoUrl);
   if (!resp.ok) {
     throw new Error(`Falha ao baixar o .mp4 gerado pelo HeyGen (status ${resp.status}).`);
   }
@@ -1486,6 +1574,7 @@ function sseHeaders(res) {
 }
 
 function send(res, obj) {
+  if (obj && obj.type === 'done') obj = enriquecerDone(obj);
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
@@ -1499,6 +1588,77 @@ function sseError(res, message) {
 
 // ── Contador global de tokens utilizados (todas as etapas/sessões) ─────────
 const tokenUsage = { prompt: 0, completion: 0, total: 0 };
+
+// Nome estável do span de uma chamada externa: provedor + método + caminho sem
+// ids (ex.: "heygen.get.v3/videos", "gamma.post.generations", "download.get.arquivo").
+function nomeSpanExterno(url, init) {
+  const prov = String(url).startsWith(GAMMA_API_BASE) ? 'gamma' : String(url).startsWith(HEYGEN_API_BASE) ? 'heygen' : 'download';
+  let seg = 'raiz';
+  try {
+    const partes = new URL(url).pathname.split('/').filter(Boolean)
+      .filter(p => !/^[0-9a-f-]{8,}$/i.test(p) && !/^[A-Za-z0-9_]{16,}$/.test(p));
+    seg = prov === 'download' ? 'arquivo' : (partes.slice(0, 3).join('/') || 'raiz');
+  } catch { /* URL inválida cai em "raiz" */ }
+  return `${prov}.${String(init?.method || 'GET').toLowerCase()}.${seg}`;
+}
+
+// fetch das integrações externas (Gamma, HeyGen e downloads) com span de
+// observabilidade (status e duração). Devolve exatamente a resposta do fetch.
+async function fetchObs(url, init) {
+  const inicio = Date.now();
+  const nome = nomeSpanExterno(url, init);
+  try {
+    const resp = await fetch(url, init);
+    observabilidade.registrarSpan({ nome, inicio, status: resp.status, erro: resp.status >= 500 ? `HTTP ${resp.status}` : null });
+    return resp;
+  } catch (err) {
+    observabilidade.registrarSpan({ nome, inicio, erro: err.message || String(err) });
+    throw err;
+  }
+}
+
+// Fecha o `done` SSE com os números reais da etapa: tokens, custo (USD) e, com
+// o Langfuse ligado, o link do trace. Só quando houve chamadas ao LLM.
+function enriquecerDone(obj) {
+  const ctx = observabilidade.contexto();
+  if (!ctx || !ctx.geracoes) return obj;
+  const traceUrl = observabilidade.urlTrace(ctx.traceId);
+  return {
+    ...obj,
+    traceId: ctx.traceId,
+    tokens: ctx.tokens.total,
+    custoUsd: ctx.custoDesconhecido && !ctx.custoUsd ? null : Number(ctx.custoUsd.toFixed(6)),
+    ...(traceUrl ? { traceUrl } : {})
+  };
+}
+
+// scr/geracao_log.json — uma linha por chamada ao LLM, com o traceId para
+// cruzar o registro local com o painel do Langfuse. Só com projeto identificável.
+function registrarGeracaoLog(ctx, resumo) {
+  const sess = ctx?.sess;
+  if (!sess || !(sess.config?.nome || sess.config?.pastaProjeto)) return;
+  try {
+    const arquivo = path.join(courseScrDir(sess), 'geracao_log.json');
+    let dados = [];
+    try { dados = JSON.parse(fs.readFileSync(arquivo, 'utf-8')); } catch { /* arquivo novo ou ilegível */ }
+    if (!Array.isArray(dados)) dados = [];
+    dados.push({
+      traceId: resumo.traceId,
+      etapa: ctx.etapa,
+      ...ctx.meta,
+      modelo: resumo.modelo,
+      tokens: resumo.usage ? { entrada: resumo.usage.prompt_tokens || 0, saida: resumo.usage.completion_tokens || 0, total: resumo.usage.total_tokens || 0 } : null,
+      finishReason: resumo.finishReason || null,
+      custoUsd: resumo.custoUsd,
+      latenciaMs: resumo.latenciaMs,
+      erro: resumo.erro,
+      em: new Date().toISOString()
+    });
+    fs.writeFileSync(arquivo, JSON.stringify(dados.slice(-2000), null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[geracao_log] não foi possível gravar geracao_log.json:', err.message);
+  }
+}
 
 function addUsage(usage, sess) {
   if (!usage) return;
@@ -1608,7 +1768,7 @@ app.get('/api/metodologia', async (req, res) => {
   const { nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade } = sess.config;
   try {
     const skill = skills.metodologiaSkill({ nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade });
-    const completion = await openai.chat.completions.create({
+    const completion = await chamarOpenAI('chat', {
       model: skill.model,
       messages: [
         { role: 'system', content: skill.system },
@@ -1644,7 +1804,7 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
         metodologia: getMetodologia(sess),
         bnccContext: sess.bncc?.ativo ? sess.bncc.itens.map(i => `${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('; ') : ''
       });
-      const completion = await openai.chat.completions.create({
+      const completion = await chamarOpenAI('chat', {
         model: skill.model,
         messages: [
           { role: 'system', content: skill.system },
@@ -1692,7 +1852,7 @@ app.get('/api/qualidade', async (req, res) => {
 
   try {
     send(res, { type: 'progress', message: 'Analisando coerência pedagógica...' });
-    const stream = await openai.chat.completions.create({
+    const stream = await chamarOpenAI('chat', {
       model: skill.model,
       stream: true,
       stream_options: { include_usage: true },
@@ -1743,28 +1903,28 @@ app.get('/api/ppc', async (req, res) => {
 
   try {
     const perfilEgressoSkill = skills.perfilEgressoSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino });
-    const perfilEgressoResp = await openai.chat.completions.create({ model: perfilEgressoSkill.model, messages: [{ role: 'system', content: perfilEgressoSkill.system }, { role: 'user', content: perfilEgressoSkill.user }] }, { signal: client.signal });
+    const perfilEgressoResp = await chamarOpenAI('chat', { model: perfilEgressoSkill.model, messages: [{ role: 'system', content: perfilEgressoSkill.system }, { role: 'user', content: perfilEgressoSkill.user }] }, { signal: client.signal });
     addUsage(perfilEgressoResp.usage, sess);
     const perfilEgresso = perfilEgressoResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Competências e Habilidades...' });
 
     const competenciasSkill = skills.competenciasSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino, bncc: sess.bncc });
-    const competenciasResp = await openai.chat.completions.create({ model: competenciasSkill.model, messages: [{ role: 'system', content: competenciasSkill.system }, { role: 'user', content: competenciasSkill.user }] }, { signal: client.signal });
+    const competenciasResp = await chamarOpenAI('chat', { model: competenciasSkill.model, messages: [{ role: 'system', content: competenciasSkill.system }, { role: 'user', content: competenciasSkill.user }] }, { signal: client.signal });
     addUsage(competenciasResp.usage, sess);
     const competencias = competenciasResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Perfil Docente...' });
 
     const perfilDocenteSkill = skills.perfilDocenteSkill({ config: sess.config, ementa: sess.ementa });
-    const perfilDocenteResp = await openai.chat.completions.create({ model: perfilDocenteSkill.model, messages: [{ role: 'system', content: perfilDocenteSkill.system }, { role: 'user', content: perfilDocenteSkill.user }] }, { signal: client.signal });
+    const perfilDocenteResp = await chamarOpenAI('chat', { model: perfilDocenteSkill.model, messages: [{ role: 'system', content: perfilDocenteSkill.system }, { role: 'user', content: perfilDocenteSkill.user }] }, { signal: client.signal });
     addUsage(perfilDocenteResp.usage, sess);
     const perfilDocente = perfilDocenteResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Infraestrutura...' });
 
     const infraestruturaSkill = skills.infraestruturaSkill({ config: sess.config, conteudo: truncate(sess.conteudo, 3000) });
-    const infraestruturaResp = await openai.chat.completions.create({ model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] }, { signal: client.signal });
+    const infraestruturaResp = await chamarOpenAI('chat', { model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] }, { signal: client.signal });
     addUsage(infraestruturaResp.usage, sess);
     const infraestrutura = infraestruturaResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
@@ -1777,7 +1937,7 @@ app.get('/api/ppc', async (req, res) => {
       perfilEgresso, competencias, perfilDocente, infraestrutura
     });
 
-    const stream = await openai.chat.completions.create({
+    const stream = await chamarOpenAI('chat', {
       model: assemblySkill.model, stream: true, stream_options: { include_usage: true },
       messages: [{ role: 'system', content: assemblySkill.system }, { role: 'user', content: assemblySkill.user }]
     }, { signal: client.signal });
@@ -1813,7 +1973,7 @@ app.get('/api/estilos-visuais', async (req, res) => {
   const { nome, publico, nivel, objetivos, modalidade } = sess.config;
   try {
     const skill = skills.estiloVisualSkill({ nome, publico, nivel, objetivos, modalidade });
-    const completion = await openai.chat.completions.create({
+    const completion = await chamarOpenAI('chat', {
       model: skill.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -2179,7 +2339,7 @@ app.get('/api/roteiro/gerar', async (req, res) => {
       bnccContext: buildPedagogicalContext(sess)
     });
 
-    const stream = await openai.chat.completions.create({
+    const stream = await chamarOpenAI('chat', {
       model: skill.model,
       stream: true,
       stream_options: { include_usage: true },
@@ -2313,7 +2473,7 @@ app.get('/api/video-avatar/roteiro/gerar', async (req, res) => {
       bnccContext: buildPedagogicalContext(sess)
     });
 
-    const stream = await openai.chat.completions.create({
+    const stream = await chamarOpenAI('chat', {
       model: skill.model,
       stream: true,
       stream_options: { include_usage: true },
@@ -2522,7 +2682,7 @@ app.get('/api/search', async (req, res) => {
     if (semWeb) {
       send(res, { type: 'progress', message: '⚠️ Gerando a partir do conhecimento do modelo (sem pesquisa web)...' });
       const fbSkill = skills.pesquisaFallbackSkill(skillArgs);
-      const completion = await openai.chat.completions.create({
+      const completion = await chamarOpenAI('chat', {
         model: fbSkill.model,
         max_tokens: 2000,
         messages: [
@@ -2550,6 +2710,7 @@ app.get('/api/search', async (req, res) => {
       for (let i = 0; i < consultas.length; i++) {
         if (client.disconnected) return;
         const consulta = consultas[i];
+        observabilidade.definirContexto({ consulta: consulta.id });
         send(res, { type: 'progress', message: `Consulta ${i + 1}/${consultas.length}: ${consulta.titulo}...` });
         const skill = skills.pesquisaWebSkill({ ...skillArgs, consulta, ano });
         modelo = skill.model;
@@ -2664,7 +2825,7 @@ app.get('/api/plano-ensino', async (req, res) => {
   });
 
   try {
-    const stream = await openai.chat.completions.create({
+    const stream = await chamarOpenAI('chat', {
       model: skill.model,
       stream: true,
       stream_options: { include_usage: true },
@@ -2736,6 +2897,7 @@ app.get('/api/plano-aula', async (req, res) => {
       if (client.disconnected) break;
 
       const aula = aulas[i];
+      observabilidade.definirContexto({ aula: i + 1 });
       const titulo = aula.titulo || `Aula ${i + 1}`;
 
       send(res, {
@@ -2759,7 +2921,7 @@ app.get('/api/plano-aula', async (req, res) => {
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
       });
 
-      const stream = await openai.chat.completions.create({
+      const stream = await chamarOpenAI('chat', {
         model: skill.model,
         stream: true,
         stream_options: { include_usage: true },
@@ -2809,7 +2971,7 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
 
   const chamarSkill = async (correcao) => {
     const skill = skills.planLessonsSkill({ nome, carga, duracao, nivel, publico, modalidade, planoEnsino, numAulas, correcao });
-    const completion = await openai.chat.completions.create({
+    const completion = await chamarOpenAI('chat', {
       model: skill.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -2861,7 +3023,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null
     stallTimer = setTimeout(() => controller.abort(), STALL_TIMEOUT_MS);
   };
 
-  const stream = await openai.chat.completions.create({
+  const stream = await chamarOpenAI('chat', {
     model: skill.model,
     stream: true,
     stream_options: { include_usage: true },
@@ -3543,6 +3705,11 @@ app.get('/api/revisao-qualidade', async (req, res) => {
           .reduce((max, o) => Math.max(max, o.similaridade / 100), 0);
         const { determ } = computeScoreDeterministico(aula.texto, aula, sobreposicaoMaxima);
         nota = computeScoreComposto(rubrica.criterios, determ).score;
+        observabilidade.registrarScore('nota_aula', nota, { comentario: `Aula ${i + 1}` });
+        observabilidade.registrarScore('determinístico', determ, { comentario: `Aula ${i + 1}` });
+        for (const [criterio, valor] of Object.entries(rubrica.criterios)) {
+          observabilidade.registrarScore(`criterio_${criterio}`, valor, { comentario: `Aula ${i + 1}` });
+        }
 
         // Âncora mecânica do nivelamento: aponta o critério de menor nota,
         // independente de o modelo ter respeitado a priorização pedida no
@@ -3886,7 +4053,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       ) {
         send(res, { type: 'progress', message: `Aula ${i + 1}: resposta cortada — solicitando continuação (tentativa ${tentativa}/${MAX_CONTINUACOES_MELHORIA})...` });
         try {
-          const cont = await openai.chat.completions.create(
+          const cont = await chamarOpenAI('chat', 
             {
               model: skill.model,
               max_tokens: MAX_TOKENS_AULA,
@@ -3996,7 +4163,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
             publico: sess.config.publico,
             modalidade: sess.config.modalidade
           });
-          const completionScore = await openai.chat.completions.create({
+          const completionScore = await chamarOpenAI('chat', {
             model: skillScore.model,
             response_format: skillScore.response_format,
             messages: [
@@ -4012,6 +4179,8 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           scoreOriginal = computeScoreComposto(julgamento.original, determOriginal).score;
           scoreCandidato = computeScoreComposto(julgamento.candidato, determCandidato).score;
           aceita = scoreCandidato >= scoreOriginal + EPSILON_ACEITE;
+          observabilidade.registrarScore('score_original', scoreOriginal, { comentario: `Aula ${i + 1}` });
+          observabilidade.registrarScore('score_candidato', scoreCandidato, { comentario: `Aula ${i + 1}` });
           console.log(`[melhorias] aula ${i + 1}: score original=${scoreOriginal} candidato=${scoreCandidato} aceita=${aceita}`);
         } catch (e) {
           console.error(`[melhorias] aula ${i + 1}: falha no julgamento de score:`, e.message);
@@ -4115,7 +4284,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
               melhorias: observacoes[i]?.melhorias,
               metodologia: getMetodologia(sess), bnccContext
             });
-            const completion = await openai.chat.completions.create({
+            const completion = await chamarOpenAI('chat', {
               model: skill.model,
               messages: [
                 { role: 'system', content: skill.system },
@@ -4584,6 +4753,7 @@ module.exports.parseSecoesFixas = parseSecoesFixas;
 module.exports.removerEcoTitulo = removerEcoTitulo;
 module.exports.buildDocx = buildDocx;
 module.exports.limparUrlFonte = limparUrlFonte;
+module.exports.obs = observabilidade;
 module.exports.validarModeloPesquisa = validarModeloPesquisa;
 module.exports.lerPesquisaMeta = lerPesquisaMeta;
 module.exports.avaliarFontesPesquisa = avaliarFontesPesquisa;

@@ -160,6 +160,27 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+// Custo real da etapa (tokens e USD, calculados no servidor a partir do usage)
+// e, com o Langfuse ligado, o link do trace — enviados no evento `done`.
+function mostrarCustoEtapa(panel, msg) {
+  if (!panel || !msg || !msg.traceId || typeof msg.custoUsd === 'undefined') return;
+  const custo = msg.custoUsd === null ? 'custo indisponível (modelo sem preço cadastrado)' : `US$ ${msg.custoUsd.toFixed(4)}`;
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.appendChild(document.createTextNode(`💲 Custo desta etapa: ${custo} · ${(msg.tokens || 0).toLocaleString('pt-BR')} tokens`));
+  if (/^https?:\/\//.test(msg.traceUrl || '')) {
+    div.appendChild(document.createTextNode(' · '));
+    const a = document.createElement('a');
+    a.href = msg.traceUrl;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = 'ver trace no Langfuse';
+    div.appendChild(a);
+  }
+  panel.appendChild(div);
+  panel.scrollTop = panel.scrollHeight;
+}
+
 // ── SSE streaming genérico ───────────────────────────────────────────────────
 function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
   const resultArea = document.getElementById(resultEl);
@@ -207,6 +228,7 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
     } else if (msg.type === 'done') {
       cancelScheduledRender();
       clearSpinner(logPanel);
+      mostrarCustoEtapa(logPanel, msg);
       fullText = msg.fullText;
       resultArea.innerHTML = renderMarkdown(fullText);
       resultArea.scrollTop = resultArea.scrollHeight;

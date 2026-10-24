@@ -1,0 +1,9 @@
+{
+  "vigencia": "2026-10-24",
+  "moeda": "USD",
+  "observacao": "Preço por 1 milhão de tokens. Chaves casam por prefixo do nome do modelo (a mais longa vence). Não inclui o custo por chamada da ferramenta web_search. Ajuste conforme a tabela vigente da OpenAI.",
+  "porMilhaoDeTokens": {
+    "gpt-4o": { "entrada": 2.5, "saida": 10 },
+    "gpt-4o-mini": { "entrada": 0.15, "saida": 0.6 }
+  }
+}

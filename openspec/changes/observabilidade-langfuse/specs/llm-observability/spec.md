@@ -7,6 +7,13 @@ O sistema SHALL integrar com o Langfuse por módulo próprio usando `fetch` nati
 - **WHEN** `LANGFUSE_PUBLIC_KEY` ou `LANGFUSE_SECRET_KEY` não estão definidas
 - **THEN** nenhuma requisição ao Langfuse é feita e a geração funciona normalmente
 
+### Requirement: Transporte OTLP para o Langfuse autohospedado
+O envio SHALL usar OTLP/HTTP JSON em `POST {LANGFUSE_HOST}/api/public/otel/v1/traces` com `Authorization: Basic` (chave pública:secreta) e `x-langfuse-ingestion-version: 4`, mapeando generations e spans para os atributos `langfuse.*`, e SHALL enviar notas de qualidade por `POST /api/public/scores`.
+
+#### Scenario: Envio de uma generation
+- **WHEN** uma generation é enviada
+- **THEN** a requisição vai ao endpoint OTLP com os cabeçalhos exigidos e o span contém modelo, `usage_details` e `cost_details`
+
 ### Requirement: Falha do Langfuse não afeta a geração
 O envio SHALL usar fila assíncrona em lote com timeout curto e flush no encerramento; erros do Langfuse SHALL gerar apenas aviso no log local e SHALL NOT interromper nem atrasar uma geração.
 
