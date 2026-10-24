@@ -91,8 +91,10 @@ const HEYGEN_VOICE_IDS = parseCsvEnv(process.env.HEYGEN_VOICE_IDS);
 // ao anterior a esta feature).
 const GAMMA_TEMPLATE_IDS = parseCsvEnv(process.env.GAMMA_TEMPLATE_IDS);
 
-const SEARCH_TIMEOUT_MS = 45_000;
-const SEARCH_RETRY_TIMEOUT_MS = 30_000;
+const SEARCH_TIMEOUT_MS = 90_000;
+const SEARCH_RETRY_TIMEOUT_MS = 60_000;
+// Novas tentativas da mesma consulta de pesquisa após falha transitória.
+const PESQUISA_MAX_RETENTATIVAS = 2;
 const SEARCH_FALLBACK_TIMEOUT_MS = 30_000;
 const STALL_TIMEOUT_MS = 45_000;
 const CONTEUDO_SEARCH_TIMEOUT_MS = 90_000;
@@ -108,6 +110,7 @@ const MAX_CONTINUACOES_MELHORIA = 2;
 function isRetriable(err) {
   if (err instanceof OpenAI.AuthenticationError) return false;
   if (err instanceof OpenAI.BadRequestError) return false;
+  if (err?.configInvalida) return false;
   return true;
 }
 
@@ -198,7 +201,7 @@ const SELO_SEM_PESQUISA_WEB =
 // foi descontinuado (404) — ver docs/decisoes/pesquisa-api.md. O retorno é
 // normalizado para o formato de chat.completions (choices[0].message com
 // content e annotations url_citation, mais usage) que a rota /api/search já consome.
-async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null) {
+async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null, maxOutputTokens = 3000) {
   const timeoutSignal = makeAbortSignal(timeoutMs);
   const resp = await openai.responses.create(
     {
@@ -206,7 +209,7 @@ async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null) {
       tools: [{ type: 'web_search', search_context_size: skill.searchContextSize || 'medium' }],
       instructions: skill.system,
       input: skill.user,
-      max_output_tokens: 4000
+      max_output_tokens: maxOutputTokens
     },
     { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
   );
@@ -232,6 +235,77 @@ async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null) {
       total_tokens: resp.usage.total_tokens || 0
     } : undefined
   };
+}
+
+// Execução de uma consulta de pesquisa web com timeout e até PESQUISA_MAX_RETENTATIVAS
+// novas tentativas em falhas transitórias. Erro 400 (modelo/parâmetro de busca
+// rejeitado) é configuração inválida: mensagem clara, sem retentativa e sem
+// fallback automático.
+async function executarPesquisaWeb(skill, { clientCtx = null, onRetry = null, maxOutputTokens = 3000 } = {}) {
+  let ultimoErro = null;
+  for (let tentativa = 0; tentativa <= PESQUISA_MAX_RETENTATIVAS; tentativa++) {
+    try {
+      return await tentarPesquisaWeb(skill, tentativa === 0 ? SEARCH_TIMEOUT_MS : SEARCH_RETRY_TIMEOUT_MS, clientCtx, maxOutputTokens);
+    } catch (err) {
+      if (err instanceof OpenAI.BadRequestError) {
+        const invalida = new Error(
+          `Configuração de pesquisa inválida: o modelo "${skill.model}" ou o parâmetro de busca web foi rejeitado ` +
+          `pela API (${err.message}). Verifique OPENAI_RESEARCH_MODEL.`
+        );
+        invalida.configInvalida = true;
+        throw invalida;
+      }
+      if (clientCtx?.disconnected || !isRetriable(err)) throw err;
+      ultimoErro = err;
+      if (tentativa < PESQUISA_MAX_RETENTATIVAS && onRetry) onRetry(tentativa + 1);
+    }
+  }
+  throw ultimoErro;
+}
+
+// Aviso de inicialização: modelo de pesquisa que provavelmente não aceita a
+// ferramenta web_search (descontinuado ou fora das famílias que a suportam).
+function validarModeloPesquisa(modelo = skills.modeloPesquisa()) {
+  if (/search-preview/i.test(modelo)) {
+    return `OPENAI_RESEARCH_MODEL="${modelo}" foi descontinuado pela OpenAI — use um modelo como gpt-4o (Responses API + web_search).`;
+  }
+  if (!/^(gpt-4|gpt-5|o3|o4)/i.test(modelo)) {
+    return `OPENAI_RESEARCH_MODEL="${modelo}" pode não suportar a ferramenta web_search — a Etapa 2 pode falhar.`;
+  }
+  return null;
+}
+
+// ── Resultado estruturado da pesquisa (scr/pesquisa.json) ───────────────────
+// Além do .txt/.docx, guarda consultas, fontes (com id, url, título, domínio)
+// e achados por consulta, para as etapas seguintes citarem fontes por id.
+// Projetos antigos (só pesquisa.txt) são lidos como { status: 'legado' }.
+function dominioDe(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
+
+function escreverPesquisaMeta(sess, meta) {
+  const scrDir = courseScrDir(sess);
+  const destino = path.join(scrDir, 'pesquisa.json');
+  const tmp = `${destino}.tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(meta, null, 2), 'utf-8');
+    fs.renameSync(tmp, destino);
+  } catch (err) {
+    console.error('[pesquisa] Erro ao gravar pesquisa.json:', err.message);
+    try { fs.unlinkSync(tmp); } catch { /* temporário ausente */ }
+    return;
+  }
+  sess.pesquisaMeta = meta;
+}
+
+function lerPesquisaMeta(sess) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'pesquisa.json'), 'utf-8'));
+  } catch { /* ausente ou inválido — cai no legado */ }
+  if (readMemory(sess, 'pesquisa')) {
+    return { status: 'legado', fonte: 'legado', modelo: null, geradoEm: null, consultas: [], fontes: [], achados: [] };
+  }
+  return null;
 }
 
 app.use(express.json());
@@ -2406,11 +2480,15 @@ app.post('/api/config', async (req, res) => {
 });
 
 // ── GET /api/search (SSE) ───────────────────────────────────────────────────
-// Pesquisa web real: só grava pesquisa.txt/.docx quando a busca devolve
-// citações suficientes (≥3 fontes em ≥2 domínios). Sem isso — ou se a busca
-// falhar — emite `error` com `semPesquisaDisponivel` e NÃO grava nada; o
-// fallback para o conhecimento do modelo só roda por decisão explícita do
-// usuário (`?semBusca=1`) e grava o texto com selo e fonte 'modelo_sem_busca'.
+// Pesquisa web real em 4–5 consultas focadas (mercado, ferramentas/documentação,
+// referências didáticas, certificações e, com BNCC ativa, referências
+// educacionais). Só grava pesquisa.txt/.docx/.json quando as consultas devolvem
+// citações suficientes (≥3 fontes em ≥2 domínios); consulta sem nenhuma
+// citação conta como falha (a resposta veio de memória). Sem isso — ou se a
+// busca falhar — emite `error` (status 'falhou', `semPesquisaDisponivel`) e
+// NÃO grava nada; o fallback para o conhecimento do modelo só roda por decisão
+// explícita do usuário (`?semBusca=1`) e grava o texto com selo, status
+// 'sem_web' e fonte 'modelo_sem_busca'.
 app.get('/api/search', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
@@ -2426,23 +2504,25 @@ app.get('/api/search', async (req, res) => {
   // Skill de pesquisa na internet — usa o modelo com capacidade de busca web
   // (Responses API + web_search) e referencia a ementa já gerada para manter o foco.
   const skillArgs = { nome, nivel, publico, modalidade, topicos, ementa: sess.ementa, metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess) };
-  const skill = skills.pesquisaWebSkill(skillArgs);
 
   // Falha de pesquisa: nada é gravado; a UI oferece "tentar novamente" e
   // "continuar sem pesquisa web" (exceto chave inválida, que o fallback não resolve).
   const falhaPesquisa = (message, err = null) => send(res, {
     type: 'error',
     message,
+    status: 'falhou',
     semPesquisaDisponivel: !(err instanceof OpenAI.AuthenticationError)
   });
 
   try {
-    let completion = null;
+    let fullText = '';
+    let meta = null;
+    const sitesCollected = [];
 
     if (semWeb) {
       send(res, { type: 'progress', message: '⚠️ Gerando a partir do conhecimento do modelo (sem pesquisa web)...' });
       const fbSkill = skills.pesquisaFallbackSkill(skillArgs);
-      completion = await openai.chat.completions.create({
+      const completion = await openai.chat.completions.create({
         model: fbSkill.model,
         max_tokens: 2000,
         messages: [
@@ -2450,36 +2530,72 @@ app.get('/api/search', async (req, res) => {
           { role: 'user', content: fbSkill.user }
         ]
       }, { signal: combineSignals(client.signal, makeAbortSignal(SEARCH_FALLBACK_TIMEOUT_MS)) });
+      if (client.disconnected) return;
+      addUsage(completion.usage, sess);
+      fullText = SELO_SEM_PESQUISA_WEB + (completion.choices[0]?.message?.content || '');
+      meta = {
+        status: 'sem_web', fonte: 'modelo_sem_busca', modelo: fbSkill.model,
+        geradoEm: new Date().toISOString(), consultas: [], fontes: [], achados: []
+      };
     } else {
-      send(res, { type: 'progress', message: 'Buscando na web...' });
-      // Tentativa 1 com timeout completo; 1 retentativa com timeout reduzido
-      try {
-        completion = await tentarPesquisaWeb(skill, SEARCH_TIMEOUT_MS, client);
-      } catch (err1) {
-        if (!isRetriable(err1)) throw err1;
-        send(res, { type: 'progress', message: 'Reconectando...' });
-        completion = await tentarPesquisaWeb(skill, SEARCH_RETRY_TIMEOUT_MS, client);
+      const ano = new Date().getFullYear();
+      const consultas = skills.planejarConsultasPesquisa({ nome, nivel, publico, topicos, bnccAtivo: !!sess.bncc?.ativo, ano });
+      const fontes = [];
+      const fontePorUrl = new Map();
+      const achados = [];
+      const secoes = [];
+      let ultimoErro = null;
+      let modelo = skills.modeloPesquisa();
+
+      for (let i = 0; i < consultas.length; i++) {
+        if (client.disconnected) return;
+        const consulta = consultas[i];
+        send(res, { type: 'progress', message: `Consulta ${i + 1}/${consultas.length}: ${consulta.titulo}...` });
+        const skill = skills.pesquisaWebSkill({ ...skillArgs, consulta, ano });
+        modelo = skill.model;
+
+        let completion;
+        try {
+          completion = await executarPesquisaWeb(skill, {
+            clientCtx: client,
+            onRetry: () => send(res, { type: 'progress', message: 'Reconectando...' })
+          });
+        } catch (err) {
+          // Erro de configuração/chave afeta todas as consultas: interrompe já.
+          if (err.configInvalida || err instanceof OpenAI.AuthenticationError || client.disconnected) throw err;
+          ultimoErro = err;
+          send(res, { type: 'progress', message: `⚠️ Consulta "${consulta.titulo}" falhou: ${err.message}` });
+          continue;
+        }
+        addUsage(completion.usage, sess);
+
+        const message = completion.choices[0]?.message || {};
+        const texto = (message.content || '').trim();
+        const fonteIds = new Set();
+        for (const ann of message.annotations || []) {
+          if (ann.type !== 'url_citation' || !ann.url_citation?.url) continue;
+          const url = limparUrlFonte(ann.url_citation.url);
+          if (!fontePorUrl.has(url)) {
+            const fonte = { id: `f${fontes.length + 1}`, url, titulo: ann.url_citation.title || url, dominio: dominioDe(url), consultaId: consulta.id };
+            fontes.push(fonte);
+            fontePorUrl.set(url, fonte);
+          }
+          fonteIds.add(fontePorUrl.get(url).id);
+        }
+        // Resposta sem nenhuma citação veio da memória do modelo: não conta.
+        if (!fonteIds.size || !texto) {
+          send(res, { type: 'progress', message: `⚠️ Consulta "${consulta.titulo}" não retornou fontes — descartada.` });
+          continue;
+        }
+        secoes.push(`## ${consulta.titulo}\n\n${texto}`);
+        achados.push({ tema: consulta.titulo, resumo: texto, fonteIds: [...fonteIds] });
       }
-    }
-    if (client.disconnected) return;
+      if (client.disconnected) return;
 
-    addUsage(completion.usage, sess);
-
-    const message = completion.choices[0]?.message || {};
-    const textoBruto = message.content || '';
-
-    const sitesCollected = [];
-    if (!semWeb) {
-      const vistos = new Set();
-      for (const ann of message.annotations || []) {
-        if (ann.type !== 'url_citation' || !ann.url_citation?.url) continue;
-        const url = limparUrlFonte(ann.url_citation.url);
-        if (vistos.has(url)) continue;
-        vistos.add(url);
-        sitesCollected.push({ url, title: ann.url_citation.title || url });
-      }
+      for (const f of fontes) sitesCollected.push({ url: f.url, title: f.titulo });
       const avaliacao = avaliarFontesPesquisa(sitesCollected);
-      if (!avaliacao.ok) {
+      if (!achados.length || !avaliacao.ok) {
+        if (!achados.length && ultimoErro) throw ultimoErro;
         const motivo = sitesCollected.length === 0
           ? 'A busca não retornou nenhuma fonte (a resposta pode ter vindo apenas da memória do modelo).'
           : `A busca retornou poucas fontes (${avaliacao.fontes} fonte(s) em ${avaliacao.dominios} domínio(s); mínimo ${PESQUISA_MIN_FONTES} em ${PESQUISA_MIN_DOMINIOS}).`;
@@ -2487,11 +2603,17 @@ app.get('/api/search', async (req, res) => {
         falhaPesquisa(`${motivo} Nada foi gravado. Tente novamente ou continue sem pesquisa web.`);
         return;
       }
+
       send(res, { type: 'progress', message: 'Lendo fontes...' });
       for (const site of sitesCollected) send(res, { type: 'site', ...site });
-    }
 
-    const fullText = semWeb ? SELO_SEM_PESQUISA_WEB + textoBruto : textoBruto;
+      fullText = secoes.join('\n\n') +
+        '\n\n## Fontes consultadas\n' + fontes.map(f => `- [${f.id}] ${f.titulo} — ${f.url}`).join('\n');
+      meta = {
+        status: 'web', fonte: 'ia', modelo, geradoEm: new Date().toISOString(),
+        consultas: consultas.map(c => ({ id: c.id, texto: c.foco })), fontes, achados
+      };
+    }
 
     // Simula streaming progressivo do texto para manter a UX em tempo real
     const CHUNK_SIZE = 24;
@@ -2504,9 +2626,10 @@ app.get('/api/search', async (req, res) => {
 
     send(res, { type: 'progress', message: 'Sintetizando...' });
     sess.pesquisa = fullText;
-    await persistStage(sess, 'pesquisa', 'Pesquisa Web', fullText, sitesCollected, semWeb ? 'modelo_sem_busca' : 'ia');
+    await persistStage(sess, 'pesquisa', 'Pesquisa Web', fullText, sitesCollected, meta.fonte);
+    escreverPesquisaMeta(sess, meta);
     send(res, { type: 'progress', message: 'Concluído' });
-    send(res, { type: 'done', fullText });
+    send(res, { type: 'done', fullText, status: meta.status });
   } catch (err) {
     if (client.disconnected) {
       console.warn('[sse] cliente desconectou durante a pesquisa web — interrompendo /api/search');
@@ -3028,6 +3151,10 @@ app.post('/api/carregar-projeto', (req, res) => {
     if (txt) { sess[sessField] = txt; etapasCarregadas.push(baseName); }
   }
 
+  // pesquisa.json (resultado estruturado da Etapa 2); ausente em projetos
+  // antigos → status 'legado' (fluxo antigo continua funcionando).
+  sess.pesquisaMeta = lerPesquisaMeta(sess);
+
   // Autocura: projeto.json com "aulas": [] mas conteúdo já gerado em disco —
   // reconstrói sess.aulas a partir dos próprios arquivos aula{NN}_conteudo.txt.
   if (!sess.aulas?.length) {
@@ -3058,7 +3185,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, ...(avisoCorrompido ? { aviso: avisoCorrompido, ...(backupCorrompido ? { backup: backupCorrompido } : {}) } : {}), etapasCarregadas, camposFaltantes, stages, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
+  res.json({ ok: true, ...(avisoCorrompido ? { aviso: avisoCorrompido, ...(backupCorrompido ? { backup: backupCorrompido } : {}) } : {}), etapasCarregadas, camposFaltantes, stages, pesquisaMeta: sess.pesquisaMeta || null, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────
@@ -3166,6 +3293,11 @@ app.post('/api/importar/confirmar', async (req, res) => {
     }
 
     saveProject(sess, { baseName: stage, fonte: 'usuario' });
+    if (stage === 'pesquisa') {
+      // Versão do usuário: mantém consultas/fontes/achados originais.
+      const base = lerPesquisaMeta(sess) || { status: 'legado', modelo: null, geradoEm: null, consultas: [], fontes: [], achados: [] };
+      escreverPesquisaMeta(sess, { ...base, fonte: 'usuario', editadoEm: new Date().toISOString() });
+    }
     res.json({ ok: true, stage });
   } catch (err) {
     res.status(500).json({ error: 'Erro ao salvar: ' + err.message });
@@ -4422,6 +4554,8 @@ else:
 // ── Start ───────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
+  const avisoModelo = validarModeloPesquisa();
+  if (avisoModelo) console.warn(`[pesquisa] ${avisoModelo}`);
   app.listen(PORT, () => {
     console.log(`Servidor rodando em http://localhost:${PORT}`);
   });
@@ -4450,6 +4584,8 @@ module.exports.parseSecoesFixas = parseSecoesFixas;
 module.exports.removerEcoTitulo = removerEcoTitulo;
 module.exports.buildDocx = buildDocx;
 module.exports.limparUrlFonte = limparUrlFonte;
+module.exports.validarModeloPesquisa = validarModeloPesquisa;
+module.exports.lerPesquisaMeta = lerPesquisaMeta;
 module.exports.avaliarFontesPesquisa = avaliarFontesPesquisa;
 module.exports.Packer = Packer;
 module.exports.textSimilarity = textSimilarity;

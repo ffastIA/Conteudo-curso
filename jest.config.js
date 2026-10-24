@@ -4,7 +4,7 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.js'],
   coverageThreshold: {
-    global: { lines: 40 }
+    global: { lines: 60 }
   },
   collectCoverageFrom: [
     'server.js',

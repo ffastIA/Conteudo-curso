@@ -172,22 +172,75 @@ const NIVEL_PESO_ALTO =
   'na definição de profundidade, vocabulário e complexidade do que você produzir — subordinado ' +
   'apenas à Metodologia Pedagógica definida para o curso.';
 
-const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext, modalidade }) => ({
-  model: MODEL_RESEARCH,
+// Modelo de pesquisa web: configurável por OPENAI_RESEARCH_MODEL (lido na hora
+// da chamada, depois do dotenv); padrão MODEL_RESEARCH. Ver
+// docs/decisoes/pesquisa-api.md — a Responses API com web_search funciona com gpt-4o.
+function modeloPesquisa() {
+  return (process.env.OPENAI_RESEARCH_MODEL || '').trim() || MODEL_RESEARCH;
+}
+
+// Planeja de 4 a 5 consultas focadas (mercado/tendências, ferramentas e
+// documentação oficial, referências didáticas, certificações e — com BNCC
+// ativa — referências educacionais). O ano vem do relógio, nunca fixo no texto.
+function planejarConsultasPesquisa({ nome, nivel, publico, topicos, bnccAtivo = false, ano = new Date().getFullYear() }) {
+  const extra = topicos && String(topicos).trim() ? ` Tópicos extras a cobrir: ${String(topicos).trim()}.` : '';
+  const consultas = [
+    {
+      id: 'c1',
+      titulo: 'Mercado e tendências',
+      foco: `Panorama do mercado e tendências atuais (${ano}) relacionados a "${nome}": demanda por profissionais, ` +
+        `áreas de aplicação e direções da tecnologia.${extra}`
+    },
+    {
+      id: 'c2',
+      titulo: 'Ferramentas, versões e documentação oficial',
+      foco: `Ferramentas, linguagens e versões atuais (${ano}) usadas em "${nome}", com links para a documentação ` +
+        `oficial e guias de início adequados ao nível ${nivel}.`
+    },
+    {
+      id: 'c3',
+      titulo: 'Referências didáticas',
+      foco: `Livros, cursos de instituições reconhecidas e materiais didáticos de referência para ensinar "${nome}" ` +
+        `a ${publico} (nível ${nivel}).`
+    },
+    {
+      id: 'c4',
+      titulo: 'Certificações',
+      foco: `Certificações profissionais e normas reconhecidas relacionadas a "${nome}", com entidade emissora e requisitos.`
+    }
+  ];
+  if (bnccAtivo) {
+    consultas.push({
+      id: 'c5',
+      titulo: 'Referências educacionais',
+      foco: `Referências educacionais oficiais e boas práticas pedagógicas para ${publico} em cursos como "${nome}".`
+    });
+  }
+  return consultas;
+}
+
+// Uma consulta por chamada: `consulta` (de planejarConsultasPesquisa) define o
+// foco; sem ela o prompt cobre o tema de forma geral (compatibilidade).
+const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext, modalidade, consulta, ano = new Date().getFullYear() }) => ({
+  model: modeloPesquisa(),
   searchContextSize: 'medium',
   system:
-    'Você é especialista em educação tecnológica. Pesquise e sintetize ' +
+    'Você é especialista em educação tecnológica. Pesquise na web e sintetize ' +
     'conteúdos relevantes para cursos técnicos. Responda em português. ' +
-    'Cite as fontes consultadas.',
+    'Priorize fontes primárias (documentação oficial, normas, livros, instituições de ensino e pesquisa) ' +
+    'e descarte blogs genéricos quando houver fonte melhor. Cite as fontes consultadas.',
   user:
-    `Pesquise conteúdos atuais para um curso de formação tecnológica:\n` +
+    `Pesquise conteúdos atuais (${ano}) para um curso de formação tecnológica:\n` +
     `Curso: ${nome}\nNível: ${nivel}\nPúblico: ${publico}\n` +
     (modalidade ? `Modalidade: ${modalidade} — considere recursos e práticas compatíveis com essa modalidade na pesquisa.\n` : '') +
     nivelBlock(nivel, 'pesquisa') +
     (ementa ? `Ementa do curso (referência): ${ementa}\n` : '') +
     `Tópicos extras: ${topicos || 'nenhum'}\n\n` +
-    `Forneça: principais tópicos do mercado, referências, ferramentas, ` +
-    `tendências 2024-2025 e certificações relevantes.` +
+    (consulta
+      ? `Foco desta consulta — ${consulta.titulo}: ${consulta.foco}\n` +
+        `Responda apenas sobre esse foco, de forma objetiva, e informe a fonte de cada afirmação relevante.`
+      : `Forneça: principais tópicos do mercado, referências, ferramentas, ` +
+        `tendências atuais (${ano}) e certificações relevantes.`) +
     pedagCtxBlock(metodologia, bnccContext)
 });
 
@@ -903,6 +956,8 @@ const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, me
 
 module.exports = {
   MODEL_RESEARCH,
+  modeloPesquisa,
+  planejarConsultasPesquisa,
   MODEL_ECONOMY,
   summarizeLessons,
   MODALIDADE_DIRETRIZES,
