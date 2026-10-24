@@ -189,6 +189,16 @@ textarea { resize: vertical; min-height: 80px; }
 .result-area ul { padding-left: 20px; }
 .result-area li { margin: 3px 0; }
 .result-area strong { color: #3a2d70; }
+.result-area ol { padding-left: 22px; }
+.result-area em { font-style: italic; }
+.result-area code { font-family: Consolas, 'Courier New', monospace; font-size: .88em; background: #f2f2f2; padding: 1px 4px; border-radius: 3px; }
+.result-area pre { background: #f2f2f2; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+.result-area pre code { background: none; padding: 0; }
+.result-area table { border-collapse: collapse; margin: 10px 0; width: 100%; font-size: .9rem; }
+.result-area th, .result-area td { border: 1px solid #ccc; padding: 5px 8px; text-align: left; vertical-align: top; }
+.result-area th { background: #e8e8f4; color: #3a2d70; }
+.result-area a { color: #0563c1; word-break: break-all; }
+.result-area hr { border: 0; border-top: 1px solid #ccc; margin: 12px 0; }
 
 /* ── Banner ── */
 .banner-done {

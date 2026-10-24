@@ -38,6 +38,7 @@ const skills = require('./skills');
 const { obs: observabilidade } = require('./observabilidade');
 const { criarLogger } = require('./logger');
 const custo = require('./custo');
+const docxMarkdown = require('./docx-markdown');
 const logger = criarLogger({ contexto: () => observabilidade.contexto() });
 const conteudoSecoes = require('./conteudo-secoes');
 const fundamentacao = require('./fundamentacao');
@@ -659,12 +660,8 @@ function buildPedagogicalContext(sess) {
   if (metodologia) {
     parts.push(`## Metodologia Pedagógica\n${metodologia}`);
   }
-  if (sess.bncc?.ativo && sess.bncc.itens?.length) {
-    const itensStr = sess.bncc.itens
-      .map(item => `- ${item.codigo ? `[${item.codigo}] ` : ''}${item.descricao}`)
-      .join('\n');
-    parts.push(`## Alinhamento BNCC — ${sess.bncc.nivel === 'competencias' ? 'Competências Gerais' : sess.bncc.nivel?.toUpperCase()}\n${itensStr}`);
-  }
+  const bncc = skills.bnccBlock(sess.bncc);
+  if (bncc) parts.push(bncc);
   return parts.join('\n\n');
 }
 
@@ -2367,14 +2364,23 @@ app.post('/api/heygen/config', (req, res) => {
 // mesmo padrão de duas fases já usado na Etapa 9 (Roteiros): monta parâmetros
 // (sem IA) → aprova → gera via SSE, com avanço automático entre aulas.
 
-// Instrução fixa enviada em toda geração via template (modo
-// POST /generations/from-template), antes de qualquer conteúdo específico
-// da aula — preserva os elementos de marca fixos do template (logo etc.)
-// independentemente do que a IA decidir sobre o resto do conteúdo.
-const GAMMA_TEMPLATE_PROMPT_FIXO =
-  'Preserve as logo do na parte superior direita e inferior esquerda. Essa logos sempre devem estar presentes e na mesma posição. ' +
-  'Altere apenas os textos dentro dos cards e insira imagens que tenham relação com o tema, nas quadros reservados para as imagens. ' +
-  'A explicação de cada imagem deve ficar na caixa de texto abaixo da respectiva imagem.';
+// Instrução específica de cada template Gamma (modo POST /generations/from-template),
+// enviada antes do conteúdo da aula — por exemplo para preservar elementos de marca
+// (logo etc.) do template. Vem de GAMMA_TEMPLATE_PROMPTS, um JSON
+// {"<templateId>": "instrução"}; template sem entrada não recebe instrução fixa.
+// O código não carrega instruções de nenhuma marca.
+function instrucaoTemplateGamma(templateId, env = process.env) {
+  const bruto = (env.GAMMA_TEMPLATE_PROMPTS || '').trim();
+  if (!bruto || !templateId) return '';
+  try {
+    const mapa = JSON.parse(bruto);
+    const texto = mapa && typeof mapa === 'object' ? mapa[templateId] : '';
+    return typeof texto === 'string' ? texto.trim() : '';
+  } catch {
+    logger.warn('[slides] GAMMA_TEMPLATE_PROMPTS não é um JSON válido — nenhuma instrução de template será enviada.');
+    return '';
+  }
+}
 
 // GET /api/slides/templates — resolve os templates Gamma configurados em
 // GAMMA_TEMPLATE_IDS (nome via API); lista vazia quando não configurada,
@@ -2481,7 +2487,7 @@ app.get('/api/slides/gerar', async (req, res) => {
     const payload = sess.slidesTemplate ? {
       gammaId: sess.slidesTemplate.id,
       prompt: [
-        GAMMA_TEMPLATE_PROMPT_FIXO,
+        ...(instrucaoTemplateGamma(sess.slidesTemplate.id) ? [instrucaoTemplateGamma(sess.slidesTemplate.id)] : []),
         `Público-alvo: ${sess.config.publico || 'não especificado'}. Nível do curso: ${sess.config.nivel || 'não especificado'} — ` +
           `adeque a densidade de informação e o vocabulário a esse nível, com tom leve, descontraído e acolhedor, adequado à faixa etária do público-alvo.`,
         `Gere exatamente ${quantidade} card(s) de conteúdo para esta aula, além dos cards fixos do template.`,
@@ -3580,7 +3586,7 @@ app.get('/api/estimativa', (req, res) => {
   }
   const estimativa = custo.estimarEtapa(etapa, {
     unidades,
-    modelos: { pesquisa: skills.modeloPesquisa(), economia: skills.MODEL_ECONOMY }
+    modelos: { pesquisa: skills.modeloPesquisa(), economia: skills.modeloEconomia() }
   });
   res.json({
     ...estimativa,
@@ -4782,57 +4788,16 @@ function buildDocx(config, stepLabel, content, sites = []) {
     new Paragraph({ text: '', pageBreakBefore: true })
   );
 
-  // Converte markdown simples em parágrafos docx
-  const lines = content.split('\n');
-  for (const line of lines) {
-    if (line.trim() === '<!--PAGEBREAK-->') {
-      children.push(new Paragraph({ text: '', pageBreakBefore: true }));
-      continue;
-    }
+  // Markdown → elementos docx (títulos, listas, tabelas, código, itálico, links)
+  children.push(...docxMarkdown.blocosParaDocx(content));
 
-    if (!line.trim()) {
-      children.push(new Paragraph({ text: '' }));
-      continue;
-    }
-
-    if (line.startsWith('# ')) {
-      children.push(new Paragraph({ text: line.slice(2), heading: HeadingLevel.HEADING_1 }));
-    } else if (line.startsWith('## ')) {
-      children.push(new Paragraph({ text: line.slice(3), heading: HeadingLevel.HEADING_2 }));
-    } else if (line.startsWith('### ')) {
-      children.push(new Paragraph({ text: line.slice(4), heading: HeadingLevel.HEADING_3 }));
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      children.push(
-        new Paragraph({
-          text: line.slice(2),
-          bullet: { level: 0 }
-        })
-      );
-    } else {
-      // Processa negrito inline **texto**
-      const parts = line.split(/\*\*(.*?)\*\*/g);
-      const runs = parts.map((p, i) =>
-        new TextRun({ text: p, bold: i % 2 === 1 })
-      );
-      children.push(new Paragraph({ children: runs }));
-    }
-  }
-
-  // Sites consultados (etapa pesquisa)
+  // Sites consultados (etapa pesquisa), com a URL como hiperlink
   if (sites.length > 0) {
     children.push(
       new Paragraph({ text: '' }),
-      new Paragraph({ text: 'Fontes Consultadas', heading: HeadingLevel.HEADING_2 })
+      new Paragraph({ text: 'Fontes Consultadas', heading: HeadingLevel.HEADING_2 }),
+      ...docxMarkdown.fontesParaDocx(sites)
     );
-    for (const site of sites) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: `• ${site.title || site.url}`, color: '4A3B8C' })
-          ]
-        })
-      );
-    }
   }
 
   const header = new Header({
@@ -4861,6 +4826,7 @@ function buildDocx(config, stepLabel, content, sites = []) {
   });
 
   return new Document({
+    numbering: docxMarkdown.configNumeracao(),
     sections: [{
       headers: { default: header },
       footers: { default: footer },
@@ -5978,6 +5944,8 @@ if (require.main === module) {
 module.exports = app;
 module.exports.slugify = slugify;
 module.exports.hostDeBind = hostDeBind;
+module.exports.buildDocx = buildDocx;
+module.exports.instrucaoTemplateGamma = instrucaoTemplateGamma;
 module.exports.limparSessoesInativas = limparSessoesInativas;
 module.exports.validarPastaProjeto = validarPastaProjeto;
 module.exports.sessions = sessions;

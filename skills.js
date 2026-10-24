@@ -3,14 +3,9 @@
 // demais etapas → gpt-4o-mini, mais econômico em tokens) e a estrutura de
 // mensagens (system + user) usada na chamada à OpenAI.
 
-const MODEL_RESEARCH = 'gpt-4o';
-const MODEL_ECONOMY = 'gpt-4o-mini';
-
-// Modelo do conteúdo das aulas (roteiro, seções e expansão): configurável por
-// OPENAI_CONTENT_MODEL, lido na hora da chamada (depois do dotenv); padrão MODEL_ECONOMY.
-function modeloConteudo() {
-  return (process.env.OPENAI_CONTENT_MODEL || '').trim() || MODEL_ECONOMY;
-}
+// Modelos centralizados em config/modelos.js (OPENAI_RESEARCH_MODEL,
+// OPENAI_CONTENT_MODEL, OPENAI_ECONOMY_MODEL), lidos na hora da chamada.
+const { MODEL_RESEARCH, MODEL_ECONOMY, modeloPesquisa, modeloEconomia, modeloConteudo } = require('./config/modelos');
 
 // Resumo enxuto (somente título + objetivos) de um conjunto de aulas — usado
 // para dar "consciência sequencial" sem sobrecarregar o prompt com texto integral.
@@ -28,6 +23,18 @@ function pedagCtxBlock(metodologia, bnccContext) {
   if (metodologia) parts.push(`## Metodologia Pedagógica Adotada\n${metodologia}`);
   if (bnccContext) parts.push(bnccContext);
   return parts.length ? '\n\n' + parts.join('\n\n') : '';
+}
+
+// Formato ÚNICO do contexto BNCC em todas as skills: o bloco é montado aqui a
+// partir de sess.bncc ({ ativo, nivel, itens }) e entra nos prompts somente via
+// pedagCtxBlock. Sem BNCC ativa devolve ''.
+function bnccBlock(bncc) {
+  if (!bncc?.ativo || !bncc.itens?.length) return '';
+  const itens = bncc.itens
+    .map(item => `- ${item.codigo ? `[${item.codigo}] ` : ''}${item.descricao || item.titulo || ''}`)
+    .join('\n');
+  const nivel = bncc.nivel === 'competencias' ? 'Competências Gerais' : String(bncc.nivel || '').toUpperCase();
+  return `## Alinhamento BNCC — ${nivel}\n${itens}`;
 }
 
 // ── Diretrizes por modalidade de ensino ──────────────────────────────────────
@@ -178,12 +185,8 @@ const NIVEL_PESO_ALTO =
   'na definição de profundidade, vocabulário e complexidade do que você produzir — subordinado ' +
   'apenas à Metodologia Pedagógica definida para o curso.';
 
-// Modelo de pesquisa web: configurável por OPENAI_RESEARCH_MODEL (lido na hora
-// da chamada, depois do dotenv); padrão MODEL_RESEARCH. Ver
-// docs/decisoes/pesquisa-api.md — a Responses API com web_search funciona com gpt-4o.
-function modeloPesquisa() {
-  return (process.env.OPENAI_RESEARCH_MODEL || '').trim() || MODEL_RESEARCH;
-}
+// Modelo de pesquisa web: ver config/modelos.js e docs/decisoes/pesquisa-api.md —
+// a Responses API com web_search funciona com gpt-4o.
 
 // Planeja de 4 a 5 consultas focadas (mercado/tendências, ferramentas e
 // documentação oficial, referências didáticas, certificações e — com BNCC
@@ -251,7 +254,7 @@ const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, 
 });
 
 const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext, modalidade }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em educação tecnológica. Com base no seu conhecimento, ' +
     'sintetize referências, tópicos de mercado e tendências relevantes para cursos ' +
@@ -272,7 +275,7 @@ const pesquisaFallbackSkill = ({ nome, nivel, publico, topicos, ementa, metodolo
 });
 
 const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodologia, bnccContext, modalidade, preRequisitos }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em design instrucional. Escreva ementas de curso ' +
     'objetivas e bem estruturadas. Responda em português, em texto corrido ' +
@@ -293,7 +296,7 @@ const ementaSkill = ({ nome, publico, carga, duracao, nivel, objetivos, metodolo
 });
 
 const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, ementa, pesquisa, ajustes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade, preRequisitos, pesquisaBloco = '' }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em design instrucional para cursos de formação ' +
     'tecnológica. Crie planos de ensino detalhados e coerentes com a ementa ' +
@@ -322,7 +325,7 @@ const planoEnsinoSkill = ({ nome, publico, carga, duracao, nivel, objetivos, eme
 });
 
 const planLessonsSkill = ({ nome, carga, duracao, nivel, publico, planoEnsino, numAulas, correcao, modalidade }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em design instrucional para cursos de formação ' +
     'tecnológica. Responda apenas com JSON válido, sem texto adicional.',
@@ -360,7 +363,7 @@ const ARQUETIPOS_ESTILO_VISUAL =
   'corporate/muted, watercolor/handcrafted';
 
 const estiloVisualSkill = ({ nome, publico, nivel, objetivos, modalidade }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é diretor de arte especializado em material didático. Proponha um menu ' +
     'de estilos visuais para ilustrações de um curso, coerentes com o público-alvo, ' +
@@ -395,7 +398,7 @@ const estiloVisualSkill = ({ nome, publico, nivel, objetivos, modalidade }) => (
 // pronto, a skill só envelopa com um "system" apropriado e anexa o contexto
 // pedagógico ao final, como em todas as outras skills geradoras.
 const roteiroSkill = ({ promptPreenchido, metodologia, bnccContext }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é roteirista especializado em vídeos educacionais com avatar digital. ' +
     'Siga rigorosamente a estrutura, as regras de blocos e o formato pedido no ' +
@@ -416,7 +419,7 @@ function estimarPalavrasAlvo(segundos) {
 const roteiroAvatarSkill = ({ aulaTitulo, aulaTexto, segundos, publico, nivel, metodologia, bnccContext }) => {
   const palavrasAlvo = estimarPalavrasAlvo(segundos);
   return {
-    model: MODEL_ECONOMY,
+    model: modeloEconomia(),
     system:
       'Você é roteirista de fala para avatar digital. Escreva um texto corrido, ' +
       'natural, para ser narrado em voz alta — sem marcações de cena, câmera ou ' +
@@ -448,7 +451,7 @@ function truncateAula(texto, max = 1500) {
 }
 
 const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoEnsino, lessonSummaries, observacoes, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade, preRequisitos, pesquisaBloco = '' }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em design instrucional. Crie planos de aula ' +
     'detalhados, engajantes e que respeitem rigorosamente o escopo de cada ' +
@@ -672,7 +675,7 @@ const CRITERIOS_JSON =
   `"melhorias": ["ação concreta", "..."], "citacoesFracas": ["trecho ou [F#] que a fonte não sustenta"]}`;
 
 const revisaoSecaoSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaTitulo, aulaObjetivos, secao, indice, total, metodologia, bnccContext, pesquisaBloco = '' }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   response_format: { type: 'json_object' },
   system:
     'Você é um revisor pedagógico sênior especializado em design instrucional. Avalie UMA seção de uma ' +
@@ -686,7 +689,7 @@ const revisaoSecaoSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaT
     `## Plano de Aula desta Aula (referência)\n${planoAulaTrecho || 'não disponível'}\n\n` +
     `## Plano de Ensino do Curso (referência)\n${planoEnsino || 'não disponível'}\n\n` +
     `## Ementa do Curso (referência)\n${ementa || 'não gerada'}\n\n` +
-    (bnccContext ? `${bnccContext}\n\n` : '') +
+    (bnccContext ? `${pedagCtxBlock(null, bnccContext).trimStart()}\n\n` : '') +
     `## Seção a avaliar\n${secao.texto}\n` +
     (pesquisaBloco ? `${pesquisaBloco}\n` : '') + `\n` +
     `Dê uma nota de 0 a 10 para CADA critério considerando SOMENTE esta seção:\n` +
@@ -702,7 +705,7 @@ const revisaoSecaoSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaT
 // Checagem global de coerência da aula completa quando o texto não cabe inteiro
 // numa chamada: o juiz vê o resumo de TODAS as seções das duas versões.
 const coerenciaGlobalSkill = ({ aulaTitulo, aulaObjetivos, resumoOriginal, resumoCandidato }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   response_format: { type: 'json_object' },
   system:
     'Você é um avaliador pedagógico técnico. Avalie a coerência global de duas versões de uma aula ' +
@@ -717,7 +720,7 @@ const coerenciaGlobalSkill = ({ aulaTitulo, aulaObjetivos, resumoOriginal, resum
 // Etapa 1 do relatório técnico-pedagógico em duas etapas: análise de UM módulo
 // a partir do conteúdo integral das aulas dele (ou do resumo de todas as seções).
 const qualidadeModuloSkill = ({ config, modulo, conteudoModulo, notasAulas }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é um especialista sênior em design instrucional e avaliação de cursos. Analise criticamente ' +
     'UM módulo de um curso, fundamentando cada apontamento. Responda em português.',
@@ -735,7 +738,7 @@ const qualidadeModuloSkill = ({ config, modulo, conteudoModulo, notasAulas }) =>
 // hardware, materiais) — alimenta a infraestrutura do PPC quando o conteúdo
 // completo não cabe numa chamada.
 const recursosAulaSkill = ({ aulaTitulo, texto }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   response_format: { type: 'json_object' },
   system: 'Você extrai informações de material didático. Responda APENAS com JSON válido.',
   user:
@@ -753,7 +756,7 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
     : 'Nenhuma sobreposição significativa detectada.';
 
   return {
-    model: MODEL_ECONOMY,
+    model: modeloEconomia(),
     system:
       'Você é um revisor pedagógico sênior especializado em design instrucional. ' +
       'Analise criticamente o conteúdo de cada aula comparando-o com os documentos ' +
@@ -772,7 +775,7 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
         ? `## Avaliação por seção (a aula foi analisada seção a seção — considere TODAS as seções abaixo)\n${avaliacoesSecoes}\n\n`
         : `## Conteúdo Gerado da Aula\n${aulaConteudo}\n\n`) +
       `## Sobreposições Detectadas (Jaccard ≥ 55%)\n${sobreposicoesStr}\n` +
-      (bnccContext ? `\n${bnccContext}\n` : '') +
+      (bnccContext ? `${pedagCtxBlock(null, bnccContext)}\n` : '') +
       (pesquisaBloco ? `${pesquisaBloco}\n` : '') +
       `\nProduza a revisão com EXATAMENTE as seguintes seções:\n\n` +
       `### Compatibilidade com o Plano de Aula\n` +
@@ -871,7 +874,7 @@ const revisaoQualidadeSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, a
 // original; resposta sem nenhum "<<<SECAO:" é tratada como reescrita integral
 // (fallback, mesmo comportamento de antes desta mudança).
 const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, conteudoAtual, observacoesRevisor, melhorias, metodologia, bnccContext }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é um especialista técnico e educador sênior. Revise e melhore o ' +
     'conteúdo didático de uma aula aplicando as melhorias indicadas. Responda em português.',
@@ -932,7 +935,7 @@ const aplicarMelhoriasSkill = ({ config, aulaIndex, aulaTitulo, aulaObjetivos, c
 // exatamente o padrão que se mostrou pouco confiável antes desta mudança.
 // Machine-only: sem prosa, JSON estrito, existe só para alimentar o gate.
 const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandidato, planoAulaTrecho, ementa, planoEnsino, nivel, publico, modalidade, pesquisaBloco = '', secoesAlteradas = null }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   response_format: { type: 'json_object' },
   system:
     'Você é um avaliador pedagógico técnico. Compare duas versões do conteúdo de uma ' +
@@ -978,7 +981,7 @@ const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandida
 // a melhoria nunca era aplicada em lugar nenhum e a mesma observação reaparecia
 // em todo ciclo de revisão seguinte.
 const realinharPlanoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, planoAulaTrechoAtual, conteudoMelhorado, ementa, planoEnsinoResumo, melhorias, metodologia, bnccContext }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em design instrucional. Atualize planos de aula para ' +
     'refletir o conteúdo efetivamente ministrado, sem jamais alterar objetivos, ' +
@@ -1021,7 +1024,7 @@ const realinharPlanoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, t
 // ── Skills novas — Base Pedagógica e PPC ──────────────────────────────────────
 
 const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico, modalidade }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é um especialista em design instrucional e pedagogia, com profundo ' +
     'conhecimento em metodologias de ensino-aprendizagem. Analise o perfil do ' +
@@ -1052,12 +1055,8 @@ const metodologiaSkill = ({ nome, publico, carga, nivel, proporcaoTeoricoPratico
 });
 
 const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, metodologia, bncc, pesquisaBloco = '', rotuloConteudo = 'Conteúdo Integral das Aulas', notasAulas = '' }) => {
-  const bnccSection = bncc?.ativo && bncc.itens?.length
-    ? `\n\n## Competências/Habilidades BNCC Selecionadas\n` +
-      bncc.itens.map(i => `- ${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('\n')
-    : '';
   return {
-    model: MODEL_ECONOMY,
+    model: modeloEconomia(),
     system:
       'Você é um especialista sênior em design instrucional, pedagogia e avaliação ' +
       'de cursos. Sua função é analisar criticamente a qualidade pedagógica de ' +
@@ -1070,8 +1069,7 @@ const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, 
       `Público: ${config?.publico || '?'} | Nível: ${config?.nivel || '?'} | ` +
       `Carga: ${config?.carga || '?'}h | Modalidade: ${config?.modalidade || '?'}\n` +
       `Proporção teórico/prático: ${config?.proporcaoTeoricoPratico || 'não informada'}\n` +
-      (metodologia ? `\n## Metodologia Pedagógica Definida\n${metodologia}\n` : '') +
-      bnccSection +
+      pedagCtxBlock(metodologia, bnccBlock(bncc)) +
       `\n\n## Ementa\n${ementa || 'não gerada'}\n\n` +
       `## Plano de Ensino\n${planoEnsino || 'não gerado'}\n\n` +
       `## Plano de Aula\n${planoAula || 'não gerado'}\n\n` +
@@ -1096,7 +1094,7 @@ const qualidadeSkill = ({ config, ementa, planoEnsino, planoAula, resumosAulas, 
 };
 
 const perfilEgressoSkill = ({ config, ementa, planoEnsino }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em design instrucional para cursos livres. ' +
     'Redija perfis de egresso claros, objetivos e orientados a competências. ' +
@@ -1112,12 +1110,8 @@ const perfilEgressoSkill = ({ config, ementa, planoEnsino }) => ({
 });
 
 const competenciasSkill = ({ config, ementa, planoEnsino, bncc }) => {
-  const bnccRef = bncc?.ativo && bncc.itens?.length
-    ? '\n\nCompetências/Habilidades BNCC selecionadas para este curso:\n' +
-      bncc.itens.map(i => `- ${i.codigo ? `[${i.codigo}] ` : ''}${i.descricao}`).join('\n')
-    : '';
   return {
-    model: MODEL_ECONOMY,
+    model: modeloEconomia(),
     system:
       'Você é especialista em design instrucional. Liste competências e habilidades ' +
       'de forma clara, estruturada e orientada a resultados de aprendizagem. ' +
@@ -1127,7 +1121,7 @@ const competenciasSkill = ({ config, ementa, planoEnsino, bncc }) => {
       `Curso: ${config?.nome || '?'}\nNível: ${config?.nivel || '?'}\n` +
       `Ementa: ${ementa || 'não gerada'}\n` +
       `Plano de ensino: ${planoEnsino || 'não gerado'}` +
-      bnccRef +
+      pedagCtxBlock(null, bnccBlock(bncc)) +
       `\n\nOrganize em:\n` +
       `1. **Competências Gerais** (atitudes e valores)\n` +
       `2. **Competências Técnicas** (saber fazer)\n` +
@@ -1137,7 +1131,7 @@ const competenciasSkill = ({ config, ementa, planoEnsino, bncc }) => {
 };
 
 const perfilDocenteSkill = ({ config, ementa }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em gestão de cursos livres. Descreva perfis docentes ' +
     'de forma objetiva e prática. Responda em português.',
@@ -1151,7 +1145,7 @@ const perfilDocenteSkill = ({ config, ementa }) => ({
 });
 
 const infraestruturaSkill = ({ config, conteudo }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloEconomia(),
   system:
     'Você é especialista em planejamento de cursos livres. Liste recursos e ' +
     'infraestrutura de forma prática e objetiva. Responda em português.',
@@ -1170,12 +1164,8 @@ const infraestruturaSkill = ({ config, conteudo }) => ({
 });
 
 const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, metodologia, bncc, perfilEgresso, competencias, perfilDocente, infraestrutura, pesquisaBloco = '' }) => {
-  const bnccSection = bncc?.ativo && bncc.itens?.length
-    ? `\nAlinhamento BNCC (${bncc.nivel}): ` +
-      bncc.itens.map(i => `${i.codigo || i.titulo || i.descricao?.slice(0, 60)}`).join(', ')
-    : 'Não aplicável';
   return {
-    model: MODEL_ECONOMY,
+    model: modeloEconomia(),
     system:
       'Você é especialista em elaboração de Projetos Pedagógicos de Curso (PPC) ' +
       'para cursos livres. Monte documentos formais, bem estruturados e coerentes ' +
@@ -1190,7 +1180,7 @@ const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, me
       `Nível: ${config?.nivel || '?'} | Público-alvo: ${config?.publico || '?'}\n` +
       `Pré-requisitos: ${config?.preRequisitos || 'Nenhum'}\n` +
       `Proporção teórico/prático: ${config?.proporcaoTeoricoPratico || 'não informada'}\n` +
-      `Alinhamento BNCC: ${bnccSection}\n\n` +
+      (pedagCtxBlock(null, bnccBlock(bncc)).trimStart() || 'Alinhamento BNCC: Não aplicável') + `\n\n` +
       `## Conteúdo Gerado (use para as seções do PPC)\n` +
       `EMENTA: ${ementa || 'não gerada'}\n\n` +
       `JUSTIFICATIVA (baseada na pesquisa de mercado): ${pesquisaBloco ? 'use os achados estruturados e as fontes abaixo' : (pesquisa || 'não disponível')}\n\n` +
@@ -1227,6 +1217,9 @@ module.exports = {
   modeloPesquisa,
   planejarConsultasPesquisa,
   MODEL_ECONOMY,
+  modeloEconomia,
+  bnccBlock,
+  pedagCtxBlock,
   summarizeLessons,
   MODALIDADE_DIRETRIZES,
   modalidadeBlock,

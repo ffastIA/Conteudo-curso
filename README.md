@@ -44,6 +44,11 @@ node server.js
 
 Acesse: [http://localhost:3000](http://localhost:3000)
 
+> `.docx` e tela renderizam listas, tabelas, código, itálico e links. Instruções
+> específicas de template do Gamma ficam em `GAMMA_TEMPLATE_PROMPTS` (JSON por id
+> de template) e os modelos em `OPENAI_RESEARCH_MODEL`, `OPENAI_CONTENT_MODEL` e
+> `OPENAI_ECONOMY_MODEL` — ver `.env.example`.
+
 > Por padrão o servidor escuta só em `127.0.0.1`. Em container ou rede local,
 > defina `HOST=0.0.0.0` (ex.: `HOST=0.0.0.0` no compose) — o app não tem
 > autenticação, então exponha apenas em rede confiável. Requisições `/api` com

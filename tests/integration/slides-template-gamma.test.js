@@ -215,7 +215,10 @@ describe('GET /api/slides/parametros com GAMMA_TEMPLATE_IDS configurada', () => 
 });
 
 describe('GET /api/slides/gerar com template selecionado', () => {
+  afterEach(() => { delete process.env.GAMMA_TEMPLATE_PROMPTS; });
+
   test('chama POST /generations/from-template com gammaId e prompt combinado', async () => {
+    process.env.GAMMA_TEMPLATE_PROMPTS = JSON.stringify({ g_valido_1: 'Preserve as logo do template em todos os cards.' });
     const ag = agent();
     const pastaProjeto = await configurarCursoComConteudo(ag, [
       { titulo: 'Memórias RAM e ROM', modulo: '', objetivos: 'Definir RAM e ROM' }
@@ -248,5 +251,39 @@ describe('GET /api/slides/gerar com template selecionado', () => {
     expect(payload.prompt).toContain('capriche nas cores');
 
     expect(fs.existsSync(path.join(pastaProjeto, 'aula01_slides.pptx'))).toBe(true);
+  });
+
+  test('template sem entrada em GAMMA_TEMPLATE_PROMPTS não recebe instrução fixa', async () => {
+    process.env.GAMMA_TEMPLATE_PROMPTS = JSON.stringify({ g_valido_2: 'Só vale para o outro template.' });
+    const ag = agent();
+    await configurarCursoComConteudo(ag, [
+      { titulo: 'Memórias RAM e ROM', modulo: '', objetivos: 'Definir RAM e ROM' }
+    ]);
+    await selecionarEstiloVisual(ag);
+    installGammasLookupFetchMock();
+    await ag.post('/api/slides/template').send({ templateId: 'g_valido_1' });
+    await ag.post('/api/slides/parametros').send({ index: 0, texto: '', quantidade: 3 });
+
+    const calls = installGammaTemplateFlowFetchMock();
+    await collectSSE(ag, '/api/slides/gerar');
+    const criacao = calls.find(c => c.url.endsWith('/generations/from-template') && c.options.method === 'POST');
+    const payload = JSON.parse(criacao.options.body);
+    expect(payload.prompt).not.toContain('logo');
+    expect(payload.prompt).not.toContain('Só vale para o outro template');
+    expect(payload.prompt).toContain('exatamente 3');
+  });
+
+  test('instrucaoTemplateGamma: sem variável, JSON inválido ou id ausente → vazio', () => {
+    const { instrucaoTemplateGamma } = require('../../server');
+    expect(instrucaoTemplateGamma('g_valido_1', {})).toBe('');
+    expect(instrucaoTemplateGamma('g_valido_1', { GAMMA_TEMPLATE_PROMPTS: '{quebrado' })).toBe('');
+    expect(instrucaoTemplateGamma('g_x', { GAMMA_TEMPLATE_PROMPTS: '{"g_y":"a"}' })).toBe('');
+    expect(instrucaoTemplateGamma('g_y', { GAMMA_TEMPLATE_PROMPTS: '{"g_y":" a "}' })).toBe('a');
+  });
+
+  test('o código não carrega instruções de marca', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../../server.js'), 'utf-8');
+    expect(src).not.toMatch(/Preserve as logo/);
+    expect(src).not.toMatch(/GAMMA_TEMPLATE_PROMPT_FIXO/);
   });
 });
