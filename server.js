@@ -36,6 +36,7 @@ const multer = require('multer');
 const mammoth = require('mammoth');
 const skills = require('./skills');
 const { obs: observabilidade } = require('./observabilidade');
+const conteudoSecoes = require('./conteudo-secoes');
 const bnccData = require('./bncc-data');
 console.log(`[BNCC] Carregado: ${bnccData.competenciasGerais.length} competências, ` +
   `${bnccData.habilidades.ef1.length} EF1, ${bnccData.habilidades.ef2.length} EF2, ` +
@@ -380,6 +381,24 @@ function lerPesquisaMeta(sess) {
 app.use(express.json());
 app.use(cookieParser());
 
+// Etapa 5 bloqueada: enquanto houver aula de conteúdo incompleto (resposta
+// cortada), as etapas que dependem do conteúdo não rodam — a aula precisa ser
+// regenerada antes (GET /api/conteudo?aulas=N). Rotas SSE respondem com o evento
+// `error`; as demais, com 409.
+app.use([
+  '/api/qualidade', '/api/ppc', '/api/revisao-qualidade', '/api/aplicar-melhorias',
+  '/api/slides/gerar', '/api/video-avatar/roteiro/gerar', '/api/video-avatar/gerar'
+], (req, res, next) => {
+  const sess = getSession(req, res);
+  const incompletas = aulasIncompletas(sess);
+  if (!incompletas.length) return next();
+  const lista = incompletas.map(n => String(n).padStart(2, '0')).join(', ');
+  const mensagem = `Conteúdo incompleto: a(s) aula(s) ${lista} foi(ram) cortada(s) por limite de tokens e não foi(ram) gravada(s) como pronta(s). ` +
+    `Regenere-a(s) na Etapa 5 antes de continuar.`;
+  if (req.method === 'GET') return sseError(res, mensagem);
+  return res.status(409).json({ error: mensagem });
+});
+
 // Um trace de observabilidade por requisição /api (operação do usuário): o id da
 // requisição é o traceId (32 hex), usado também nos eventos SSE `done`. A sessão
 // do projeto vira o sessionId do trace (slug do curso, ou o cookie antes da
@@ -474,13 +493,17 @@ function truncate(text, max = 1500) {
 // problema de truncate() sempre devolver o início do texto (≈ Aula 1).
 function extractLessonBlock(fullText, index) {
   if (!fullText) return '';
-  const regex = /^# Aula (\d+):.*$/gm;
-  const matches = [...fullText.matchAll(regex)];
-  if (!matches.length) return truncate(fullText, 1500);
-  const target = matches[index];
-  if (!target) return truncate(fullText, 1500);
-  const start = target.index;
-  const end = (index + 1 < matches.length) ? matches[index + 1].index : fullText.length;
+  const matches = [...fullText.matchAll(/^# Aula (\d+):.*$/gm)];
+  if (!matches.length) {
+    throw new Error(`O plano de aula não tem cabeçalhos "# Aula N:" — não foi possível localizar o trecho da Aula ${index + 1}. Gere o plano de aula novamente.`);
+  }
+  // Localiza pelo NÚMERO capturado no cabeçalho, não pela posição na lista.
+  const posicao = matches.findIndex(m => Number(m[1]) === index + 1);
+  if (posicao < 0) {
+    throw new Error(`O plano de aula não contém o cabeçalho "# Aula ${index + 1}:" — não foi possível localizar o trecho dessa aula. Gere o plano de aula novamente.`);
+  }
+  const start = matches[posicao].index;
+  const end = (posicao + 1 < matches.length) ? matches[posicao + 1].index : fullText.length;
   return fullText.slice(start, end).trim();
 }
 
@@ -492,11 +515,12 @@ function replaceLessonBlock(fullText, index, novoCorpo) {
   if (!fullText) return fullText;
   const regex = /^# Aula (\d+):.*$/gm;
   const matches = [...fullText.matchAll(regex)];
-  const target = matches[index];
+  const posicao = matches.findIndex(m => Number(m[1]) === index + 1);
+  const target = posicao >= 0 ? matches[posicao] : undefined;
   if (!target) return fullText;
   const headingLine = target[0];
   const start = target.index;
-  const end = (index + 1 < matches.length) ? matches[index + 1].index : fullText.length;
+  const end = (posicao + 1 < matches.length) ? matches[posicao + 1].index : fullText.length;
   const antes = fullText.slice(0, start);
   const depois = fullText.slice(end);
   return antes + headingLine + '\n\n' + (novoCorpo || '').trim() + (depois ? '\n\n' + depois : '\n');
@@ -1210,6 +1234,9 @@ function saveProject(sess, stageInfo = null) {
   projeto.roteirosAvatarGerados = sess.roteirosAvatarGerados || [];
   projeto.duracaoAvatarDefault = sess.duracaoAvatarDefault || null;
   projeto.videosAvatarGerados = sess.videosAvatarGerados || [];
+  // Estado de completude do conteúdo por aula (completa | curta | incompleta);
+  // ausente em projetos antigos = completa.
+  if (sess.estadoAulas) projeto.estadoAulas = sess.estadoAulas;
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -1634,30 +1661,42 @@ function enriquecerDone(obj) {
 
 // scr/geracao_log.json — uma linha por chamada ao LLM, com o traceId para
 // cruzar o registro local com o painel do Langfuse. Só com projeto identificável.
-function registrarGeracaoLog(ctx, resumo) {
-  const sess = ctx?.sess;
+// Acrescenta uma entrada em scr/geracao_log.json (últimas 2000), só com projeto
+// identificável. Nunca interrompe a geração.
+function anexarGeracaoLog(sess, entrada) {
   if (!sess || !(sess.config?.nome || sess.config?.pastaProjeto)) return;
   try {
     const arquivo = path.join(courseScrDir(sess), 'geracao_log.json');
     let dados = [];
     try { dados = JSON.parse(fs.readFileSync(arquivo, 'utf-8')); } catch { /* arquivo novo ou ilegível */ }
     if (!Array.isArray(dados)) dados = [];
-    dados.push({
-      traceId: resumo.traceId,
-      etapa: ctx.etapa,
-      ...ctx.meta,
-      modelo: resumo.modelo,
-      tokens: resumo.usage ? { entrada: resumo.usage.prompt_tokens || 0, saida: resumo.usage.completion_tokens || 0, total: resumo.usage.total_tokens || 0 } : null,
-      finishReason: resumo.finishReason || null,
-      custoUsd: resumo.custoUsd,
-      latenciaMs: resumo.latenciaMs,
-      erro: resumo.erro,
-      em: new Date().toISOString()
-    });
+    dados.push({ ...entrada, em: new Date().toISOString() });
     fs.writeFileSync(arquivo, JSON.stringify(dados.slice(-2000), null, 2), 'utf-8');
   } catch (err) {
     console.warn('[geracao_log] não foi possível gravar geracao_log.json:', err.message);
   }
+}
+
+// Uma linha por chamada ao LLM, com o traceId para cruzar com o painel do Langfuse.
+function registrarGeracaoLog(ctx, resumo) {
+  anexarGeracaoLog(ctx?.sess, {
+    traceId: resumo.traceId,
+    etapa: ctx?.etapa,
+    ...ctx?.meta,
+    modelo: resumo.modelo,
+    tokens: resumo.usage ? { entrada: resumo.usage.prompt_tokens || 0, saida: resumo.usage.completion_tokens || 0, total: resumo.usage.total_tokens || 0 } : null,
+    finishReason: resumo.finishReason || null,
+    custoUsd: resumo.custoUsd,
+    latenciaMs: resumo.latenciaMs,
+    erro: resumo.erro
+  });
+}
+
+// Resumo por aula: finish_reason, tokens de saída e palavras — para acompanhar
+// truncamento e tamanho dos cursos ao longo do tempo.
+function registrarGeracaoAula(sess, resumo) {
+  const ctx = observabilidade.contexto();
+  anexarGeracaoLog(sess, { tipo: 'aula', traceId: ctx?.traceId, etapa: 'conteudo', ...resumo });
 }
 
 function addUsage(usage, sess) {
@@ -3027,8 +3066,8 @@ async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null
     model: skill.model,
     stream: true,
     stream_options: { include_usage: true },
-    max_tokens: MAX_TOKENS_AULA,
-    messages: [
+    max_tokens: meta.maxTokens || MAX_TOKENS_AULA,
+    messages: skill.messages || [
       { role: 'system', content: skill.system },
       { role: 'user', content: skill.user }
     ]
@@ -3052,16 +3091,201 @@ async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null
   } finally {
     clearTimeout(stallTimer);
   }
-  if (meta.finishReason === 'length') {
+  if (meta.finishReason === 'length' && !meta.silenciarTruncamento) {
     console.warn(`[stream] resposta truncada (${text.length} chars, finish_reason=length)`);
     send(res, { type: 'warning', text: 'Resposta truncada pelo limite de tokens. O conteúdo gerado pode estar incompleto — revise o arquivo gerado.' });
   }
   return text;
 }
 
+// ── Geração do conteúdo de uma aula (change conteudo-completo-por-secoes) ────
+// Duas passadas: (1) roteiro da aula em JSON planeja as seções; (2) cada seção
+// é redigida em sua própria chamada em streaming, com teto de saída por seção.
+// Resposta cortada por limite de tokens dispara continuação automática; aula
+// que continua incompleta NUNCA vai para o .txt oficial (vai para .partial.txt)
+// e bloqueia o avanço da Etapa 5. CONTEUDO_MODO=unico mantém a passada única
+// (modo legado) — também com continuação e verificação de completude.
+const SECAO_MAX_TOKENS = 4000;
+const MAX_CONTINUACOES_CONTEUDO = 2;
+const conteudoModo = () => ((process.env.CONTEUDO_MODO || 'secoes').toLowerCase() === 'unico' ? 'unico' : 'secoes');
+
+// Gera um texto em streaming; se terminar com finish_reason 'length', pede
+// continuação (até MAX_CONTINUACOES_CONTEUDO vezes) e concatena.
+async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_TOKENS_AULA } = {}) {
+  const meta = { maxTokens, silenciarTruncamento: true };
+  let texto = await streamSkillToClient(res, skill, sess, meta, client);
+  let tokens = meta.completionTokens || 0;
+  let finishReason = meta.finishReason;
+  let continuacoes = 0;
+  while (finishReason === 'length' && continuacoes < MAX_CONTINUACOES_CONTEUDO && !client?.disconnected) {
+    continuacoes++;
+    send(res, { type: 'progress', message: `Resposta cortada — solicitando continuação (${continuacoes}/${MAX_CONTINUACOES_CONTEUDO})...` });
+    const metaCont = { maxTokens, silenciarTruncamento: true };
+    const contSkill = {
+      ...skill,
+      messages: [
+        { role: 'system', content: skill.system },
+        { role: 'user', content: skill.user },
+        { role: 'assistant', content: texto },
+        {
+          role: 'user',
+          content:
+            `Sua resposta anterior foi CORTADA no meio. Continue EXATAMENTE de onde parou ` +
+            `(o final do que você escreveu foi: "${texto.slice(-200)}"). NÃO repita nada do que já ` +
+            `escreveu e conclua o texto por completo.`
+        }
+      ]
+    };
+    texto += await streamSkillToClient(res, contSkill, sess, metaCont, client);
+    tokens += metaCont.completionTokens || 0;
+    finishReason = metaCont.finishReason;
+  }
+  const truncada = finishReason === 'length';
+  if (truncada) {
+    send(res, { type: 'warning', text: 'Resposta truncada pelo limite de tokens mesmo após continuação — o trecho gerado será tratado como incompleto.' });
+  }
+  return { texto, finishReason, truncada, continuacoes, completionTokens: tokens };
+}
+
+// Primeiras palavras do corpo de uma seção (sem o título) para o "resumo das
+// seções já escritas" do prompt das seguintes.
+function resumirSecao(texto, palavras = 40) {
+  const corpo = String(texto || '').replace(/^\s*#{1,6}[^\n]*\n/, '').replace(/#{1,6}\s*/g, '').trim();
+  const partes = corpo.split(/\s+/).filter(Boolean);
+  return partes.slice(0, palavras).join(' ') + (partes.length > palavras ? '…' : '');
+}
+
+// Garante que o texto da seção comece com o título planejado (títulos estáveis
+// são a base do merge de seções do ciclo de melhorias).
+function comTituloDaSecao(texto, titulo) {
+  const t = String(texto || '').trim();
+  const primeira = (t.split('\n')[0] || '').replace(/^#+\s*/, '');
+  if (conteudoSecoes.ehMesmoTitulo(primeira, titulo)) return t;
+  return `## ${titulo}\n\n${t}`;
+}
+
+async function gerarAulaPorSecoes({ res, sess, client, ctxSkill, aula, metaPalavrasAula }) {
+  const i = ctxSkill.index;
+  send(res, { type: 'progress', message: `Aula ${i + 1}: planejando as seções...` });
+  let plano = null;
+  for (let tentativa = 1; tentativa <= 2 && !plano; tentativa++) {
+    const sk = skills.roteiroAulaSkill({ ...ctxSkill, metaPalavras: metaPalavrasAula });
+    const comp = await chamarOpenAI('chat', {
+      model: sk.model,
+      max_tokens: 1500,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'system', content: sk.system }, { role: 'user', content: sk.user }]
+    }, { signal: combineSignals(client.signal, makeAbortSignal(60_000)) }, { nome: 'conteudo.roteiro-aula', tentativa });
+    addUsage(comp.usage, sess);
+    plano = conteudoSecoes.parseRoteiroAula(comp.choices[0]?.message?.content);
+  }
+  if (!plano) return null;
+
+  const metas = conteudoSecoes.distribuirMetaPalavras(metaPalavrasAula, plano);
+  const secoes = plano.map((s, n) => ({ titulo: s.titulo, objetivo: s.objetivo, meta: metas[n], texto: '', truncada: false }));
+  const titulos = secoes.map(s => s.titulo);
+  let tokens = 0;
+  let continuacoes = 0;
+
+  for (let n = 0; n < secoes.length; n++) {
+    if (client.disconnected) break;
+    const s = secoes[n];
+    observabilidade.definirContexto({ secao: s.titulo });
+    send(res, { type: 'progress', message: `Aula ${i + 1}: seção ${n + 1} de ${secoes.length} — ${s.titulo}` });
+    const resumoEscritas = secoes.slice(0, n).map(a => `- ${a.titulo}: ${resumirSecao(a.texto)}`).join('\n');
+    const sk = skills.secaoConteudoSkill({ ...ctxSkill, secao: s, secoesPlanejadas: titulos, resumoEscritas, metaPalavras: s.meta });
+    if (n > 0) send(res, { type: 'token', text: '\n\n' });
+    const r = await gerarComContinuacao(res, sk, sess, client, { maxTokens: SECAO_MAX_TOKENS });
+    s.texto = comTituloDaSecao(r.texto, s.titulo);
+    s.truncada = r.truncada;
+    tokens += r.completionTokens;
+    continuacoes += r.continuacoes;
+  }
+  observabilidade.definirContexto({ secao: undefined });
+
+  // Passada de expansão: refaz só as seções abaixo de 80% da meta.
+  // (Aula já incompleta — truncada ou com seção ausente — não gasta chamadas expandindo.)
+  let verificacao = conteudoSecoes.verificarCompletude({ secoes });
+  const paraExpandir = verificacao.estado === 'incompleta' ? [] : verificacao.curtas;
+  for (const titulo of paraExpandir) {
+    if (client.disconnected) break;
+    const s = secoes.find(x => x.titulo === titulo);
+    send(res, { type: 'progress', message: `Aula ${i + 1}: expandindo a seção curta "${titulo}"...` });
+    const sk = skills.expandirSecaoSkill({
+      secao: s, textoAtual: s.texto, metaPalavras: s.meta, palavrasAtuais: conteudoSecoes.contarPalavras(s.texto),
+      aulaTitulo: aula.titulo, nivel: ctxSkill.nivel, metodologia: ctxSkill.metodologia, bnccContext: ctxSkill.bnccContext
+    });
+    observabilidade.definirContexto({ secao: titulo });
+    const comp = await chamarOpenAI('chat', {
+      model: sk.model, max_tokens: SECAO_MAX_TOKENS,
+      messages: [{ role: 'system', content: sk.system }, { role: 'user', content: sk.user }]
+    }, { signal: combineSignals(client.signal, makeAbortSignal(90_000)) }, { nome: 'conteudo.expandir-secao' });
+    addUsage(comp.usage, sess);
+    tokens += comp.usage?.completion_tokens || 0;
+    const novo = comTituloDaSecao(comp.choices[0]?.message?.content || '', titulo);
+    // Só aceita a expansão se terminou normalmente e realmente aumentou a seção.
+    if (comp.choices[0]?.finish_reason !== 'length' && conteudoSecoes.contarPalavras(novo) > conteudoSecoes.contarPalavras(s.texto)) {
+      s.texto = novo;
+    }
+  }
+  observabilidade.definirContexto({ secao: undefined });
+  verificacao = conteudoSecoes.verificarCompletude({ secoes });
+
+  return {
+    texto: secoes.map(s => s.texto).join('\n\n'),
+    secoes,
+    ...verificacao,
+    finishReason: secoes.some(s => s.truncada) ? 'length' : 'stop',
+    completionTokens: tokens,
+    continuacoes,
+    modo: 'secoes'
+  };
+}
+
+async function gerarAulaPassadaUnica({ res, sess, client, ctxSkill }) {
+  const skill = skills.conteudoSkill(ctxSkill);
+  const r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: MAX_TOKENS_AULA });
+  const verificacao = conteudoSecoes.verificarCompletude({ texto: r.texto, truncada: r.truncada });
+  return {
+    texto: r.texto,
+    secoes: null,
+    ...verificacao,
+    finishReason: r.finishReason,
+    completionTokens: r.completionTokens,
+    continuacoes: r.continuacoes,
+    modo: 'unico'
+  };
+}
+
+// Lista de aulas (1-based) cujo conteúdo está marcado incompleto — vem da sessão
+// ou, quando a sessão foi perdida, do projeto.json. Estado ausente = completa.
+function aulasIncompletas(sess) {
+  let estados = sess?.estadoAulas;
+  if (!estados && (sess?.config?.nome || sess?.config?.pastaProjeto)) {
+    try {
+      estados = JSON.parse(fs.readFileSync(path.join(courseScrDir(sess), 'projeto.json'), 'utf-8')).estadoAulas;
+    } catch { /* sem projeto.json: nenhuma aula marcada */ }
+  }
+  return Object.entries(estados || {})
+    .filter(([, v]) => v?.estado === 'incompleta')
+    .map(([k]) => Number(k))
+    .sort((a, b) => a - b);
+}
+
+// "?aulas=3,5" → Set de índices 0-based (null = todas as aulas).
+function parseAulasAlvo(valor, total) {
+  if (!valor) return null;
+  const nums = String(valor).split(',').map(x => parseInt(x, 10)).filter(n => n >= 1 && n <= total);
+  return nums.length ? new Set(nums.map(n => n - 1)) : null;
+}
+
 // ── GET /api/conteudo (SSE) ─────────────────────────────────────────────────
 // Gera, para cada aula, um arquivo de conteúdo independente (Ajustes 1, 3 e 4
 // de alinhamento e consciência sequencial) e persiste em saídas/<curso>/aulaNN_conteudo.docx.
+// `?aulas=3,5` regenera só essas aulas (as demais são preservadas) — usado para
+// refazer aulas marcadas incompletas. Uma aula incompleta nunca é gravada como
+// pronta: o texto parcial vai para aulaNN_conteudo.partial.txt e a Etapa 5 fica
+// bloqueada (evento `done` traz `incompletas`; rotas dependentes respondem erro).
 app.get('/api/conteudo', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
@@ -3078,13 +3302,21 @@ app.get('/api/conteudo', async (req, res) => {
   try {
     const aulas = (sess.aulas && sess.aulas.length) ? sess.aulas : await planLessons(sess, planoEnsino, msg => send(res, { type: 'progress', message: msg }));
     sess.aulas = aulas;
+    const alvo = parseAulasAlvo(req.query.aulas, aulas.length);
+    if (alvo) restoreConteudoPorAula(sess); // preserva o conteúdo já gravado das demais aulas
+    if (!alvo) sess.estadoAulas = {};
+    sess.estadoAulas = sess.estadoAulas || {};
+    const metaPalavrasAula = conteudoSecoes.estimarMetaPalavrasAula({ duracao, nivel });
     send(res, {
       type: 'progress',
-      message: `${aulas.length} aula(s) identificada(s). Gerando conteúdo técnico de cada uma...`
+      message: alvo
+        ? `Regenerando ${alvo.size} aula(s): ${[...alvo].map(n => n + 1).join(', ')}...`
+        : `${aulas.length} aula(s) identificada(s). Gerando conteúdo técnico de cada uma...`
     });
 
     let fullText = '';
     const conteudoPorAula = []; // { titulo, modulo, objetivos, texto }
+    let geradas = 0;
 
     for (let i = 0; i < aulas.length; i++) {
       if (client.disconnected) break;
@@ -3092,16 +3324,23 @@ app.get('/api/conteudo', async (req, res) => {
       const aula = aulas[i];
       const titulo = aula.titulo || `Aula ${i + 1}`;
       const numero = String(i + 1).padStart(2, '0');
+      const heading = `${i === 0 ? '' : '\n\n'}# Aula ${i + 1}: ${titulo}\n\n`;
 
-      if (i > 0) await new Promise(r => setTimeout(r, 4000));
+      if (alvo && !alvo.has(i)) {
+        const existente = sess.conteudoPorAula?.[i] || { titulo, modulo: aula.modulo || '', objetivos: aula.objetivos || '', texto: readMemory(sess, `aula${numero}_conteudo`) };
+        conteudoPorAula.push(existente);
+        fullText += heading + (existente.texto || '');
+        continue;
+      }
+
+      if (geradas > 0) await new Promise(r => setTimeout(r, 4000));
       if (client.disconnected) break;
+      observabilidade.definirContexto({ aula: i + 1 });
 
       send(res, {
         type: 'progress',
         message: `Gerando aula ${i + 1} de ${aulas.length}: ${titulo}`
       });
-
-      const heading = `${i === 0 ? '' : '\n\n'}# Aula ${i + 1}: ${titulo}\n\n`;
       send(res, { type: 'token', text: heading });
 
       // Ajuste 1 — referência ao trecho ESPECÍFICO desta aula no plano de aula
@@ -3110,16 +3349,22 @@ app.get('/api/conteudo', async (req, res) => {
       // Ajuste 3 — mapa enxuto (título + objetivos) das demais aulas.
       const lessonSummaries = skills.summarizeLessons(aulas, { excludeIndex: i });
 
-      const baseSkill = skills.conteudoSkill({
+      const ctxSkill = {
         nome, duracao, nivel, publico, modalidade, aula, index: i, total: aulas.length,
         ementa, planoAulaTrecho, lessonSummaries,
         metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess),
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
-      });
+      };
 
-      let texto;
+      let resultado = null;
       try {
-        texto = await streamSkillToClient(res, baseSkill, sess, {}, client);
+        if (conteudoModo() === 'secoes') {
+          resultado = await gerarAulaPorSecoes({ res, sess, client, ctxSkill, aula, metaPalavrasAula });
+          if (!resultado) {
+            send(res, { type: 'warning', text: `Aula ${i + 1}: o roteiro das seções veio inválido — gerando em passada única.` });
+          }
+        }
+        if (!resultado) resultado = await gerarAulaPassadaUnica({ res, sess, client, ctxSkill });
       } catch (err) {
         if (client.disconnected) {
           console.warn(`[sse] cliente desconectou durante a geração da aula ${i + 1} — interrompendo /api/conteudo`);
@@ -3131,19 +3376,48 @@ app.get('/api/conteudo', async (req, res) => {
         }
         throw err;
       }
+      geradas++;
+      if (client.disconnected) return;
+
+      const { texto, estado } = resultado;
+      sess.estadoAulas[numero] = {
+        estado, modo: resultado.modo, palavras: resultado.palavras, finishReason: resultado.finishReason,
+        completionTokens: resultado.completionTokens, continuacoes: resultado.continuacoes, motivos: resultado.motivos,
+        secoes: resultado.secoes?.map(s => ({ titulo: s.titulo, palavras: conteudoSecoes.contarPalavras(s.texto), meta: s.meta })),
+        geradoEm: new Date().toISOString()
+      };
+      const partialPath = path.join(courseScrDir(sess), `aula${numero}_conteudo.partial.txt`);
+
+      if (estado === 'incompleta') {
+        // Nunca vai para o .txt/.docx oficial: só para o arquivo parcial.
+        fs.writeFileSync(partialPath, texto, 'utf-8');
+        saveProject(sess);
+        send(res, { type: 'warning', text: `Aula ${i + 1} INCOMPLETA (${resultado.motivos.join('; ')}). O texto parcial foi salvo em aula${numero}_conteudo.partial.txt — regenere a aula para avançar.` });
+      } else {
+        fs.rmSync(partialPath, { force: true });
+        // Persiste o conteúdo desta aula como arquivo independente.
+        await persistStage(sess, `aula${numero}_conteudo`, `Conteúdo — Aula ${i + 1}: ${titulo}`, texto);
+        if (estado === 'curta') {
+          send(res, { type: 'warning', text: `Aula ${i + 1} ficou curta (${resultado.palavras} palavras; seções abaixo da meta: ${resultado.curtas.join(', ')}).` });
+        }
+      }
+      registrarGeracaoAula(sess, {
+        aula: i + 1, estado, modo: resultado.modo, finishReason: resultado.finishReason,
+        completionTokens: resultado.completionTokens, palavras: resultado.palavras, continuacoes: resultado.continuacoes
+      });
 
       fullText += heading + texto;
       conteudoPorAula.push({ titulo, modulo: aula.modulo || '', objetivos: aula.objetivos || '', texto });
-
-      // Persiste o conteúdo desta aula como arquivo independente.
-      await persistStage(sess, `aula${numero}_conteudo`, `Conteúdo — Aula ${i + 1}: ${titulo}`, texto);
     }
 
     sess.conteudo = fullText;
     sess.conteudoPorAula = conteudoPorAula;
+    saveProject(sess);
 
+    const incompletas = aulasIncompletas(sess);
+    const estadoAulas = Object.fromEntries(Object.entries(sess.estadoAulas).map(([k, v]) => [k, { estado: v.estado, palavras: v.palavras }]));
     send(res, { type: 'progress', message: 'Concluído' });
-    send(res, { type: 'done', fullText });
+    send(res, { type: 'done', fullText, estadoAulas, incompletas });
   } catch (err) {
     console.error(err);
     if (!err.alreadyReported) {
@@ -3285,6 +3559,7 @@ app.post('/api/carregar-projeto', (req, res) => {
     sess.roteirosAvatarGerados = p.roteirosAvatarGerados || [];
     sess.duracaoAvatarDefault = p.duracaoAvatarDefault || null;
     sess.videosAvatarGerados = p.videosAvatarGerados || [];
+    sess.estadoAulas = p.estadoAulas || {};
     stages = p.stages || {};
   } else {
     // legado (ou projeto.json corrompido, já preservado como .bak acima):
@@ -3347,7 +3622,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, ...(avisoCorrompido ? { aviso: avisoCorrompido, ...(backupCorrompido ? { backup: backupCorrompido } : {}) } : {}), etapasCarregadas, camposFaltantes, stages, pesquisaMeta: sess.pesquisaMeta || null, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
+  res.json({ ok: true, ...(avisoCorrompido ? { aviso: avisoCorrompido, ...(backupCorrompido ? { backup: backupCorrompido } : {}) } : {}), etapasCarregadas, camposFaltantes, stages, pesquisaMeta: sess.pesquisaMeta || null, estadoAulas: sess.estadoAulas || {}, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────

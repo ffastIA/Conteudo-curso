@@ -558,20 +558,53 @@ document.getElementById('btnPlanoAula').addEventListener('click', () => {
 });
 
 // ── STEP 5 — Conteúdo ────────────────────────────────────────────────────────
-document.getElementById('btnConteudo').addEventListener('click', () => {
+// Estado de completude por aula: completa, curta (abaixo da meta de palavras,
+// não bloqueia) ou incompleta (resposta cortada — bloqueia a Etapa 6 até a aula
+// ser regenerada).
+const ROTULO_ESTADO_AULA = {
+  completa: { icone: '✅', texto: 'completa', cor: '#15803d' },
+  curta: { icone: '⚠️', texto: 'curta', cor: '#b45309' },
+  incompleta: { icone: '⛔', texto: 'incompleta', cor: '#b91c1c' }
+};
+
+function renderEstadosAulas(estadoAulas, incompletas) {
+  const box = document.getElementById('conteudoEstados');
+  const numeros = Object.keys(estadoAulas || {}).sort();
+  if (!numeros.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = numeros.map(n => {
+    const e = estadoAulas[n];
+    const r = ROTULO_ESTADO_AULA[e.estado] || ROTULO_ESTADO_AULA.completa;
+    const palavras = e.palavras ? ` · ${e.palavras.toLocaleString('pt-BR')} palavras` : '';
+    return `<span style="display:inline-block;margin:0 6px 6px 0;padding:3px 10px;border-radius:6px;font-size:.8rem;` +
+      `background:#f5f5f7;color:${r.cor}">${r.icone} Aula ${parseInt(n, 10)}: ${r.texto}${palavras}</span>`;
+  }).join('');
+  if (incompletas?.length) {
+    box.insertAdjacentHTML('beforeend',
+      `<div class="field-hint" style="color:#b91c1c;margin:4px 0">Aula(s) ${incompletas.join(', ')} cortada(s) por limite de tokens ` +
+      `— o texto parcial ficou em aulaNN_conteudo.partial.txt. Regenere para avançar.</div>` +
+      `<button class="btn btn-secondary btn-sm" id="btnRegenerarIncompletas">↻ Regenerar aula(s) incompleta(s)</button>`);
+    document.getElementById('btnRegenerarIncompletas').addEventListener('click', () => executarConteudo({ aulas: incompletas }));
+  }
+}
+
+function executarConteudo({ aulas = null } = {}) {
   document.getElementById('conteudoResultCard').style.display = 'block';
   document.getElementById('conteudoActions').style.display = 'none';
+  document.getElementById('conteudoEstados').style.display = 'none';
   document.getElementById('bannerDone').classList.remove('active');
 
   const logPanel = initLog('logConteudo');
   document.getElementById('btnConteudo').disabled = true;
 
-  streamSSE(`/api/conteudo`, {
+  streamSSE(`/api/conteudo${aulas?.length ? `?aulas=${aulas.join(',')}` : ''}`, {
     logPanel,
     resultEl: 'resultConteudo',
-    onDone() {
-      document.getElementById('conteudoActions').style.display = 'flex';
+    onDone(_texto, msg) {
       document.getElementById('btnConteudo').disabled = false;
+      renderEstadosAulas(msg?.estadoAulas, msg?.incompletas);
+      if (msg?.incompletas?.length) return; // Etapa 5 bloqueada até regenerar
+      document.getElementById('conteudoActions').style.display = 'flex';
       document.getElementById('bannerDone').classList.add('active');
       markDone(5);
     },
@@ -579,7 +612,9 @@ document.getElementById('btnConteudo').addEventListener('click', () => {
       document.getElementById('btnConteudo').disabled = false;
     }
   });
-});
+}
+
+document.getElementById('btnConteudo').addEventListener('click', () => executarConteudo());
 
 // ── STEP 6 — Revisão de Qualidade e Aplicar Melhorias ───────────────────────
 document.getElementById('btnRevisaoQualidade').addEventListener('click', () => {

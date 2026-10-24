@@ -4,6 +4,9 @@ let _response = 'mock response text';
 let _error = null;
 let _queue = [];
 let _imageError = null;
+// Fila de finish_reason por chamada de chat (FIFO; vazia = sem finish_reason no
+// stream e 'stop' nas respostas simples). Permite simular corte por 'length'.
+let _finishQueue = [];
 
 // PNG 1x1 transparente, usado como resposta padrão de images.generate.
 const FAKE_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -13,23 +16,24 @@ const mockImagesGenerate = jest.fn(async () => {
   return { data: [{ b64_json: FAKE_PNG_B64 }] };
 });
 
-async function* makeStream(text) {
+async function* makeStream(text, finishReason) {
   const words = text.split(' ');
   for (const word of words) {
     yield { choices: [{ delta: { content: word + ' ' } }] };
   }
-  yield { choices: [{ delta: {} }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } };
+  yield { choices: [{ delta: {}, ...(finishReason ? { finish_reason: finishReason } : {}) }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } };
 }
 
 const mockCreate = jest.fn(async ({ stream }, options) => {
   OpenAI.__lastOptions = options;
   if (_error) throw _error;
   const text = _queue.length ? _queue.shift() : _response;
+  const finishReason = _finishQueue.length ? _finishQueue.shift() : undefined;
   if (stream) {
-    return makeStream(text);
+    return makeStream(text, finishReason);
   }
   return {
-    choices: [{ message: { content: text } }],
+    choices: [{ message: { content: text }, ...(finishReason ? { finish_reason: finishReason } : {}) }],
     usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }
   };
 });
@@ -107,10 +111,12 @@ OpenAI.__setImageError = (err) => {
 };
 
 OpenAI.__getMock = () => mockCreate;
+OpenAI.__setFinishReasons = (reasons) => { _finishQueue = [...reasons]; };
 OpenAI.__getResponsesMock = () => mockResponsesCreate;
 OpenAI.__setCitations = (citations) => { _citations = citations; };
 
 OpenAI.__reset = () => {
+  _finishQueue = [];
   mockResponsesCreate.mockClear();
   _citations = [
     { url: 'https://nodejs.org/docs?utm_source=openai', title: 'Node.js Docs' },

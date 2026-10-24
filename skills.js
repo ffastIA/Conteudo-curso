@@ -6,6 +6,12 @@
 const MODEL_RESEARCH = 'gpt-4o';
 const MODEL_ECONOMY = 'gpt-4o-mini';
 
+// Modelo do conteúdo das aulas (roteiro, seções e expansão): configurável por
+// OPENAI_CONTENT_MODEL, lido na hora da chamada (depois do dotenv); padrão MODEL_ECONOMY.
+function modeloConteudo() {
+  return (process.env.OPENAI_CONTENT_MODEL || '').trim() || MODEL_ECONOMY;
+}
+
 // Resumo enxuto (somente título + objetivos) de um conjunto de aulas — usado
 // para dar "consciência sequencial" sem sobrecarregar o prompt com texto integral.
 function summarizeLessons(aulas, { excludeIndex = -1 } = {}) {
@@ -470,7 +476,7 @@ const planoAulaSkill = ({ nome, duracao, nivel, publico, aula, index, total, eme
 });
 
 const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, metodologia, bnccContext, proporcaoTeoricoPratico, modalidade }) => ({
-  model: MODEL_ECONOMY,
+  model: modeloConteudo(),
   system:
     'Você é um especialista técnico e educador, com profundo domínio do ' +
     'conteúdo da área. Produza material técnico robusto, preciso e ' +
@@ -500,6 +506,88 @@ const conteudoSkill = ({ nome, duracao, nivel, publico, aula, index, total, emen
     `correta), exemplos práticos e analogias que facilitem o ensino, casos reais do ` +
     `mercado, erros comuns e pontos de atenção, e uma síntese consolidando o que o ` +
     `instrutor deve garantir que os alunos compreendam ao final.` +
+    nivelBlock(nivel) +
+    pedagCtxBlock(metodologia, bnccContext)
+});
+
+// ── Conteúdo da aula em duas passadas (change conteudo-completo-por-secoes) ──
+// 1ª passada: o roteiro da aula (JSON) planeja as seções — uma por objetivo,
+// mais a síntese — com títulos estáveis. 2ª passada: cada seção é redigida em
+// sua própria chamada, com teto de saída por seção (não por aula inteira).
+
+// Contexto comum às duas passadas (dados da aula, plano, mapa das demais aulas).
+function contextoAulaConteudo({ nome, duracao, nivel, publico, aula, index, total, ementa, planoAulaTrecho, lessonSummaries, proporcaoTeoricoPratico, modalidade }) {
+  return (
+    `Curso: ${nome}\nAula ${index + 1} de ${total}: ${aula.titulo}\n` +
+    `Módulo do plano de ensino: ${aula.modulo || 'não especificado'}\n` +
+    `Duração: ${duracao} min\nNível: ${nivel}\nPúblico: ${publico}\n` +
+    (modalidade ? `Modalidade: ${modalidade}\n` : '') +
+    `Objetivos de aprendizagem desta aula: ${aula.objetivos || 'não especificados'}\n\n` +
+    `Ementa do curso: ${ementa || 'não gerada'}\n\n` +
+    `Plano de aula desta aula (referência — trecho específico desta aula):\n${planoAulaTrecho || 'não disponível'}\n\n` +
+    `Mapa das demais aulas do curso (apenas título e objetivos — para se situar na ` +
+    `sequência e EVITAR DUPLICAÇÃO; temas das aulas anteriores já foram cobertos e ` +
+    `os das seguintes ainda não devem ser antecipados):\n${lessonSummaries || 'nenhuma outra aula'}\n\n` +
+    `IMPORTANTE — limites de escopo: aborde ESTRITAMENTE os objetivos desta aula.\n` +
+    (proporcaoTeoricoPratico ? `Proporção teórico/prático: ${proporcaoTeoricoPratico}.\n` : '')
+  );
+}
+
+const roteiroAulaSkill = ({ metaPalavras, ...ctx }) => ({
+  model: modeloConteudo(),
+  system:
+    'Você é um designer instrucional e especialista técnico. Planeje a estrutura de ' +
+    'uma aula como uma lista de seções. Responda APENAS com JSON válido, sem texto adicional.' + NIVEL_PESO_ALTO,
+  user:
+    `Planeje as seções do material de apoio técnico desta aula:\n\n${contextoAulaConteudo(ctx)}\n` +
+    `Regras do planejamento:\n` +
+    `- Uma seção para CADA objetivo de aprendizagem (na ordem dos objetivos), mais uma seção final "Síntese".\n` +
+    `- Títulos curtos (até 80 caracteres), sem numeração nem pontuação final, específicos do tema.\n` +
+    `- Meta aproximada de ${metaPalavras} palavras no total, distribuídas pelas seções.\n` +
+    (ctx.proporcaoTeoricoPratico ? `- Indique em "tipo" se a seção é "teorica" ou "pratica", respeitando a proporção teórico/prático.\n` : '') +
+    `\nResponda SOMENTE com este JSON:\n` +
+    `{"secoes": [{"titulo": "string", "objetivo": "o que esta seção cobre", "tipo": "teorica|pratica|sintese"}]}` +
+    nivelBlock(ctx.nivel) +
+    pedagCtxBlock(ctx.metodologia, ctx.bnccContext)
+});
+
+const secaoConteudoSkill = ({ secao, secoesPlanejadas, resumoEscritas, metaPalavras, ...ctx }) => {
+  const sintese = /s[ií]ntese/i.test(secao.titulo);
+  return {
+    model: modeloConteudo(),
+    system:
+      'Você é um especialista técnico e educador, com profundo domínio do conteúdo da área. ' +
+      'Produza material técnico robusto, preciso e aprofundado — referência de estudo para ' +
+      'o instrutor, não um resumo superficial. Respeite rigorosamente o escopo da aula. ' +
+      'Responda em português.' + NIVEL_PESO_ALTO,
+    user:
+      `Redija UMA seção do material de apoio técnico desta aula.\n\n${contextoAulaConteudo(ctx)}\n` +
+      `Seções planejadas para a aula (na ordem):\n${secoesPlanejadas.map((t, n) => `${n + 1}. ${t}`).join('\n')}\n\n` +
+      `Resumo das seções já escritas (não repita o que já foi dito):\n${resumoEscritas || 'nenhuma — esta é a primeira seção'}\n\n` +
+      `SEÇÃO A REDIGIR AGORA: "${secao.titulo}"${secao.objetivo ? ` — ${secao.objetivo}` : ''}\n` +
+      `Meta: cerca de ${metaPalavras} palavras. Escreva a seção COMPLETA, sem interrompê-la, e não escreva outras seções.\n\n` +
+      `Formato: comece exatamente com a linha "## ${secao.titulo}". ` +
+      (sintese
+        ? `Consolide em tópicos o que o instrutor deve garantir que os alunos compreendam ao final da aula.`
+        : `Depois use as subseções "### Fundamentação técnica" (definições, princípios, terminologia correta), ` +
+          `"### Exemplos práticos" (exemplos, analogias e casos reais do mercado) e ` +
+          `"### Erros comuns e pontos de atenção".`) +
+      nivelBlock(ctx.nivel) +
+      pedagCtxBlock(ctx.metodologia, ctx.bnccContext)
+  };
+};
+
+const expandirSecaoSkill = ({ secao, textoAtual, metaPalavras, palavrasAtuais, aulaTitulo, nivel, metodologia, bnccContext }) => ({
+  model: modeloConteudo(),
+  system:
+    'Você é um especialista técnico e educador. Aprofunde uma seção de material didático ' +
+    'sem mudar seu escopo. Responda em português.' + NIVEL_PESO_ALTO,
+  user:
+    `A seção "${secao.titulo}" da aula "${aulaTitulo}" ficou curta (${palavrasAtuais} palavras; a meta é ` +
+    `cerca de ${metaPalavras}). Reescreva-a de forma mais aprofundada: mais explicação dos princípios, ` +
+    `exemplos práticos adicionais, casos reais e erros comuns — mantendo o escopo, o título ` +
+    `"## ${secao.titulo}" e as subseções existentes. Devolva a seção COMPLETA reescrita, sem comentários.\n\n` +
+    `Seção atual:\n${textoAtual}` +
     nivelBlock(nivel) +
     pedagCtxBlock(metodologia, bnccContext)
 });
@@ -956,6 +1044,10 @@ const ppcAssemblySkill = ({ config, ementa, pesquisa, planoEnsino, planoAula, me
 
 module.exports = {
   MODEL_RESEARCH,
+  modeloConteudo,
+  roteiroAulaSkill,
+  secaoConteudoSkill,
+  expandirSecaoSkill,
   modeloPesquisa,
   planejarConsultasPesquisa,
   MODEL_ECONOMY,

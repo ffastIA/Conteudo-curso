@@ -16,6 +16,10 @@
 - **D5**: metas de palavras: mínimo = 80% da meta da seção; abaixo disso, passada de expansão apenas naquela seção.
 - **D6**: `OPENAI_CONTENT_MODEL` centralizado em constante `MODEL_CONTENT` (config de modelos).
 
+- **D7**: `CONTEUDO_MODO=unico` mantém a passada única (legado/rollback) com a mesma continuação e verificação de completude; o padrão é `secoes`. Os testes herdados de `/api/conteudo` rodam em `unico` (`tests/setup-env.js`).
+- **D8**: lógica pura (roteiro, metas, completude) em `conteudo-secoes.js`; síntese sempre por último; referências só entram com a change `conteudo-fundamentado-em-pesquisa`.
+- **D9**: aula incompleta bloqueia por middleware as rotas que dependem do conteúdo (qualidade, ppc, revisão, melhorias, slides, vídeo); regeneração por `GET /api/conteudo?aulas=N`. Aula já incompleta não gasta chamadas de expansão.
+
 ## Risks / Trade-offs
 
 - Mais chamadas por aula → custo/tempo maiores; mitigado por estimativa e espera adaptativa.
