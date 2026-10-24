@@ -5971,6 +5971,7 @@ module.exports.removerEcoTitulo = removerEcoTitulo;
 module.exports.buildDocx = buildDocx;
 module.exports.limparUrlFonte = limparUrlFonte;
 module.exports.comRateLimit = comRateLimit;
+module.exports.isRetriable = isRetriable;
 module.exports.baixarParaArquivo = baixarParaArquivo;
 module.exports.fundamentacaoDaAula = fundamentacaoDaAula;
 module.exports.obs = observabilidade;

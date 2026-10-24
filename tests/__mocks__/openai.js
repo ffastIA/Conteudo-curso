@@ -30,10 +30,51 @@ async function* makeStream(text, finishReason) {
   yield { choices: [{ delta: {}, ...(finishReason ? { finish_reason: finishReason } : {}) }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } };
 }
 
+// Validação de parâmetros como a API real (verificada em docs/decisoes/pesquisa-api.md):
+//   - `web_search_options` em chat.completions com gpt-4o → 400 "Web search options not supported with this model."
+//   - modelos `*-search-preview` → 404 "has been deprecated"
+// Assim a regressão do commit dbc35cc (busca web pelo caminho errado) é pega pela suíte.
+// A regra fica numa função só, para acompanhar mudanças da API.
+function validarChat(params) {
+  if (!params || typeof params.model !== 'string' || !params.model) {
+    throw new OpenAI.BadRequestError("Missing required parameter: 'model'.");
+  }
+  if (!Array.isArray(params.messages) || !params.messages.length) {
+    throw new OpenAI.BadRequestError("Missing required parameter: 'messages'.");
+  }
+  if (/-search-preview$/.test(params.model)) {
+    throw new OpenAI.NotFoundError(`The model ${params.model} has been deprecated`);
+  }
+  if (params.web_search_options) {
+    throw new OpenAI.BadRequestError('Web search options not supported with this model.');
+  }
+}
+
+// Responses API: exige model e input; `messages` e `web_search_options` não existem aqui;
+// só aceita ferramentas conhecidas.
+const FERRAMENTAS_RESPONSES = ['web_search', 'web_search_preview', 'file_search', 'function'];
+function validarResponses(params) {
+  if (!params || typeof params.model !== 'string' || !params.model) {
+    throw new OpenAI.BadRequestError("Missing required parameter: 'model'.");
+  }
+  if (params.input === undefined || params.input === null || params.input === '') {
+    throw new OpenAI.BadRequestError("Missing required parameter: 'input'.");
+  }
+  if (params.messages || params.web_search_options) {
+    throw new OpenAI.BadRequestError("Unknown parameter for the Responses API: 'messages' / 'web_search_options'.");
+  }
+  for (const t of params.tools || []) {
+    if (!FERRAMENTAS_RESPONSES.includes(t?.type)) {
+      throw new OpenAI.BadRequestError(`Invalid value: '${t?.type}'. Supported tool types: ${FERRAMENTAS_RESPONSES.join(', ')}.`);
+    }
+  }
+}
+
 const mockCreate = jest.fn(async (params, options) => {
   const { stream } = params;
   OpenAI.__lastOptions = options;
   if (_errorQueue.length) throw _errorQueue.shift();
+  validarChat(params);
   if (_error) throw _error;
   const text = _responder ? _responder(params) : (_queue.length ? _queue.shift() : _response);
   const finishReason = _finishQueue.length ? _finishQueue.shift() : undefined;
@@ -55,13 +96,10 @@ let _citations = [
   { url: 'https://www.w3schools.com/nodejs', title: 'W3Schools' }
 ];
 
-const mockResponsesCreate = jest.fn(async (params, options) => {
-  OpenAI.__lastOptions = options;
-  if (_errorQueue.length) throw _errorQueue.shift();
-  if (_error) throw _error;
-  const text = _queue.length ? _queue.shift() : _response;
+function montarResposta(text) {
   return {
     status: 'completed',
+    output_text: text,
     output: [
       { type: 'web_search_call', status: 'completed' },
       {
@@ -75,6 +113,25 @@ const mockResponsesCreate = jest.fn(async (params, options) => {
     ],
     usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 }
   };
+}
+
+// Streaming da Responses API: evento de busca, deltas de texto, anotações de citação e conclusão.
+async function* streamResponses(text) {
+  yield { type: 'response.created', response: { status: 'in_progress' } };
+  yield { type: 'response.output_item.added', item: { type: 'web_search_call', status: 'in_progress' } };
+  yield { type: 'response.web_search_call.completed', item: { type: 'web_search_call', status: 'completed' } };
+  for (const word of text.split(' ')) yield { type: 'response.output_text.delta', delta: word + ' ' };
+  for (const c of _citations) yield { type: 'response.output_text.annotation.added', annotation: { type: 'url_citation', url: c.url, title: c.title } };
+  yield { type: 'response.completed', response: montarResposta(text) };
+}
+
+const mockResponsesCreate = jest.fn(async (params, options) => {
+  OpenAI.__lastOptions = options;
+  if (_errorQueue.length) throw _errorQueue.shift();
+  if (_error) throw _error;
+  validarResponses(params);
+  const text = _queue.length ? _queue.shift() : _response;
+  return params.stream ? streamResponses(text) : montarResposta(text);
 });
 
 class OpenAI {
@@ -123,6 +180,8 @@ OpenAI.__getMock = () => mockCreate;
 OpenAI.__setErrors = (errs) => { _errorQueue = [...errs]; };
 OpenAI.__setResponder = (fn) => { _responder = fn; };
 OpenAI.__setFinishReasons = (reasons) => { _finishQueue = [...reasons]; };
+// Atalho: a PRÓXIMA chamada de chat termina com este finish_reason (ex.: 'length').
+OpenAI.__setFinishReason = (reason) => { _finishQueue = [reason]; };
 OpenAI.__getResponsesMock = () => mockResponsesCreate;
 OpenAI.__setCitations = (citations) => { _citations = citations; };
 
@@ -166,6 +225,9 @@ OpenAI.AuthenticationError = class AuthenticationError extends APIStatusError {
 };
 OpenAI.BadRequestError = class BadRequestError extends APIStatusError {
   constructor(message = 'Bad request.') { super(message, 400); this.name = 'BadRequestError'; }
+};
+OpenAI.NotFoundError = class NotFoundError extends APIStatusError {
+  constructor(message = 'Not found.') { super(message, 404); this.name = 'NotFoundError'; }
 };
 OpenAI.RateLimitError = class RateLimitError extends APIStatusError {
   constructor(message = 'Rate limit reached.', headers = {}) { super(message, 429, headers); this.name = 'RateLimitError'; }

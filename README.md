@@ -158,6 +158,22 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 - Eventos SSE seguem o formato `{"type": "...", ...}` com tipos `progress`,
   `site`, `token`, `done`, `warning` e `error`.
 
+## Testes e verificação real
+
+- `npm test` roda a suíte Jest sem rede: o SDK da OpenAI é substituído por um
+  mock (`tests/__mocks__/openai.js`) que rejeita o que a API real rejeita
+  (`web_search_options` em `chat.completions` → 400, modelos `*-search-preview`
+  → 404, Responses API sem `model`/`input`) e simula 429, 5xx, truncamento
+  (`finish_reason: 'length'`) e a busca web com citações.
+- `npm run test:coverage` aplica o gate de 70% de linhas (`jest.config.js`).
+- **Antes de um release que toque a Etapa 2 (pesquisa web)**, rode manualmente
+  `node scripts/smoke-pesquisa.js` com a chave real: ele chama cada variante da
+  API de busca uma vez e confirma o caminho que funciona (resultado em
+  `docs/decisoes/pesquisa-api.md`). Não faz parte da suíte nem da CI.
+- Ao fim de uma fase grande, `node scripts/gerar-baseline.js` reexecuta o curso de
+  referência (`docs/baseline/`) para comparar tamanho das aulas, fontes e notas;
+  usa a chave real e gasta crédito, então rode só quando fizer sentido.
+
 ## Para contribuir
 
 Antes de propor qualquer mudança, leia `PROJECT.md` (guia canônico de

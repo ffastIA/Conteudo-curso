@@ -7,7 +7,7 @@ module.exports = {
   testMatch: ['**/tests/**/*.test.js'],
   setupFiles: ['<rootDir>/tests/setup-env.js'],
   coverageThreshold: {
-    global: { lines: 60 }
+    global: { lines: 70 }
   },
   collectCoverageFrom: [
     'server.js',
@@ -15,7 +15,12 @@ module.exports = {
     'conteudo-secoes.js',
     'fundamentacao.js',
     'avaliacao.js',
-    'observabilidade.js'
+    'observabilidade.js',
+    'custo.js',
+    'logger.js',
+    'docx-markdown.js',
+    'config/modelos.js',
+    'public/markdown.js'
   ],
   moduleNameMapper: {
     '^openai$': '<rootDir>/tests/__mocks__/openai.js'

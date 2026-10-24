@@ -12,15 +12,19 @@ O mock da OpenAI SHALL exportar `AuthenticationError`, `BadRequestError` e `Rate
 - **THEN** o cabeçalho está acessível ao código sob teste
 
 ### Requirement: Mock valida parâmetros como a API real
-O mock SHALL rejeitar com `BadRequestError` o uso de `web_search_options` em modelos que não sejam `*-search-preview` (ou a regra confirmada na verificação real), para que regressões como a do commit `dbc35cc` sejam detectadas pela suíte.
+O mock SHALL rejeitar o que a API real rejeita, conforme a regra confirmada na verificação real (`docs/decisoes/pesquisa-api.md`): `web_search_options` em `chat.completions` com `BadRequestError` (400) e modelos `*-search-preview` com `NotFoundError` (404, descontinuados). Para que regressões como a do commit `dbc35cc` sejam detectadas pela suíte, a Responses API SHALL exigir `model` e `input` e recusar parâmetros do chat.
 
 #### Scenario: Modelo sem suporte
 - **WHEN** `chat.completions.create` recebe `model: 'gpt-4o'` com `web_search_options`
 - **THEN** o mock lança `BadRequestError`
 
-#### Scenario: Modelo com suporte
-- **WHEN** o modelo termina em `-search-preview`
-- **THEN** a chamada é aceita
+#### Scenario: Modelo descontinuado
+- **WHEN** `chat.completions.create` recebe um modelo terminado em `-search-preview`
+- **THEN** o mock lança `NotFoundError` (404), como a API real
+
+#### Scenario: Responses API incompleta
+- **WHEN** `responses.create` é chamado sem `input`
+- **THEN** o mock lança `BadRequestError`
 
 ### Requirement: Mock simula a Responses API de busca
 O mock SHALL oferecer `responses.create` com a ferramenta `web_search`, retornando texto de saída, anotações `url_citation` e, em streaming, eventos de busca e de texto.

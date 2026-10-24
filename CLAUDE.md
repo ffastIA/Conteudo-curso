@@ -6,7 +6,7 @@ código §8, gaps priorizados §9, non-goals §10).
 
 ## Comandos
 - `npm test` — suíte Jest (deve ficar verde antes e depois de qualquer mudança)
-- `npm run test:coverage` — cobertura com gate de 40% de linhas
+- `npm run test:coverage` — cobertura com gate de 70% de linhas
 - `node server.js` — sobe em http://localhost:3000 (requer `.env`, ver `.env.example`)
 
 ## Regras que sempre se aplicam (resumo do PROJECT.md §8/§10)

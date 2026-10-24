@@ -428,7 +428,7 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | G04 | Persistência | Reduzido | Sessão continua in-memory, mas é totalmente reconstruível do disco sem chamada à OpenAI (`session-persistence`, `session-auto-restore`, `project-load`) |
 | G05 | Confiabilidade | ✅ Resolvido | Espera adaptativa de 429 (`retry-after`, backoff com teto), repetição de falhas transitórias e geração retomável (`geracao-retomavel`); retry dedicado da pesquisa web (`web-search-resilience`) |
 | G06 | Observabilidade | ✅ Resolvido | Logger JSON próprio (`logger.js`, `LOG_LEVEL`) com `etapa`, `aula` e `reqId` (= `traceId`), sem segredos (`custo-e-logs`) |
-| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 40%, mock da OpenAI com erros reais e Responses API; confira o número atual com `npm test` (48 suítes e 657 testes em 2026-10-24) — ainda não é cobertura completa |
+| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 70% de linhas (real ~88%), mock da OpenAI que rejeita o que a API real rejeita, com erros, Responses API e truncamento; confira o número atual com `npm test` (49 suítes e 672 testes em 2026-10-24) — a verificação com a chave real (`scripts/smoke-pesquisa.js`) continua manual |
 | G08 | UX | ✅ Resolvido | `GET /api/estimativa` e a UI mostram a faixa de tokens/custo antes de pesquisa por módulo, conteúdo e revisão; custo acumulado em `projeto.json`; `ORCAMENTO_USD` opcional (`custo-e-logs`) |
 | G09 | Portabilidade | Baixo | Seletor nativo de pasta é Windows-only por design (PowerShell + `System.Windows.Forms`) |
 | G10 | Escalabilidade | Baixo | Sem rate limiting próprio — múltiplos usuários podem esgotar quota da API (a espera de 429 e `CONTEUDO_PARALELISMO` ≤ 2 só protegem uma instância) |
