@@ -1,5 +1,5 @@
 // ── Skills específicas por etapa ─────────────────────────────────────────────
-// Cada skill define o modelo apropriado (pesquisa web → gpt-4o-search-preview;
+// Cada skill define o modelo apropriado (pesquisa web → gpt-4o via Responses API + web_search;
 // demais etapas → gpt-4o-mini, mais econômico em tokens) e a estrutura de
 // mensagens (system + user) usada na chamada à OpenAI.
 
@@ -174,7 +174,7 @@ const NIVEL_PESO_ALTO =
 
 const pesquisaWebSkill = ({ nome, nivel, publico, topicos, ementa, metodologia, bnccContext, modalidade }) => ({
   model: MODEL_RESEARCH,
-  web_search_options: { search_context_size: 'medium' },
+  searchContextSize: 'medium',
   system:
     'Você é especialista em educação tecnológica. Pesquise e sintetize ' +
     'conteúdos relevantes para cursos técnicos. Responda em português. ' +

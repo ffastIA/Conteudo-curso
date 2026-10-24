@@ -155,20 +155,83 @@ function combineSignals(a, b) {
   return ac.signal;
 }
 
+// Remove parâmetros de rastreamento (utm_*) que a busca web anexa às URLs das
+// fontes (ex.: ?utm_source=openai), mantendo o restante da URL intacto.
+function limparUrlFonte(url) {
+  try {
+    const u = new URL(url);
+    for (const k of [...u.searchParams.keys()]) {
+      if (k.toLowerCase().startsWith('utm_')) u.searchParams.delete(k);
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+// Mínimo de fontes e de domínios distintos para considerar a pesquisa como
+// realmente feita na web (resposta de memória não traz citações).
+const PESQUISA_MIN_FONTES = 3;
+const PESQUISA_MIN_DOMINIOS = 2;
+
+function avaliarFontesPesquisa(sites) {
+  const dominios = new Set();
+  for (const s of sites) {
+    try { dominios.add(new URL(s.url).hostname.replace(/^www\./, '')); } catch { /* URL inválida não conta */ }
+  }
+  return {
+    fontes: sites.length,
+    dominios: dominios.size,
+    ok: sites.length >= PESQUISA_MIN_FONTES && dominios.size >= PESQUISA_MIN_DOMINIOS
+  };
+}
+
+// Selo gravado no topo de uma pesquisa gerada sem busca web (decisão explícita
+// do usuário) — visível em .txt/.docx e lido pelas etapas seguintes.
+const SELO_SEM_PESQUISA_WEB =
+  '> ⚠️ SEM PESQUISA WEB: este texto foi gerado a partir do conhecimento do modelo, sem consulta a fontes. ' +
+  'Não cite este conteúdo como fonte nem como referência verificada.\n\n';
+
+// Busca web via Responses API (ferramenta `web_search`). O caminho antigo
+// (chat.completions + web_search_options com gpt-4o) é rejeitado pela API com
+// 400 "Web search options not supported with this model", e gpt-4o-search-preview
+// foi descontinuado (404) — ver docs/decisoes/pesquisa-api.md. O retorno é
+// normalizado para o formato de chat.completions (choices[0].message com
+// content e annotations url_citation, mais usage) que a rota /api/search já consome.
 async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null) {
   const timeoutSignal = makeAbortSignal(timeoutMs);
-  return openai.chat.completions.create(
+  const resp = await openai.responses.create(
     {
       model: skill.model,
-      web_search_options: skill.web_search_options,
-      max_tokens: 2000,
-      messages: [
-        { role: 'system', content: skill.system },
-        { role: 'user', content: skill.user }
-      ]
+      tools: [{ type: 'web_search', search_context_size: skill.searchContextSize || 'medium' }],
+      instructions: skill.system,
+      input: skill.user,
+      max_output_tokens: 4000
     },
     { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
   );
+
+  let texto = '';
+  const annotations = [];
+  for (const item of resp.output || []) {
+    if (item.type !== 'message') continue;
+    for (const c of item.content || []) {
+      if (typeof c.text === 'string') texto += c.text;
+      for (const a of c.annotations || []) {
+        if (a.type === 'url_citation' && a.url) {
+          annotations.push({ type: 'url_citation', url_citation: { url: a.url, title: a.title || a.url } });
+        }
+      }
+    }
+  }
+  return {
+    choices: [{ message: { content: texto || resp.output_text || '', annotations }, finish_reason: resp.status === 'incomplete' ? 'length' : 'stop' }],
+    usage: resp.usage ? {
+      prompt_tokens: resp.usage.input_tokens || 0,
+      completion_tokens: resp.usage.output_tokens || 0,
+      total_tokens: resp.usage.total_tokens || 0
+    } : undefined
+  };
 }
 
 app.use(express.json());
@@ -1007,7 +1070,7 @@ function saveProject(sess, stageInfo = null) {
 
 // Persiste o resultado de uma etapa em disco: um .txt em /scr (memória, lido pelas
 // próximas etapas) e um .docx na raiz (entregável formatado, igual ao da exportação).
-async function persistStage(sess, baseName, label, content, sites = []) {
+async function persistStage(sess, baseName, label, content, sites = [], fonte = 'ia') {
   try {
     const scrDir = courseScrDir(sess);
     const rootDir = courseRootDir(sess);
@@ -1015,7 +1078,7 @@ async function persistStage(sess, baseName, label, content, sites = []) {
     const doc = buildDocx(sess.config, label, content, sites);
     const buffer = await Packer.toBuffer(doc);
     fs.writeFileSync(path.join(rootDir, `${baseName}.docx`), buffer);
-    saveProject(sess, { baseName, fonte: 'ia' });
+    saveProject(sess, { baseName, fonte });
   } catch (err) {
     console.error(`Erro ao persistir "${baseName}":`, err.message);
   }
@@ -1150,13 +1213,68 @@ async function paginarHeygen(path, baseParams = {}, { maxPaginas = 100 } = {}) {
 // endpoint devolve o catálogo PÚBLICO inteiro do HeyGen misturado com os
 // avatares do usuário (milhares de itens, sem nenhum parâmetro de filtro
 // por dono — `type`/`owner`/`source` são todos rejeitados com "Extra inputs
-// are not permitted"), então paginar até o fim levaria minutos. Usa os
-// endpoints v2 (avatar_group.list?include_public=false +
-// avatar_group/{id}/avatars), que já escopam para os grupos do próprio
-// usuário — HeyGen os sinaliza como legados (sunset 2026-10-31, migrar para
-// /v3/avatar_groups quando esse endpoint entrar no ar; hoje retorna 404).
+// are not permitted"), então paginar até o fim levaria minutos.
+// Tenta primeiro /v3/avatar_groups; os endpoints v2 (avatar_group.list?
+// include_public=false + avatar_group/{id}/avatars) são legados (sunset
+// 2026-10-31) e só servem de fallback enquanto a v3 responde 404 ou formato
+// não reconhecido. Devolve { avatares, origem: 'v3' | 'v2' }.
 async function listarAvataresHeygen() {
   requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
+  let resultado = await listarAvataresHeygenV3();
+  if (!resultado) resultado = { avatares: await listarAvataresHeygenV2(), origem: 'v2' };
+  const { avatares, origem } = resultado;
+  if (!HEYGEN_AVATAR_IDS.length) return { avatares, origem };
+  return { avatares: avatares.filter(a => HEYGEN_AVATAR_IDS.includes(a.id)), origem };
+}
+
+// Normaliza uma lista de grupos/looks da v3 (`data` array, tolerando também
+// `data.<lista>`) — formato ainda não confirmado com a chave real (ver
+// scripts/smoke-pesquisa.js e a change verificacao-pesquisa-e-prazos), por
+// isso é defensivo: formato inesperado devolve null e aciona o fallback v2.
+function extrairListaHeygenV3(json, chaves) {
+  if (Array.isArray(json?.data)) return json.data;
+  for (const k of chaves) if (Array.isArray(json?.data?.[k])) return json.data[k];
+  return null;
+}
+
+async function listarAvataresHeygenV3() {
+  const respGrupos = await fetch(`${HEYGEN_API_BASE}/v3/avatar_groups?include_public=false`, {
+    headers: { 'x-api-key': HEYGEN_API_KEY },
+    signal: makeAbortSignal(30_000)
+  });
+  if (respGrupos.status === 404) return null;
+  if (!respGrupos.ok) {
+    const detalhe = await respGrupos.text().catch(() => '');
+    throw new Error(`HeyGen retornou ${respGrupos.status} ao listar grupos de avatares.${detalhe ? ' ' + detalhe : ''}`);
+  }
+  const grupos = extrairListaHeygenV3(await respGrupos.json(), ['avatar_groups', 'avatar_group_list']);
+  if (!grupos) return null;
+
+  const looksPorGrupo = [];
+  for (const grupo of grupos) {
+    const resp = await fetch(`${HEYGEN_API_BASE}/v3/avatar_groups/${grupo.id}/avatars`, {
+      headers: { 'x-api-key': HEYGEN_API_KEY },
+      signal: makeAbortSignal(30_000)
+    });
+    if (resp.status === 404) return null;
+    if (!resp.ok) {
+      const detalhe = await resp.text().catch(() => '');
+      throw new Error(`HeyGen retornou ${resp.status} ao listar avatares do grupo ${grupo.name || grupo.id}.${detalhe ? ' ' + detalhe : ''}`);
+    }
+    const looks = extrairListaHeygenV3(await resp.json(), ['avatars', 'avatar_list']);
+    if (!looks) return null;
+    const avatarType = `${(grupo.group_type || grupo.type || 'custom').toLowerCase()}_avatar`;
+    looksPorGrupo.push(looks.map(look => ({
+      id: look.id,
+      name: look.name || grupo.name,
+      avatar_type: avatarType,
+      preview_image_url: look.image_url || look.preview_image_url || grupo.preview_image || ''
+    })));
+  }
+  return { avatares: looksPorGrupo.flat(), origem: 'v3' };
+}
+
+async function listarAvataresHeygenV2() {
   const timeoutSignalGrupos = makeAbortSignal(30_000);
   const respGrupos = await fetch(`${HEYGEN_API_BASE}/v2/avatar_group.list?include_public=false`, {
     headers: { 'x-api-key': HEYGEN_API_KEY },
@@ -1190,9 +1308,7 @@ async function listarAvataresHeygen() {
     }));
   }));
 
-  const avatares = looksPorGrupo.flat();
-  if (!HEYGEN_AVATAR_IDS.length) return avatares;
-  return avatares.filter(a => HEYGEN_AVATAR_IDS.includes(a.id));
+  return looksPorGrupo.flat();
 }
 
 // Lista as vozes do workspace (públicas do HeyGen + privadas/clonadas pelo
@@ -1663,8 +1779,8 @@ app.post('/api/estilos-visuais/selecionar', (req, res) => {
 // não são geradas por IA.
 app.get('/api/heygen/avatares', async (req, res) => {
   try {
-    const avatares = await listarAvataresHeygen();
-    res.json({ avatares });
+    const { avatares, origem } = await listarAvataresHeygen();
+    res.json({ avatares, legado: origem === 'v2' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Erro ao listar avatares do HeyGen.' });
@@ -2290,11 +2406,17 @@ app.post('/api/config', async (req, res) => {
 });
 
 // ── GET /api/search (SSE) ───────────────────────────────────────────────────
+// Pesquisa web real: só grava pesquisa.txt/.docx quando a busca devolve
+// citações suficientes (≥3 fontes em ≥2 domínios). Sem isso — ou se a busca
+// falhar — emite `error` com `semPesquisaDisponivel` e NÃO grava nada; o
+// fallback para o conhecimento do modelo só roda por decisão explícita do
+// usuário (`?semBusca=1`) e grava o texto com selo e fonte 'modelo_sem_busca'.
 app.get('/api/search', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
   const client = clientAbort(res);
-  const { topicos = '', limite = 3 } = req.query;
+  const { topicos = '', limite = 3, semBusca } = req.query;
+  const semWeb = semBusca === '1';
   sess.inputs.topicos = topicos;
   sess.inputs.limite = Number(limite);
   const { nome, nivel, publico, modalidade } = sess.config;
@@ -2302,38 +2424,41 @@ app.get('/api/search', async (req, res) => {
   send(res, { type: 'progress', message: 'Iniciando pesquisa...' });
 
   // Skill de pesquisa na internet — usa o modelo com capacidade de busca web
-  // (gpt-4o-search-preview) e referencia a ementa já gerada para manter o foco.
-  const skill = skills.pesquisaWebSkill({ nome, nivel, publico, modalidade, topicos, ementa: sess.ementa, metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess) });
+  // (Responses API + web_search) e referencia a ementa já gerada para manter o foco.
+  const skillArgs = { nome, nivel, publico, modalidade, topicos, ementa: sess.ementa, metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess) };
+  const skill = skills.pesquisaWebSkill(skillArgs);
+
+  // Falha de pesquisa: nada é gravado; a UI oferece "tentar novamente" e
+  // "continuar sem pesquisa web" (exceto chave inválida, que o fallback não resolve).
+  const falhaPesquisa = (message, err = null) => send(res, {
+    type: 'error',
+    message,
+    semPesquisaDisponivel: !(err instanceof OpenAI.AuthenticationError)
+  });
 
   try {
-    send(res, { type: 'progress', message: 'Buscando na web...' });
-
     let completion = null;
-    let usedFallback = false;
 
-    // Tentativa 1 com timeout completo
-    try {
-      completion = await tentarPesquisaWeb(skill, SEARCH_TIMEOUT_MS, client);
-    } catch (err1) {
-      if (!isRetriable(err1)) throw err1;
-      // Retry com timeout reduzido
-      send(res, { type: 'progress', message: 'Reconectando...' });
+    if (semWeb) {
+      send(res, { type: 'progress', message: '⚠️ Gerando a partir do conhecimento do modelo (sem pesquisa web)...' });
+      const fbSkill = skills.pesquisaFallbackSkill(skillArgs);
+      completion = await openai.chat.completions.create({
+        model: fbSkill.model,
+        max_tokens: 2000,
+        messages: [
+          { role: 'system', content: fbSkill.system },
+          { role: 'user', content: fbSkill.user }
+        ]
+      }, { signal: combineSignals(client.signal, makeAbortSignal(SEARCH_FALLBACK_TIMEOUT_MS)) });
+    } else {
+      send(res, { type: 'progress', message: 'Buscando na web...' });
+      // Tentativa 1 com timeout completo; 1 retentativa com timeout reduzido
       try {
+        completion = await tentarPesquisaWeb(skill, SEARCH_TIMEOUT_MS, client);
+      } catch (err1) {
+        if (!isRetriable(err1)) throw err1;
+        send(res, { type: 'progress', message: 'Reconectando...' });
         completion = await tentarPesquisaWeb(skill, SEARCH_RETRY_TIMEOUT_MS, client);
-      } catch (err2) {
-        if (!isRetriable(err2)) throw err2;
-        // Fallback sem web search
-        usedFallback = true;
-        send(res, { type: 'progress', message: '⚠️ Pesquisa web indisponível — gerando a partir do conhecimento do modelo...' });
-        const fbSkill = skills.pesquisaFallbackSkill({ nome, nivel, publico, modalidade, topicos, ementa: sess.ementa, metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess) });
-        completion = await openai.chat.completions.create({
-          model: fbSkill.model,
-          max_tokens: 2000,
-          messages: [
-            { role: 'system', content: fbSkill.system },
-            { role: 'user', content: fbSkill.user }
-          ]
-        }, { signal: combineSignals(client.signal, makeAbortSignal(SEARCH_FALLBACK_TIMEOUT_MS)) });
       }
     }
     if (client.disconnected) return;
@@ -2341,31 +2466,32 @@ app.get('/api/search', async (req, res) => {
     addUsage(completion.usage, sess);
 
     const message = completion.choices[0]?.message || {};
-    const fullText = message.content || '';
+    const textoBruto = message.content || '';
 
     const sitesCollected = [];
-    if (!usedFallback) {
-      const seenUrls = new Set();
+    if (!semWeb) {
+      const vistos = new Set();
       for (const ann of message.annotations || []) {
-        if (ann.type === 'url_citation' && ann.url_citation?.url && !seenUrls.has(ann.url_citation.url)) {
-          seenUrls.add(ann.url_citation.url);
-        }
+        if (ann.type !== 'url_citation' || !ann.url_citation?.url) continue;
+        const url = limparUrlFonte(ann.url_citation.url);
+        if (vistos.has(url)) continue;
+        vistos.add(url);
+        sitesCollected.push({ url, title: ann.url_citation.title || url });
       }
-      if (seenUrls.size) {
-        send(res, { type: 'progress', message: 'Lendo fontes...' });
-        for (const ann of message.annotations || []) {
-          if (ann.type === 'url_citation' && ann.url_citation?.url) {
-            const { url, title } = ann.url_citation;
-            if (seenUrls.has(url)) {
-              seenUrls.delete(url);
-              const site = { url, title: title || url };
-              sitesCollected.push(site);
-              send(res, { type: 'site', ...site });
-            }
-          }
-        }
+      const avaliacao = avaliarFontesPesquisa(sitesCollected);
+      if (!avaliacao.ok) {
+        const motivo = sitesCollected.length === 0
+          ? 'A busca não retornou nenhuma fonte (a resposta pode ter vindo apenas da memória do modelo).'
+          : `A busca retornou poucas fontes (${avaliacao.fontes} fonte(s) em ${avaliacao.dominios} domínio(s); mínimo ${PESQUISA_MIN_FONTES} em ${PESQUISA_MIN_DOMINIOS}).`;
+        console.warn(`[pesquisa] descartada: ${avaliacao.fontes} fonte(s), ${avaliacao.dominios} domínio(s)`);
+        falhaPesquisa(`${motivo} Nada foi gravado. Tente novamente ou continue sem pesquisa web.`);
+        return;
       }
+      send(res, { type: 'progress', message: 'Lendo fontes...' });
+      for (const site of sitesCollected) send(res, { type: 'site', ...site });
     }
+
+    const fullText = semWeb ? SELO_SEM_PESQUISA_WEB + textoBruto : textoBruto;
 
     // Simula streaming progressivo do texto para manter a UX em tempo real
     const CHUNK_SIZE = 24;
@@ -2378,7 +2504,7 @@ app.get('/api/search', async (req, res) => {
 
     send(res, { type: 'progress', message: 'Sintetizando...' });
     sess.pesquisa = fullText;
-    await persistStage(sess, 'pesquisa', 'Pesquisa Web', fullText, sitesCollected);
+    await persistStage(sess, 'pesquisa', 'Pesquisa Web', fullText, sitesCollected, semWeb ? 'modelo_sem_busca' : 'ia');
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
@@ -2387,7 +2513,7 @@ app.get('/api/search', async (req, res) => {
       return;
     }
     console.error(err);
-    send(res, { type: 'error', message: err.message || 'Erro na pesquisa' });
+    falhaPesquisa(err.message || 'Erro na pesquisa', err);
   } finally {
     res.end();
   }
@@ -2600,39 +2726,7 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
 
 // Executa uma chamada em streaming para uma skill de conteúdo e devolve o texto
 // completo gerado, repassando os tokens via SSE para o cliente.
-// Se a skill usa web_search_options, simula streaming por chunks (sem SSE nativo).
 async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null) {
-  if (skill.web_search_options) {
-    const timeoutSignal = makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS);
-    const completion = await openai.chat.completions.create(
-      {
-        model: skill.model,
-        web_search_options: skill.web_search_options,
-        max_tokens: MAX_TOKENS_AULA,
-        messages: [
-          { role: 'system', content: skill.system },
-          { role: 'user', content: skill.user }
-        ]
-      },
-      { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
-    );
-    addUsage(completion.usage, sess);
-    const finishReason = completion.choices[0]?.finish_reason;
-    meta.finishReason = finishReason;
-    meta.completionTokens = completion.usage?.completion_tokens;
-    const text = completion.choices[0]?.message?.content?.trim() || '';
-    if (finishReason === 'length') {
-      console.warn(`[web-search] resposta truncada (${text.length} chars, finish_reason=length)`);
-      send(res, { type: 'warning', text: 'Resposta truncada pelo limite de tokens. O conteúdo gerado pode estar incompleto — revise o arquivo gerado.' });
-    }
-    const CHUNK = 60;
-    for (let c = 0; c < text.length; c += CHUNK) {
-      if (clientCtx?.disconnected) break;
-      send(res, { type: 'token', text: text.slice(c, c + CHUNK) });
-      await new Promise(r => setTimeout(r, 8));
-    }
-    return text;
-  }
   // Timeout de inatividade: aborta a chamada se nenhum delta chegar por
   // STALL_TIMEOUT_MS, sem limitar a duração total de uma geração legítima
   // que continua recebendo dados normalmente.
@@ -3527,7 +3621,7 @@ function buildAuditSection(metricasPorAula) {
 }
 
 // ── GET /api/aplicar-melhorias/confirmar (SSE) — Etapa 6 ─────────────────────
-// Aplica as melhorias por aula usando gpt-4o-search-preview com acesso à web.
+// Aplica as melhorias por aula (aplicarMelhoriasSkill, sem busca web).
 app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
   const sess = getSession(req, res);
 
@@ -3663,7 +3757,6 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           const cont = await openai.chat.completions.create(
             {
               model: skill.model,
-              web_search_options: skill.web_search_options,
               max_tokens: MAX_TOKENS_AULA,
               messages: [
                 { role: 'system', content: skill.system },
@@ -4356,6 +4449,8 @@ module.exports.mergeSecoesConteudo = mergeSecoesConteudo;
 module.exports.parseSecoesFixas = parseSecoesFixas;
 module.exports.removerEcoTitulo = removerEcoTitulo;
 module.exports.buildDocx = buildDocx;
+module.exports.limparUrlFonte = limparUrlFonte;
+module.exports.avaliarFontesPesquisa = avaliarFontesPesquisa;
 module.exports.Packer = Packer;
 module.exports.textSimilarity = textSimilarity;
 module.exports.extrairTermosEsperados = extrairTermosEsperados;

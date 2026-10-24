@@ -34,12 +34,45 @@ const mockCreate = jest.fn(async ({ stream }, options) => {
   };
 });
 
+// Responses API (ferramenta web_search) — usada pela pesquisa web da Etapa 2.
+// Devolve `output` com uma mensagem de texto e anotações url_citation
+// configuráveis por OpenAI.__setCitations (padrão: 2 fontes em 2 domínios).
+let _citations = [
+  { url: 'https://nodejs.org/docs?utm_source=openai', title: 'Node.js Docs' },
+  { url: 'https://developer.mozilla.org/js?utm_source=openai', title: 'MDN' },
+  { url: 'https://www.w3schools.com/nodejs', title: 'W3Schools' }
+];
+
+const mockResponsesCreate = jest.fn(async (params, options) => {
+  OpenAI.__lastOptions = options;
+  if (_error) throw _error;
+  const text = _queue.length ? _queue.shift() : _response;
+  return {
+    status: 'completed',
+    output: [
+      { type: 'web_search_call', status: 'completed' },
+      {
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text,
+          annotations: _citations.map(c => ({ type: 'url_citation', url: c.url, title: c.title }))
+        }]
+      }
+    ],
+    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 }
+  };
+});
+
 class OpenAI {
   constructor() {
     this.chat = {
       completions: {
         create: mockCreate
       }
+    };
+    this.responses = {
+      create: mockResponsesCreate
     };
     this.images = {
       generate: mockImagesGenerate
@@ -74,8 +107,16 @@ OpenAI.__setImageError = (err) => {
 };
 
 OpenAI.__getMock = () => mockCreate;
+OpenAI.__getResponsesMock = () => mockResponsesCreate;
+OpenAI.__setCitations = (citations) => { _citations = citations; };
 
 OpenAI.__reset = () => {
+  mockResponsesCreate.mockClear();
+  _citations = [
+    { url: 'https://nodejs.org/docs?utm_source=openai', title: 'Node.js Docs' },
+    { url: 'https://developer.mozilla.org/js?utm_source=openai', title: 'MDN' },
+    { url: 'https://www.w3schools.com/nodejs', title: 'W3Schools' }
+  ];
   _response = 'mock response text';
   _error = null;
   _queue = [];
@@ -90,6 +131,22 @@ OpenAI.APIUserAbortError = class APIUserAbortError extends Error {
     super(message);
     this.name = 'APIUserAbortError';
   }
+};
+
+// Classes de erro do SDK usadas por isRetriable (instanceof) no server.js —
+// sem elas, `err instanceof undefined` lançaria TypeError.
+class APIStatusError extends Error {
+  constructor(message, status, headers = {}) {
+    super(message);
+    this.status = status;
+    this.headers = headers;
+  }
+}
+OpenAI.AuthenticationError = class AuthenticationError extends APIStatusError {
+  constructor(message = 'Incorrect API key provided.') { super(message, 401); this.name = 'AuthenticationError'; }
+};
+OpenAI.BadRequestError = class BadRequestError extends APIStatusError {
+  constructor(message = 'Bad request.') { super(message, 400); this.name = 'BadRequestError'; }
 };
 
 module.exports = OpenAI;

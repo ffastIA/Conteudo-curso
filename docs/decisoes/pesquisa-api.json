@@ -1,0 +1,36 @@
+{
+  "geradoEm": "2026-10-24T16:28:43.297Z",
+  "consulta": "Quais são as principais ferramentas e referências atuais para ensinar Node.js a iniciantes? Cite as fontes.",
+  "resultados": [
+    {
+      "variante": "chat.completions gpt-4o + web_search_options",
+      "status": 400,
+      "citacoes": 0,
+      "fontes": 0,
+      "dominios": 0,
+      "latenciaMs": 1998,
+      "resultado": "rejeitada",
+      "detalhe": "400 Web search options not supported with this model."
+    },
+    {
+      "variante": "chat.completions gpt-4o-search-preview + web_search_options",
+      "status": 404,
+      "citacoes": 0,
+      "fontes": 0,
+      "dominios": 0,
+      "latenciaMs": 570,
+      "resultado": "rejeitada",
+      "detalhe": "404 The model `gpt-4o-search-preview` has been deprecated, learn more here: https://platform.openai.com/docs/deprecations"
+    },
+    {
+      "variante": "responses gpt-4o + web_search",
+      "status": 200,
+      "citacoes": 15,
+      "fontes": 11,
+      "dominios": 9,
+      "latenciaMs": 11206,
+      "resultado": "web",
+      "detalhe": ""
+    }
+  ]
+}

@@ -220,7 +220,7 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
       errLog(logPanel, msg.message);
       es.close();
       refreshTokenCounter();
-      if (onError) onError(msg.message);
+      if (onError) onError(msg.message, msg);
     }
   };
 
@@ -426,7 +426,7 @@ document.getElementById('btnSalvarMetodologia').addEventListener('click', async 
 });
 
 // ── STEP 2 — Pesquisa ────────────────────────────────────────────────────────
-document.getElementById('btnSearch').addEventListener('click', () => {
+function executarPesquisa({ semBusca = false } = {}) {
   const topicos = encodeURIComponent(document.getElementById('topicos').value.trim());
   const limite = document.getElementById('limite').value || 3;
 
@@ -435,11 +435,12 @@ document.getElementById('btnSearch').addEventListener('click', () => {
   document.getElementById('sitesContainer').style.display = 'none';
   document.getElementById('sitesList').innerHTML = '';
   document.getElementById('searchActions').style.display = 'none';
+  document.getElementById('searchFalhaAcoes')?.remove();
 
   const logPanel = initLog('logSearch');
   document.getElementById('btnSearch').disabled = true;
 
-  const url = `/api/search?topicos=${topicos}&limite=${limite}`;
+  const url = `/api/search?topicos=${topicos}&limite=${limite}${semBusca ? '&semBusca=1' : ''}`;
 
   streamSSE(url, {
     logPanel,
@@ -463,12 +464,28 @@ document.getElementById('btnSearch').addEventListener('click', () => {
       document.getElementById('btnSearch').disabled = false;
       markDone(2);
     },
-    onError() {
+    onError(_mensagem, msg) {
       document.getElementById('btnSearch').disabled = false;
       addLog(logPanel, '💡 Tente novamente ou avance para a Etapa 3 — a pesquisa pode ser pulada.');
+      // Nada foi gravado: oferece decisão explícita entre repetir a busca e
+      // continuar sem pesquisa web (texto do modelo, gravado com selo).
+      if (msg?.semPesquisaDisponivel) {
+        const acoes = document.createElement('div');
+        acoes.id = 'searchFalhaAcoes';
+        acoes.className = 'btn-row';
+        acoes.style.justifyContent = 'flex-start';
+        acoes.innerHTML =
+          '<button class="btn btn-secondary" id="btnPesquisaTentarNovamente">🔁 Tentar novamente</button>' +
+          '<button class="btn btn-secondary" id="btnPesquisaSemWeb">⚠️ Continuar sem pesquisa web</button>';
+        document.getElementById('logSearch').after(acoes);
+        document.getElementById('btnPesquisaTentarNovamente').addEventListener('click', () => executarPesquisa());
+        document.getElementById('btnPesquisaSemWeb').addEventListener('click', () => executarPesquisa({ semBusca: true }));
+      }
     }
   });
-});
+}
+
+document.getElementById('btnSearch').addEventListener('click', () => executarPesquisa());
 
 // ── STEP 3 — Plano de ensino ─────────────────────────────────────────────────
 document.getElementById('btnPlanoEnsino').addEventListener('click', () => {
@@ -1186,12 +1203,17 @@ async function carregarHeygenConfig() {
     ]);
     const dataAvatares = await rAvatares.json();
     const dataVozes = await rVozes.json();
-    if (!rAvatares.ok) { alert(dataAvatares.error || 'Erro ao listar avatares do HeyGen.'); return; }
     if (!rVozes.ok) { alert(dataVozes.error || 'Erro ao listar vozes do HeyGen.'); return; }
-    if (!dataAvatares.avatares?.length) {
-      alert('Nenhum avatar encontrado no seu workspace HeyGen. Crie um avatar em app.heygen.com antes de continuar.');
-      return;
+    // Falha ou lista vazia de avatares não bloqueia a Etapa 10: o usuário
+    // pode informar o avatarId manualmente (a listagem v2 do HeyGen tem
+    // sunset em 2026-10-31).
+    const avataresLista = rAvatares.ok ? (dataAvatares.avatares || []) : [];
+    if (!rAvatares.ok) {
+      alert((dataAvatares.error || 'Erro ao listar avatares do HeyGen.') + ' Você pode informar o avatarId manualmente na tela seguinte.');
+    } else if (!avataresLista.length) {
+      alert('Nenhum avatar encontrado no seu workspace HeyGen. Informe o avatarId manualmente ou crie um avatar em app.heygen.com.');
     }
+    document.getElementById('heygenAvisoLegado').style.display = (rAvatares.ok && dataAvatares.legado) ? 'block' : 'none';
     if (!dataVozes.vozes?.length) {
       alert('Nenhuma voz encontrada no seu workspace HeyGen.');
       return;
@@ -1199,11 +1221,11 @@ async function carregarHeygenConfig() {
 
     // Ao reabrir para trocar, pré-marca o avatar/voz atualmente configurados
     // (quando ainda presentes na lista) em vez de sempre cair no primeiro item.
-    const avatarIndexAtual = dataAvatares.avatares.findIndex(a => a.id === state.heygenConfig?.avatarId);
+    const avatarIndexAtual = avataresLista.findIndex(a => a.id === state.heygenConfig?.avatarId);
     const vozIndexAtual = dataVozes.vozes.findIndex(v => v.voice_id === state.heygenConfig?.voiceId);
 
     const avataresList = document.getElementById('heygenAvataresList');
-    avataresList.innerHTML = dataAvatares.avatares.map((a, i) =>
+    avataresList.innerHTML = avataresLista.map((a, i) =>
       `<label class="bncc-item">` +
       `<input type="radio" name="heygenAvatarOpcao" value="${escHtml(a.id)}" ` +
       `data-name="${escHtml(a.name || '')}" data-type="${escHtml(a.avatar_type || '')}" ${i === (avatarIndexAtual >= 0 ? avatarIndexAtual : 0) ? 'checked' : ''}>` +
@@ -1232,14 +1254,15 @@ async function carregarHeygenConfig() {
 document.getElementById('btnConfirmarHeygenConfig').addEventListener('click', async () => {
   const avatarOpcao = document.querySelector('#heygenAvataresList input[name=heygenAvatarOpcao]:checked');
   const vozOpcao = document.querySelector('#heygenVozesList input[name=heygenVozOpcao]:checked');
-  if (!avatarOpcao || !vozOpcao) {
-    alert('Selecione um avatar e uma voz antes de confirmar.');
+  const avatarIdManual = document.getElementById('heygenAvatarIdManual').value.trim();
+  if ((!avatarOpcao && !avatarIdManual) || !vozOpcao) {
+    alert('Selecione (ou informe o id de) um avatar e selecione uma voz antes de confirmar.');
     return;
   }
   const escolha = {
-    avatarId: avatarOpcao.value,
-    avatarName: avatarOpcao.dataset.name,
-    avatarType: avatarOpcao.dataset.type,
+    avatarId: avatarIdManual || avatarOpcao.value,
+    avatarName: avatarIdManual ? avatarIdManual : avatarOpcao.dataset.name,
+    avatarType: avatarIdManual ? '' : avatarOpcao.dataset.type,
     voiceId: vozOpcao.value,
     voiceName: vozOpcao.dataset.name,
     expressiveness: document.getElementById('heygenExpressividade').value || null,
