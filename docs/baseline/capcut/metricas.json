@@ -1,0 +1,140 @@
+{
+  "geradoEm": "2026-10-24T20:34:10.838Z",
+  "commit": "b70dc80",
+  "curso": {
+    "nome": "Edição de vídeo com CapCut para crianças",
+    "publico": "Crianças de 8 a 12 anos",
+    "carga": "3",
+    "duracao": "60",
+    "nivel": "basico",
+    "objetivos": "Aprender a editar vídeos simples no CapCut: cortar clipes, adicionar texto, música e efeitos, e exportar o vídeo final.",
+    "modalidade": "online",
+    "proporcaoTeoricoPratico": "30% teórico / 70% prático",
+    "preRequisitos": "Saber usar tablet ou computador com supervisão de um adulto."
+  },
+  "modelos": {
+    "pesquisa": "gpt-4o",
+    "conteudo": "gpt-4o-mini"
+  },
+  "etapas": {
+    "pesquisa": {
+      "status": "web",
+      "fontes": 26,
+      "consultas": 4
+    },
+    "pesquisaModulos": {
+      "completo": true,
+      "pulada": false,
+      "modulos": 3,
+      "fontes": 20
+    }
+  },
+  "aulas": [
+    {
+      "numero": 1,
+      "titulo": "Introdução ao CapCut",
+      "palavras": 2669,
+      "kb": 17.4,
+      "estado": "completa",
+      "modo": "secoes",
+      "finishReason": "stop",
+      "continuacoes": 0,
+      "citacoes": {
+        "fontesDistintas": 12,
+        "idsInvalidos": 0,
+        "dadosSemCitacao": 0
+      },
+      "gravadaComoOficial": true
+    },
+    {
+      "numero": 2,
+      "titulo": "Edição de Vídeos",
+      "palavras": 2612,
+      "kb": 17.1,
+      "estado": "completa",
+      "modo": "secoes",
+      "finishReason": "stop",
+      "continuacoes": 0,
+      "citacoes": {
+        "fontesDistintas": 9,
+        "idsInvalidos": 0,
+        "dadosSemCitacao": 1
+      },
+      "gravadaComoOficial": true
+    },
+    {
+      "numero": 3,
+      "titulo": "Finalização e Exportação do Vídeo",
+      "palavras": 3618,
+      "kb": 23.7,
+      "estado": "completa",
+      "modo": "secoes",
+      "finishReason": "stop",
+      "continuacoes": 0,
+      "citacoes": {
+        "fontesDistintas": 14,
+        "idsInvalidos": 0,
+        "dadosSemCitacao": 0
+      },
+      "gravadaComoOficial": true
+    }
+  ],
+  "resumo": {
+    "aulas": 3,
+    "palavrasMedia": 2966.33,
+    "kbMedio": 19.4,
+    "aulasTruncadas": 0,
+    "aulasIncompletas": 0,
+    "aulasCurtas": 0,
+    "fontesDistintas": 45,
+    "dominiosDistintos": 27,
+    "notaMediaRevisao": 0.84
+  },
+  "notasPorAula": [
+    {
+      "numero": 1,
+      "nota": 0.83,
+      "criterios": {
+        "planoAula": 8,
+        "planoEnsinoEmenta": 8,
+        "nivelPublicoModalidade": 7,
+        "qualidadeDidatica": 6,
+        "clarezaEstrutura": 8
+      }
+    },
+    {
+      "numero": 2,
+      "nota": 0.84,
+      "criterios": {
+        "planoAula": 8,
+        "planoEnsinoEmenta": 9,
+        "nivelPublicoModalidade": 7,
+        "qualidadeDidatica": 8,
+        "clarezaEstrutura": 9
+      }
+    },
+    {
+      "numero": 3,
+      "nota": 0.86,
+      "criterios": {
+        "planoAula": 8,
+        "planoEnsinoEmenta": 9,
+        "nivelPublicoModalidade": 7,
+        "qualidadeDidatica": 8,
+        "clarezaEstrutura": 9
+      }
+    }
+  ],
+  "custo": {
+    "tokensTotais": 580619,
+    "usdEstimado": 0.5044
+  },
+  "referenciaAntes": {
+    "fonte": "PDF Implementacoes231016 (análise de 23/10/2026)",
+    "tamanhoAulaKB": {
+      "min": 3.8,
+      "max": 6.8
+    },
+    "observacao": "a Etapa 2 usava web_search_options (rejeitado pela API); aulas truncadas gravadas como prontas"
+  }
+}

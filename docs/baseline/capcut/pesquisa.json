@@ -1,0 +1,260 @@
+{
+  "status": "web",
+  "fonte": "ia",
+  "modelo": "gpt-4o",
+  "geradoEm": "2026-10-24T20:29:08.632Z",
+  "consultas": [
+    {
+      "id": "c1",
+      "texto": "Panorama do mercado e tendências atuais (2026) relacionados a \"Edição de vídeo com CapCut para crianças\": demanda por profissionais, áreas de aplicação e direções da tecnologia."
+    },
+    {
+      "id": "c2",
+      "texto": "Ferramentas, linguagens e versões atuais (2026) usadas em \"Edição de vídeo com CapCut para crianças\", com links para a documentação oficial e guias de início adequados ao nível basico."
+    },
+    {
+      "id": "c3",
+      "texto": "Livros, cursos de instituições reconhecidas e materiais didáticos de referência para ensinar \"Edição de vídeo com CapCut para crianças\" a Crianças de 8 a 12 anos (nível basico)."
+    },
+    {
+      "id": "c4",
+      "texto": "Certificações profissionais e normas reconhecidas relacionadas a \"Edição de vídeo com CapCut para crianças\", com entidade emissora e requisitos."
+    }
+  ],
+  "fontes": [
+    {
+      "id": "f1",
+      "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=pro-brands",
+      "titulo": "CapCut: search popularity worldwide | Brandwave",
+      "dominio": "gobrandwave.com",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f2",
+      "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=ai-faceless-video-tools",
+      "titulo": "CapCut: search popularity worldwide | Brandwave",
+      "dominio": "gobrandwave.com",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f3",
+      "url": "https://industriahoje.com.br/profissoes-digitais-que-mais-crescem-em-2026",
+      "titulo": "Profissões digitais que mais crescem em 2026: social media, editor de vídeo curto e gestor de tráfego",
+      "dominio": "industriahoje.com.br",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f4",
+      "url": "https://cursarnet.com.br/profissao/editor-de-video",
+      "titulo": "O que faz um Editor de Vídeo? Salário, Mercado e Como Trabalhar com CapCut | Cursarnet",
+      "dominio": "cursarnet.com.br",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f5",
+      "url": "https://desvelar.org/wp-content/uploads/2026/03/ABREU-D.-CULTURA-DE-ENTRETENIMENTO-INFANTIL.pdf",
+      "titulo": "O conteúdo digital voltado ao público infantil tem se expandido de forma expressiva, impulsionado, principalmente, pelo fácil acesso às tecnologias audiovisuais e pela crescente presença das crianças em plataformas como YouTube, TikTok e serviços de streaming. Nesses espaços, concentram-se produções que vão desde desenhos animados e jogos interativos até canais em que crianças atuam como protagonistas, evidenciando um cenário em que a infância se insere cada vez mais na lógica de produção e consumo de conteúdos digitais.",
+      "dominio": "desvelar.org",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f6",
+      "url": "https://www.uol.com.br/splash/colunas/na-sua-tela/2026/04/24/crise-producao-infantil-tiktok-youtube-dominam.htm?iap=1&uol_app=",
+      "titulo": "Como TikTok e YouTube mudam o consumo infantil e afetam a produção",
+      "dominio": "uol.com.br",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f7",
+      "url": "https://www.prensario.net/MIPJunior-2026-navegando-por-la-proxima-generacion-de-contenido-infantil-54525.note.aspx",
+      "titulo": "MIPJunior 2026: navegando por la próxima generación de contenido infantil - English",
+      "dominio": "prensario.net",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f8",
+      "url": "https://www.todotvnews.com/innovacion-diversidad-y-edutainment-las-nuevas-reglas-del-contenido-infantil/",
+      "titulo": "Innovación, diversidad y edutainment: las nuevas reglas del contenido infantil - TTV News",
+      "dominio": "todotvnews.com",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f9",
+      "url": "https://www.capcut.com/help/latest-capcut-editing-trends",
+      "titulo": "What Are the Latest CapCut Editing Trends in 2026?",
+      "dominio": "capcut.com",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f10",
+      "url": "https://ramp.com/vendors/capcut/",
+      "titulo": "CapCut Ramp Rate: A Data-Backed Look",
+      "dominio": "ramp.com",
+      "consultaId": "c1"
+    },
+    {
+      "id": "f11",
+      "url": "https://www.capcut.com/resource/capcut-video-editor-guide",
+      "titulo": "CapCut: Best Free Online Video Editor for Creators",
+      "dominio": "capcut.com",
+      "consultaId": "c2"
+    },
+    {
+      "id": "f12",
+      "url": "https://www.capcut.com/resource/how-to-use-capcut",
+      "titulo": "How to Use CapCut: Get More Creative with Video Edits",
+      "dominio": "capcut.com",
+      "consultaId": "c2"
+    },
+    {
+      "id": "f13",
+      "url": "https://www.capcut.com/pt-br/help",
+      "titulo": "Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas",
+      "dominio": "capcut.com",
+      "consultaId": "c2"
+    },
+    {
+      "id": "f14",
+      "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
+      "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
+      "dominio": "capcut.com",
+      "consultaId": "c2"
+    },
+    {
+      "id": "f15",
+      "url": "https://www.capcut.com/help",
+      "titulo": "CapCut Help Center | FAQs, Tutorials & Troubleshooting",
+      "dominio": "capcut.com",
+      "consultaId": "c2"
+    },
+    {
+      "id": "f16",
+      "url": "https://capcutguide.com/capcut-tutorial/",
+      "titulo": "CapCut Tutorial: Beginner Path from First Cut to Export",
+      "dominio": "capcutguide.com",
+      "consultaId": "c2"
+    },
+    {
+      "id": "f17",
+      "url": "https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners",
+      "titulo": "Tutorial CapCut para iniciantes | Um guia simples para criar conteúdo de qualidade",
+      "dominio": "capcut.com",
+      "consultaId": "c3"
+    },
+    {
+      "id": "f18",
+      "url": "https://www.capcut.com/pt-br/resource/capcut-video-editor-guide",
+      "titulo": "CapCut: Melhor Editor de Vídeo Online Grátis para Criadores",
+      "dominio": "capcut.com",
+      "consultaId": "c3"
+    },
+    {
+      "id": "f19",
+      "url": "https://tools.capcut.com/pt-br/tools/tutorials",
+      "titulo": "Tutoriais criativos para aprendizado passo a passo | CapCut",
+      "dominio": "tools.capcut.com",
+      "consultaId": "c3"
+    },
+    {
+      "id": "f20",
+      "url": "https://www.capcut.com/pt-br/help/is-capcut-appropriate-for-kids",
+      "titulo": "CapCut é adequado para crianças? Guia de Segurança dos Pais | CapCut",
+      "dominio": "capcut.com",
+      "consultaId": "c3"
+    },
+    {
+      "id": "f21",
+      "url": "https://apva.africa/turn-screen-time-into-a-creative-skill-with-capcut-1-on-1-training/",
+      "titulo": "Turn Screen Time into a Creative Skill with CapCut 1-on-1 Training – APVA",
+      "dominio": "apva.africa",
+      "consultaId": "c3"
+    },
+    {
+      "id": "f22",
+      "url": "https://www.miracamp.com/learn/capcut/certificate",
+      "titulo": "CapCut Certification",
+      "dominio": "miracamp.com",
+      "consultaId": "c4"
+    },
+    {
+      "id": "f23",
+      "url": "https://www.equinetacademy.com/course/mobile-video-editing-with-capcut-course/",
+      "titulo": "Mobile Video Editing with CapCut Course - Equinet Academy",
+      "dominio": "equinetacademy.com",
+      "consultaId": "c4"
+    },
+    {
+      "id": "f24",
+      "url": "https://register.cpttm.org.mo/en/courses/CM678-01-2026-C",
+      "titulo": "CPTTM Professional Training | Making Short Videos with CapCut",
+      "dominio": "register.cpttm.org.mo",
+      "consultaId": "c4"
+    },
+    {
+      "id": "f25",
+      "url": "https://www.ziprecruiter.com/hiring/how-to-hire/capcut",
+      "titulo": "Capcut Hiring Guide: Find and Hire Top Video Editors Fast",
+      "dominio": "ziprecruiter.com",
+      "consultaId": "c4"
+    },
+    {
+      "id": "f26",
+      "url": "https://www.camara.leg.br/noticias/1237337-NOVA-LEI-RECONHECE-A-PROFISSAO-DE-MULTIMIDIA",
+      "titulo": "Nova lei reconhece a profissão de multimídia - Portal da Câmara dos Deputados",
+      "dominio": "camara.leg.br",
+      "consultaId": "c4"
+    }
+  ],
+  "achados": [
+    {
+      "tema": "Mercado e tendências",
+      "resumo": "Aqui está um panorama atualizado e objetivo (até outubro de 2026) sobre o **mercado e tendências relacionadas à edição de vídeo com CapCut para crianças**, considerando a demanda por profissionais, áreas de aplicação e direções tecnológicas — em especial voltado a um curso básico online para crianças de 8 a 12 anos.\n\n---\n\n##  1. Popularidade crescente do CapCut\n\n- O CapCut continua como líder entre as ferramentas de criação de vídeos curtos. Em setembro de 2026, registrou cerca de **20,8 milhões de buscas mensais globais**, com participação de **81,7 %** nas pesquisas por ferramentas geradoras de vídeo — o que representa um aumento de mais de 22 % em relação ao ano anterior ([gobrandwave.com](https://gobrandwave.com/demand/global-en/brands/capcut?set=pro-brands&utm_source=openai)).\n\n- Entre as ferramentas sem rosto (faceless video tools), o CapCut teve aumento de participação de 77,3 % para **84,3 %** entre setembro de 2025 e setembro de 2026 ([gobrandwave.com](https://gobrandwave.com/demand/global-en/brands/capcut?set=ai-faceless-video-tools&utm_source=openai)).\n\nEsse destaque em buscas indica forte presença e familiaridade com a ferramenta, o que corrobora a sua adoção no ensino infantil como plataforma acessível e amplamente reconhecida.\n\n---\n\n##  2. Crescimento da demanda por edição de vídeo curto\n\n- O mercado de edição de vídeos curtos (como Reels, TikTok e YouTube Shorts) está em forte expansão. A função de editor de vídeo curto se tornou uma das profissões digitais que mais cresce em 2026, devido à popularização desses formatos rápidos e dinâmicos ([industriahoje.com.br](https://industriahoje.com.br/profissoes-digitais-que-mais-crescem-em-2026?utm_source=openai)).\n\n- O CapCut é apontado como padrão preferido desse segmento por ser gratuito, móvel e oferecer recursos como legenda automática e templates virais — características ideais para criação rápida de vídeos curtos ([industriahoje.com.br](https://industriahoje.com.br/profissoes-digitais-que-mais-crescem-em-2026?utm_source=openai)).\n\n- No Brasil, a demanda por editores com conhecimento em CapCut aumentou, e muitos profissionais utilizam a ferramenta como principal para redes sociais. O salário médio de editores CLT júnior é de aproximadamente R$ 3.500/mês, com profissionais freelancers cobrando entre R$ 50 e R$ 300 por vídeo ([cursarnet.com.br](https://cursarnet.com.br/profissao/editor-de-video?utm_source=openai)).\n\n---\n\n##  3. Cenário do conteúdo infantil e edutainment\n\n- O consumo de **conteúdo infantil digital** tem crescido significativamente, impulsionado pelo maior acesso às tecnologias audiovisuais e pela presença ativa de crianças em plataformas como TikTok, YouTube e serviços de streaming ([desvelar.org](https://desvelar.org/wp-content/uploads/2026/03/ABREU-D.-CULTURA-DE-ENTRETENIMENTO-INFANTIL.pdf?utm_source=openai)).\n\n- A **demanda por produções digitais infantis** aumentou 176 % entre 2022 e 2025, enquanto a produção tradicional para TV cresceu apenas 54 %, segundo estudo da Parrot Analytics via Common Sense Media ([uol.com.br](https://www.uol.com.br/splash/colunas/na-sua-tela/2026/04/24/crise-producao-infantil-tiktok-youtube-dominam.htm?iap=1&uol_app=&utm_source=openai)).\n\n- No evento **MIPJunior 2026**, especialistas destacaram que crianças cada vez mais consomem conteúdo em dispositivos móveis. Os produtores mais bem-sucedidos combinam os formatos das redes sociais com elementos clássicos que capturam o afeto infantil: música, amizade, animais ([prensario.net](https://www.prensario.net/MIPJunior-2026-navegando-por-la-proxima-generacion-de-contenido-infantil-54525.note.aspx?utm_source=openai)).\n\n- O conceito de **edutainment** continua em crescimento: conteúdos que educam enquanto entretêm têm sido cada vez mais valorizados pelos pais e pela indústria ([todotvnews.com](https://www.todotvnews.com/innovacion-diversidad-y-edutainment-las-nuevas-reglas-del-contenido-infantil/?utm_source=openai)).\n\n---\n\n##  4. Direções tecnológicas relevantes\n\n- O avanço da **inteligência artificial no CapCut**, por meio de templates com um clique que sincronizam clipes, música e efeitos automaticamente, facilita a criação rápida e acessível — ideal para iniciantes e crianças ([capcut.com](https://www.capcut.com/help/latest-capcut-editing-trends?utm_source=openai)).\n\n- Recursos como edições cinematográficas, efeitos de câmera lenta, sincronia com batidas musicais e transições de alta energia estão em alta no CapCut e nas redes sociais, contribuindo para tornar os vídeos mais atraentes — mesmo em produções simples feitas por crianças ([capcut.com](https://www.capcut.com/help/latest-capcut-editing-trends?utm_source=openai)).\n\n- No mercado profissional, o CapCut tem ganhado adesão também em empresas: em setembro de 2026, **7 % das organizações** que fizeram compras na categoria de criação de conteúdo utilizavam o CapCut — taxa que subiu 4 pontos percentuais em um ano. Empresas de médio porte e grandes são as principais usuárias (9 %) ([ramp.com](https://ramp.com/vendors/capcut/?utm_source=openai)). Isso indica que habilidade básica com a ferramenta pode ter relevância futura para o desenvolvimento de competências digitais.\n\n---\n\n##  Conclusão\n\n- A **popularidade massiva do CapCut**, sua posição de destaque nas buscas e seu uso profissional crescente reforçam que o aplicativo é uma escolha estratégica para um curso básico de edição de vídeo infantil, especialmente no formato online.\n\n- A **expansão do consumo de conteúdo infantil digital**, aliada à preferência por formatos curtos e dinâmicos, aponta que ensinar CapCut a crianças de 8 a 12 anos é relevante não apenas como hobby, mas como introdução a práticas de criação atuais.\n\n- O **edutainment** e a adoção de **IA em edições simples** agregam valor pedagógico à proposta, tornando o aprendizado divertido e contemporâneo, alinhado com as tendências de mercado.\n\n- Mesmo em um curso básico, familiarizar as crianças com elementos como templates com IA, sincronia musical e efeitos visuais pode estimulá-las a desenvolver expressão criativa relevante no ambiente digital atual.\n\nSe quiser, posso aprofundar com exemplos de projetos simples compatíveis com edutainment ou adaptar atividades à realidade online para crianças — é só pedir!",
+      "fonteIds": [
+        "f1",
+        "f2",
+        "f3",
+        "f4",
+        "f5",
+        "f6",
+        "f7",
+        "f8",
+        "f9",
+        "f10"
+      ]
+    },
+    {
+      "tema": "Ferramentas, versões e documentação oficial",
+      "resumo": "A seguir, com base em **fontes oficiais e primárias (documentação da CapCut)**, apresento ferramentas, versões e recursos atuais (2026) adequados ao nível básico de edição de vídeo com CapCut para crianças de 8 a 12 anos, na modalidade online, com foco em guias \"getting started\":\n\nFerramentas, versões e documentação oficial (2026) – CapCut (nível básico, online para crianças)\n\n- **Plataforma Online (Web Editor)**  \n  - O CapCut oferece um editor de vídeo online acessível via navegador, permitindo iniciar um projeto com poucos cliques: acesse o site, faça login ou crie conta gratuita, clique em “Criar novo” ou “Novo vídeo” e a interface de edição será aberta.([capcut.com](https://www.capcut.com/resource/capcut-video-editor-guide?utm_source=openai))  \n  - Essa versão web suporta envio de clipes de vídeo, áudio e imagens; arraste-os para a linha do tempo e organize-os – ideal para ensino básico com interface intuitiva.([capcut.com](https://www.capcut.com/resource/capcut-video-editor-guide?utm_source=openai))  \n\n- **Ferramentas essenciais de edição (nível básico)**  \n  - No editor online, após importar mídia, é possível utilizar ferramentas básicas como *Dividir* (Split), cortar trechos, adicionar textos, efeitos, transições e música de fundo, e finalmente exportar o vídeo (1080p ou 4K).([capcut.com](https://www.capcut.com/resource/capcut-video-editor-guide?utm_source=openai))  \n  - Na interface para desktop ou web, as ferramentas básicas incluem ainda: cortar (crop), congelar frame (freeze), reverter (reverse), girar (rotate), espelhar (flip), entre outras mais intuitivas.([capcut.com](https://www.capcut.com/resource/how-to-use-capcut?utm_source=openai))  \n\n- **Exportação do vídeo finalizado**  \n  - A exportação é simples: selecione “Exportar”, escolha resolução (por exemplo, 1080p ou 4K) e taxa de quadros, em seguida baixe o vídeo.([capcut.com](https://www.capcut.com/resource/capcut-video-editor-guide?utm_source=openai))  \n\n- **Atualizações e versões**  \n  - A CapCut faz atualizações regulares e recomenda-se sempre usar a versão mais recente, para garantir desempenho, estabilidade e acesso às funcionalidades mais recentes.([capcut.com](https://www.capcut.com/pt-br/help?utm_source=openai))  \n\n- **Orientações de segurança e supervisão para crianças**  \n  - A plataforma **não é projetada para uso independente de crianças com menos de 13 anos**. O uso por crianças nessa faixa etária (8–12 anos) deve ocorrer **sob supervisão de adulto**, especialmente em relação a privacidade, conteúdo, compartilhamento e uso de ferramentas de IA.([capcut.com](https://www.capcut.com/help/is-capcut-appropriate-for-kids?utm_source=openai))  \n\n- **Recursos estruturados e materiais de apoio**  \n  - Embora não exista um manual em PDF oficial para iniciantes, o site oferece tutoriais passo a passo, FAQs e guias \"Getting Started\" que orientam desde o acesso inicial até exportação.([capcut.com](https://www.capcut.com/help?utm_source=openai))  \n  - Um recurso externo referenciado (não oficial) chamado *CapCut Tutorial: Beginner Path from First Cut to Export*, atualizado em 22 de outubro de 2026, apresenta um exercício estruturado em etapas simples: importar, ordenar clipes, remover um erro, adicionar título, equilibrar som e exportar. Esse tipo de sequência é ideal para crianças e educadores que desejam um guia claro e prático.([capcutguide.com](https://capcutguide.com/capcut-tutorial/?utm_source=openai))  \n\nEm resumo, as ferramentas e versões adequadas para o curso são:\n\n- **Versão utilizada**: CapCut Web (editor online) – acessível, intuitiva, ideal para ensino à distância.  \n- **Ferramentas básicas recomendadas**: importar mídia, dividir clipes, adicionar texto, efeitos visuais, transições, música, exportação em 1080p.  \n- **Suporte oficial**: guias “step-by-step” na página da CapCut e FAQs; sempre utilizar a versão atualizada.  \n- **Supervisão recomendada**: essencial para usuários de 8 a 12 anos, conforme orientações oficiais de segurança.  \n- **Sugestão de recurso didático**: guia prático \"Beginner Path from First Cut to Export\" (atualizado outubro/2026) para estruturação das aulas.\n\nCada afirmação acima está baseada em fontes oficiais da CapCut ou retornos recentes de guias atualizados em 2026. Se desejar, posso agora ajudar a montar ou adaptar sequências de aula ou materiais visuais para crianças utilizando essa base.",
+      "fonteIds": [
+        "f11",
+        "f12",
+        "f13",
+        "f14",
+        "f15",
+        "f16"
+      ]
+    },
+    {
+      "tema": "Referências didáticas",
+      "resumo": "Segue uma seleção objetiva de **referências didáticas atuais (2026)** — incluindo guias introdutórios, tutoriais passo a passo e materiais apropriados para crianças de 8 a 12 anos em nível básico — voltados para um curso online de **Edição de Vídeo com CapCut para Crianças**:\n\n1. **Guia oficial \"Tutorial CapCut para Iniciantes\"**  \n   - Trata-se de um material online da própria CapCut, com abordagem clara e acessível para iniciantes. Abrange operações fundamentais como cortar, mesclar, adicionar textos, filtros, transições, biblioteca de modelos, músicas e exportação de vídeos, tudo explicado em etapas simples que facilitam a aplicação imediata. ([capcut.com](https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners?utm_source=openai))  \n\n2. **Guia online do CapCut Web — Edição no Navegador**  \n   - Uma versão simplificada focada no uso direto no navegador, ideal para cursos online. Aponta os passos básicos: acessar a plataforma, criar novo vídeo, realizar upload de mídia, edição (corte, texto, efeitos, música), e exportação final. Exatamente o tipo de tutorial inicial apropriado ao público-alvo. ([capcut.com](https://www.capcut.com/pt-br/resource/capcut-video-editor-guide?utm_source=openai))  \n\n3. **Seção “Tutoriais criativos para aprendizado passo a passo”**  \n   - Recomendado ao público infantil e ao modelo metodológico de aprendizagem por projetos. Encoraja a identificar o resultado desejado, reunir o material necessário, seguir cada etapa sequencialmente, observar como cada ação impacta o resultado e conferir configurações antes da exportação. Esse formato pedagógico se encaixa perfeitamente ao perfil “passo a passo” para crianças. ([tools.capcut.com](https://tools.capcut.com/pt-br/tools/tutorials?utm_source=openai))  \n\n4. **Guia de segurança para uso infantil da CapCut (\"CapCut é adequado para crianças?\")**  \n   - Documenta a política da CapCut quanto a usuários menores de 13 anos. Esclarece que o uso independente por crianças menores de 13 anos **não é recomendado**, sendo necessária a supervisão de um adulto ou responsável. Essa diretriz é essencial para incluir na recomendação pedagógica e nas orientações aos pais/responsáveis no curso. ([capcut.com](https://www.capcut.com/pt-br/help/is-capcut-appropriate-for-kids?utm_source=openai))  \n\n5. **Treinamento “CapCut 1-on-1 Training” para crianças (APVA, set. 2026)**  \n   - Embora não seja um material aberto, exemplifica uma iniciativa recente de educação tecnológica personalizada para crianças entre 6 e 12 anos. Aponta os conteúdos desenvolvidos: interface CapCut, cortar, adicionar música, efeitos, texto, transições e desenvolvimento de criatividade e habilidades narrativas. Serve como inspiração para o escopo e o estilo de abordagem didática para o público infantil. ([apva.africa](https://apva.africa/turn-screen-time-into-a-creative-skill-with-capcut-1-on-1-training/?utm_source=openai))  \n\nResumo das recomendações:\n\n- Guias oficiais e manuais simples da CapCut (desktop, web, mobile) — fundamentais como base para elaboração de tutoriais passo a passo.\n- “Tutoriais criativos para aprendizado passo a passo” — excelente apoio metodológico para o curso online.\n- Diretrizes de segurança para uso por menores de 13 anos — imprescindível em contexto com crianças.\n- Estudo de caso “CapCut 1‑on‑1 Training” — inspiração contemporânea com foco educativo infantil.\n\nEssas fontes são **primárias**, oficiais ou institucionalmente conducentes, adequadas em linguagem e abordagem para crianças de 8 a 12 anos em nível básico, na modalidade online. Elas proporcionam embasamento sólido para a criação de tutoriais, atividades guiadas e orientações sobre segurança e uso responsável.\n\nSe desejar, posso também sugerir como estruturar um plano de aula ou adaptar esses materiais nas diferentes etapas do seu curso.",
+      "fonteIds": [
+        "f17",
+        "f18",
+        "f19",
+        "f20",
+        "f21"
+      ]
+    },
+    {
+      "tema": "Certificações",
+      "resumo": "Segue a resposta, focada **exclusivamente** em certificações profissionais e normas reconhecidas relacionadas a \"Edição de vídeo com CapCut para crianças\", conforme solicitado — com entidade emissora, requisitos e metodologias de evidência.\n\n---\n\n## Certificações e normas relevantes\n\n### 1. **CapCut — Certificação oficial**\nAté o momento, **CapCut não oferece uma certificação oficial** diretamente reconhecida pela plataforma. Programas informais de treinamento podem emitir certificados de conclusão, mas não representam uma credencial profissional formal emitida por CapCut. ([miracamp.com](https://www.miracamp.com/learn/capcut/certificate?utm_source=openai))\n\n### 2. **Miracamp CapCut Certificate**\nA **Miracamp**, uma escola criativa online, oferece um curso com certificação denominado **Miracamp CapCut Certificate**. Essa certificação:\n\n- Não é oficial da CapCut, mas é voltada a validarem habilidades práticas.\n- Inclui:\n  - Coaching ao vivo\n  - Aprendizagem baseada em projetos\n  - Feedback detalhado sobre vídeos\n  - Certificado compartilhável em redes profissionais\n  - Desenvolvimento de portfólio ([miracamp.com](https://www.miracamp.com/learn/capcut/certificate?utm_source=openai))\n\n**Entidade emissora**: Miracamp  \n**Requisitos**: Completar o curso com os projetos avaliados e receber feedback positivo.  \n**Reconhecimento**: Valor agregado para freelancers, criadores de conteúdo e profissionais de mídia social ([miracamp.com](https://www.miracamp.com/learn/capcut/certificate?utm_source=openai)).\n\n### 3. **Equinet Academy — “Mobile Video Editing with CapCut Course”**\nA **Equinet Academy** oferece um curso específico com certificação de conclusão:\n\n- Nome do curso: *Mobile Video Editing with CapCut Course*\n- **Certificado de Conclusão** concedido pela Equinet Academy\n- Requisitos:\n  - Comparecer em pelo menos 75% das aulas\n  - Demonstrar competência na avaliação final do curso ([equinetacademy.com](https://www.equinetacademy.com/course/mobile-video-editing-with-capcut-course/?utm_source=openai))\n\n**Entidade emissora**: Equinet Academy  \n**Requisitos**: Frequência mínima e sucesso nas avaliações.  \n**Reconhecimento**: Curso estruturado para quem deseja dominar Fluxo de trabalho de edição com CapCut em ambiente móvel ([equinetacademy.com](https://www.equinetacademy.com/course/mobile-video-editing-with-capcut-course/?utm_source=openai)).\n\n### 4. **CPTTM (Macau) — “Making Short Videos with CapCut”**\nO **CPTTM**, instituição vinculada ao governo de Macau, oferece curso presencial:\n\n- Nome: *Making Short Videos with CapCut* (curso aprovado pelo programa SAR Government Continuing Education Development Program)\n- **Certificado de Conclusão** emitido pelo CPTTM\n- Requisitos:\n  - Frequência mínima de 80%\n  - Aprovado no projeto ou avaliação final ([register.cpttm.org.mo](https://register.cpttm.org.mo/en/courses/CM678-01-2026-C?utm_source=openai))\n\n**Entidade emissora**: CPTTM (Macau)  \n**Requisitos**: Presença e desempenho satisfatório nas atividades.  \n**Reconhecimento**: Reconhecido pelo governo da Região Administrativa Especial de Macau – via PDAC code ([register.cpttm.org.mo](https://register.cpttm.org.mo/en/courses/CM678-01-2026-C?utm_source=openai)).\n\n### 5. **Certificações gerais relacionadas à edição de vídeo**\nEmbora não sejam específicas para CapCut, existem certificações técnicas amplamente reconhecidas que atestam habilidades que podem ser transferidas:\n\n- **Adobe Certified Professional: Video Design** (Adobe Premiere Pro, After Effects) — exige aprovação em exame; reconhecida globalmente e aplicável a editores que usam qualquer software inclusive CapCut ([ziprecruiter.com](https://www.ziprecruiter.com/hiring/how-to-hire/capcut?utm_source=openai)).\n- **Certified Video Editor (CVE)** — oferecida por associações como IAPVE; abrange edição, correção de cor, efeitos, e produção de conteúdo polido, por meio de cursos e avaliação prática ([ziprecruiter.com](https://www.ziprecruiter.com/hiring/how-to-hire/capcut?utm_source=openai)).\n- Outras credenciais relevantes incluem **Apple Certified Pro – Final Cut Pro X** e **DaVinci Resolve Certification** (Blackmagic Design) — não específicas para CapCut, mas indicam domínio de ferramentas complexas de edição ([ziprecruiter.com](https://www.ziprecruiter.com/hiring/how-to-hire/capcut?utm_source=openai)).\n\n### 6. **Reconhecimento legal no Brasil — Lei da Profissão Multimídia (Lei 15.325/26)**\nA legislação brasileira aprovou em **7 de janeiro de 2026** a **Lei nº 15.325/26**, que reconhece oficialmente a profissão de **multimídia**, contemplando atividades como edição de vídeo. Essa regulação implica que:\n\n- A edição de vídeo (inclusive com ferramentas como CapCut) passa a ser considerada atividade formal de uma profissão reconhecida.\n- No entanto, **não estabelece um selo de certificação específica para CapCut ou cursos dirigidos a crianças**. ([camara.leg.br](https://www.camara.leg.br/noticias/1237337-NOVA-LEI-RECONHECE-A-PROFISSAO-DE-MULTIMIDIA?utm_source=openai))\n\n---\n\n## Tabela resumo (objetiva)\n\n- **Certificação oficial CapCut**: Não disponível (informal).  \n- **Miracamp CapCut Certificate**: Curso com coaching, projeto, certificado.  \n- **Equinet Academy**: Certificado de conclusão com frequência ≥ 75%.  \n- **CPTTM (Macau)**: Certificado formal, frequência ≥ 80%, avaliação final (PDAC).  \n- **Adobe Certified Professional (Video Design)**: Certificação reconhecida, baseada em exame para Premiere/After Effects.  \n- **CVE (IAPVE)**: Certificação profissional ampla em edição de vídeo.  \n- **Lei 15.325/26 (Brasil)**: Reconhecimento legal da profissão multimídia, sem certificação curricular específica.\n\n---\n\n## Considerações finais\n\nAtualmente, **não existe uma certificação profissional específica para “Edição de vídeo com CapCut para crianças”**. O mais próximo são:\n\n- Cursos com certificados de conclusão (Miracamp, Equinet Academy, CPTTM), com exigências de frequência e avaliação.\n- Certificações gerais do mercado audiovisual (Adobe, CVE, etc.), que validam habilidades compatíveis, embora não voltadas para o público infantil nem diretamente ligadas ao CapCut.\n- O reconhecimento legal da profissão multimídia no Brasil (Lei 15.325/26) legitima a área, mas não estabelece certificações técnicas específicas.\n\nSe o objetivo é certificar formalmente um curso de três horas com crianças de 8 a 12 anos, a alternativa mais viável é oferecer um **“Certificado de Participação/Conclusão”** emitido pela instituição promotora, já que **nenhum dos exemplos encontrados atende exatamente ao contexto de crianças ou curso de curta duração e nível básico**.\n\nCaso deseje, posso auxiliar na redação de um modelo de certificado apropriado para esse curso.",
+      "fonteIds": [
+        "f22",
+        "f23",
+        "f24",
+        "f25",
+        "f26"
+      ]
+    }
+  ]
+}

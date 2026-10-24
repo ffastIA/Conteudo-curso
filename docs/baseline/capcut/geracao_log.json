@@ -1,0 +1,726 @@
+[
+  {
+    "traceId": "b1451363fab5499eba4bfd8778223b1c",
+    "etapa": "metodologia",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 534,
+      "saida": 561,
+      "total": 1095
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00041669999999999994,
+    "latenciaMs": 5595,
+    "erro": null,
+    "em": "2026-10-24T20:28:36.239Z"
+  },
+  {
+    "traceId": "eccee851a03d450ca10eed45446963cc",
+    "etapa": "metodologia_confirmar",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 1633,
+      "saida": 234,
+      "total": 1867
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00038535,
+    "latenciaMs": 2417,
+    "erro": null,
+    "em": "2026-10-24T20:28:38.685Z"
+  },
+  {
+    "traceId": "f20a379b46ac42f6a74e395508d034c2",
+    "etapa": "search",
+    "consulta": "c1",
+    "modelo": "gpt-4o",
+    "tokens": {
+      "entrada": 19078,
+      "saida": 1295,
+      "total": 20373
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.060645,
+    "latenciaMs": 8517,
+    "erro": null,
+    "em": "2026-10-24T20:28:47.341Z"
+  },
+  {
+    "traceId": "f20a379b46ac42f6a74e395508d034c2",
+    "etapa": "search",
+    "consulta": "c2",
+    "modelo": "gpt-4o",
+    "tokens": {
+      "entrada": 19153,
+      "saida": 1065,
+      "total": 20218
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0585325,
+    "latenciaMs": 6946,
+    "erro": null,
+    "em": "2026-10-24T20:28:54.288Z"
+  },
+  {
+    "traceId": "f20a379b46ac42f6a74e395508d034c2",
+    "etapa": "search",
+    "consulta": "c3",
+    "modelo": "gpt-4o",
+    "tokens": {
+      "entrada": 18883,
+      "saida": 860,
+      "total": 19743
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0558075,
+    "latenciaMs": 5707,
+    "erro": null,
+    "em": "2026-10-24T20:28:59.997Z"
+  },
+  {
+    "traceId": "f20a379b46ac42f6a74e395508d034c2",
+    "etapa": "search",
+    "consulta": "c4",
+    "modelo": "gpt-4o",
+    "tokens": {
+      "entrada": 18991,
+      "saida": 1470,
+      "total": 20461
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0621775,
+    "latenciaMs": 8631,
+    "erro": null,
+    "em": "2026-10-24T20:29:08.629Z"
+  },
+  {
+    "traceId": "6836c7ff554840b98596992574a36f21",
+    "etapa": "plano-ensino",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 7883,
+      "saida": 1131,
+      "total": 9014
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0018610500000000002,
+    "latenciaMs": 9433,
+    "erro": null,
+    "em": "2026-10-24T20:29:35.611Z"
+  },
+  {
+    "traceId": "7aba4ac14afe4d9bbdd36323d3c04026",
+    "etapa": "plano-aula",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 1610,
+      "saida": 225,
+      "total": 1835
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0003765,
+    "latenciaMs": 2919,
+    "erro": null,
+    "em": "2026-10-24T20:29:38.555Z"
+  },
+  {
+    "traceId": "7aba4ac14afe4d9bbdd36323d3c04026",
+    "etapa": "plano-aula",
+    "aula": 1,
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 9206,
+      "saida": 987,
+      "total": 10193
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0019730999999999998,
+    "latenciaMs": 8450,
+    "erro": null,
+    "em": "2026-10-24T20:29:47.007Z"
+  },
+  {
+    "traceId": "7aba4ac14afe4d9bbdd36323d3c04026",
+    "etapa": "plano-aula",
+    "aula": 2,
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 9206,
+      "saida": 930,
+      "total": 10136
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0019389,
+    "latenciaMs": 8026,
+    "erro": null,
+    "em": "2026-10-24T20:29:55.034Z"
+  },
+  {
+    "traceId": "7aba4ac14afe4d9bbdd36323d3c04026",
+    "etapa": "plano-aula",
+    "aula": 3,
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 9209,
+      "saida": 962,
+      "total": 10171
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00195855,
+    "latenciaMs": 8417,
+    "erro": null,
+    "em": "2026-10-24T20:30:03.451Z"
+  },
+  {
+    "traceId": "7c314d83d17d4001974be8a6fba4a99a",
+    "etapa": "pesquisa-modulos",
+    "modulo": "Módulo 1: Introdução ao CapCut",
+    "modelo": "gpt-4o",
+    "tokens": {
+      "entrada": 19011,
+      "saida": 1744,
+      "total": 20755
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0649675,
+    "latenciaMs": 13287,
+    "erro": null,
+    "em": "2026-10-24T20:30:16.777Z"
+  },
+  {
+    "traceId": "7c314d83d17d4001974be8a6fba4a99a",
+    "etapa": "pesquisa-modulos",
+    "modulo": "Módulo 2: Edição de Vídeos",
+    "modelo": "gpt-4o",
+    "tokens": {
+      "entrada": 18745,
+      "saida": 1585,
+      "total": 20330
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0627125,
+    "latenciaMs": 9095,
+    "erro": null,
+    "em": "2026-10-24T20:30:27.387Z"
+  },
+  {
+    "traceId": "7c314d83d17d4001974be8a6fba4a99a",
+    "etapa": "pesquisa-modulos",
+    "modulo": "Módulo 3: Finalização e Exportação do Vídeo",
+    "modelo": "gpt-4o",
+    "tokens": {
+      "entrada": 19027,
+      "saida": 1723,
+      "total": 20750
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0647975,
+    "latenciaMs": 11753,
+    "erro": null,
+    "em": "2026-10-24T20:30:40.648Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 1,
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13366,
+      "saida": 236,
+      "total": 13602
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0021465,
+    "latenciaMs": 2924,
+    "erro": null,
+    "em": "2026-10-24T20:30:43.621Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 1,
+    "secao": "Apresentação do CapCut e suas funcionalidades",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13632,
+      "saida": 656,
+      "total": 14288
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0024384000000000003,
+    "latenciaMs": 9391,
+    "erro": null,
+    "em": "2026-10-24T20:30:53.014Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 1,
+    "secao": "Navegando na interface do CapCut",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13687,
+      "saida": 851,
+      "total": 14538
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0025636499999999998,
+    "latenciaMs": 11143,
+    "erro": null,
+    "em": "2026-10-24T20:31:04.158Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 1,
+    "secao": "Atividade prática: Criar Conta e Navegar",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13748,
+      "saida": 726,
+      "total": 14474
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0024977999999999997,
+    "latenciaMs": 9050,
+    "erro": null,
+    "em": "2026-10-24T20:31:13.210Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 1,
+    "secao": "Atividade prática: Cortar e Dividir Clipes",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13810,
+      "saida": 834,
+      "total": 14644
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0025719000000000002,
+    "latenciaMs": 11671,
+    "erro": null,
+    "em": "2026-10-24T20:31:24.881Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 1,
+    "secao": "Síntese",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13832,
+      "saida": 334,
+      "total": 14166
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0022752,
+    "latenciaMs": 4269,
+    "erro": null,
+    "em": "2026-10-24T20:31:29.150Z"
+  },
+  {
+    "tipo": "aula",
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 1,
+    "estado": "completa",
+    "modo": "secoes",
+    "finishReason": "stop",
+    "completionTokens": 3401,
+    "palavras": 2498,
+    "continuacoes": 0,
+    "citacoes": {
+      "distintas": 12,
+      "idsInvalidos": 0,
+      "numerosSemCitacao": 0
+    },
+    "em": "2026-10-24T20:31:29.169Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 12837,
+      "saida": 315,
+      "total": 13152
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00211455,
+    "latenciaMs": 5794,
+    "erro": null,
+    "em": "2026-10-24T20:31:38.968Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "secao": "Adicionando Texto aos Vídeos",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13110,
+      "saida": 625,
+      "total": 13735
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0023415,
+    "latenciaMs": 8797,
+    "erro": null,
+    "em": "2026-10-24T20:31:47.766Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "secao": "Escolhendo Músicas para Vídeos",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13170,
+      "saida": 531,
+      "total": 13701
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0022941,
+    "latenciaMs": 7129,
+    "erro": null,
+    "em": "2026-10-24T20:31:54.897Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "secao": "Aplicando Efeitos Visuais",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13227,
+      "saida": 746,
+      "total": 13973
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00243165,
+    "latenciaMs": 9276,
+    "erro": null,
+    "em": "2026-10-24T20:32:04.173Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "secao": "Atividade Prática: Edição de Vídeo",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13304,
+      "saida": 631,
+      "total": 13935
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0023742,
+    "latenciaMs": 8760,
+    "erro": null,
+    "em": "2026-10-24T20:32:12.934Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "secao": "Compartilhando e Recebendo Feedback",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13352,
+      "saida": 597,
+      "total": 13949
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.002361,
+    "latenciaMs": 8302,
+    "erro": null,
+    "em": "2026-10-24T20:32:21.237Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "secao": "Síntese da Aula",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13372,
+      "saida": 325,
+      "total": 13697
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0022008,
+    "latenciaMs": 4756,
+    "erro": null,
+    "em": "2026-10-24T20:32:25.994Z"
+  },
+  {
+    "tipo": "aula",
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 2,
+    "estado": "completa",
+    "modo": "secoes",
+    "finishReason": "stop",
+    "completionTokens": 3455,
+    "palavras": 2554,
+    "continuacoes": 0,
+    "citacoes": {
+      "distintas": 9,
+      "idsInvalidos": 0,
+      "numerosSemCitacao": 1
+    },
+    "em": "2026-10-24T20:32:26.014Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13095,
+      "saida": 411,
+      "total": 13506
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00221085,
+    "latenciaMs": 4934,
+    "erro": null,
+    "em": "2026-10-24T20:32:34.961Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Abertura e Relembrar Aulas Anteriores",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13408,
+      "saida": 414,
+      "total": 13822
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0022596,
+    "latenciaMs": 5942,
+    "erro": null,
+    "em": "2026-10-24T20:32:40.904Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Objetivos da Aula",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13456,
+      "saida": 463,
+      "total": 13919
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0022962,
+    "latenciaMs": 7528,
+    "erro": null,
+    "em": "2026-10-24T20:32:48.433Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Importância da Revisão",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13514,
+      "saida": 508,
+      "total": 14022
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0023319,
+    "latenciaMs": 7782,
+    "erro": null,
+    "em": "2026-10-24T20:32:56.215Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Passo a Passo para Exportação",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13572,
+      "saida": 368,
+      "total": 13940
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0022566,
+    "latenciaMs": 6033,
+    "erro": null,
+    "em": "2026-10-24T20:33:02.248Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Atividade Prática de Revisão",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13630,
+      "saida": 451,
+      "total": 14081
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0023151,
+    "latenciaMs": 6823,
+    "erro": null,
+    "em": "2026-10-24T20:33:09.073Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Exportação de Vídeos",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13684,
+      "saida": 563,
+      "total": 14247
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0023904,
+    "latenciaMs": 8355,
+    "erro": null,
+    "em": "2026-10-24T20:33:17.429Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Apresentação dos Vídeos",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13742,
+      "saida": 430,
+      "total": 14172
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0023193,
+    "latenciaMs": 5856,
+    "erro": null,
+    "em": "2026-10-24T20:33:23.286Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Discussão em Grupo",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13795,
+      "saida": 475,
+      "total": 14270
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00235425,
+    "latenciaMs": 6874,
+    "erro": null,
+    "em": "2026-10-24T20:33:30.161Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Reflexão Final e Encaminhamentos",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13864,
+      "saida": 548,
+      "total": 14412
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0024084,
+    "latenciaMs": 7703,
+    "erro": null,
+    "em": "2026-10-24T20:33:37.864Z"
+  },
+  {
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "secao": "Síntese",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 13878,
+      "saida": 306,
+      "total": 14184
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0022652999999999996,
+    "latenciaMs": 4694,
+    "erro": null,
+    "em": "2026-10-24T20:33:42.559Z"
+  },
+  {
+    "tipo": "aula",
+    "traceId": "dedecea2f28f418f989d035a2945ec6e",
+    "etapa": "conteudo",
+    "aula": 3,
+    "estado": "completa",
+    "modo": "secoes",
+    "finishReason": "stop",
+    "completionTokens": 4526,
+    "palavras": 3374,
+    "continuacoes": 0,
+    "citacoes": {
+      "distintas": 14,
+      "idsInvalidos": 0,
+      "numerosSemCitacao": 0
+    },
+    "em": "2026-10-24T20:33:42.580Z"
+  },
+  {
+    "traceId": "2059a895aa7441d3836c7b60dd9a6d95",
+    "etapa": "revisao-qualidade",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 18036,
+      "saida": 987,
+      "total": 19023
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0032976,
+    "latenciaMs": 10712,
+    "erro": null,
+    "em": "2026-10-24T20:33:53.348Z"
+  },
+  {
+    "traceId": "2059a895aa7441d3836c7b60dd9a6d95",
+    "etapa": "revisao-qualidade",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 17313,
+      "saida": 952,
+      "total": 18265
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.00316815,
+    "latenciaMs": 8724,
+    "erro": null,
+    "em": "2026-10-24T20:34:02.081Z"
+  },
+  {
+    "traceId": "2059a895aa7441d3836c7b60dd9a6d95",
+    "etapa": "revisao-qualidade",
+    "modelo": "gpt-4o-mini",
+    "tokens": {
+      "entrada": 19110,
+      "saida": 851,
+      "total": 19961
+    },
+    "finishReason": "stop",
+    "custoUsd": 0.0033771,
+    "latenciaMs": 8542,
+    "erro": null,
+    "em": "2026-10-24T20:34:10.627Z"
+  }
+]

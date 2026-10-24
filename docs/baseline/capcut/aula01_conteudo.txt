@@ -1,0 +1,135 @@
+## Apresentação do CapCut e suas funcionalidades
+
+### Fundamentação técnica
+O CapCut é um editor de vídeo gratuito, desenvolvido pela ByteDance, a mesma empresa que criou o TikTok. Este software é conhecido pela sua interface intuitiva e por permitir que usuários de todas as idades editêm vídeos de maneira simples e divertida. As principais funcionalidades do CapCut incluem cortar, dividir, adicionar textos, músicas, efeitos, transições e muito mais. A interface é dividida em três áreas principais: a linha do tempo (onde os clipes são organizados), o visualizador (que mostra o resultado final do projeto em tempo real) e a barra de ferramentas (com os comandos para edição) ([F4], [F5]).
+
+O termo “cortar” refere-se à ação de remover partes indesejadas de um clipe, enquanto “dividir” significa separar um clipe em duas partes distintas. Isso é essencial para editar vídeos, permitindo que os usuários excluam erros ou adicionem novos contornos ao seu material. Estas funcionalidades são fundamentais para criar uma narrativa mais envolvente e interessante, além de possibilitar uma maior liberdade criativa ([F2], [F3]).
+
+### Exemplos práticos
+Por meio de CapCut, as crianças podem desenvolver habilidades de edição ao experimentar diversas funções. Por exemplo, um aluno pode começar com um clipe de vídeo de uma festa de aniversário, onde pode cortar partes indesejadas — como momentos em que não há muito o que ver — e adicionar uma música alegre como fundo. Outro exemplo é criar vídeos educativos, onde as crianças podem integrar textos explicativos sobre ciência ou arte, facilitando a compreensão e aprendizados através do audiovisual.
+
+Além disso, o CapCut oferece uma variedade de modelos para facilitar a criação de vídeos, permitindo que as crianças possam produzir vídeos no estilo “Storytelling” ou “Fazendo DIY” rapidamente, utilizando o recurso de arrastar e soltar, o que torna o processo ainda mais simples e divertido ([F8], [F4]).
+
+### Erros comuns e pontos de atenção
+Um dos erros mais comuns entre iniciantes é a confusão ao selecionar clipes na linha do tempo. É crucial que as crianças aprendam a clicar corretamente nos clipes que desejam editar, pois a linha do tempo pode parecer sobrecarregada. Outro ponto importante é a importância de guardar cópias dos vídeos originais antes de realizar edições significativas, permitindo que retornem às versões anteriores caso algo não saia conforme o esperado ([F11], [F12]).
+
+É também essencial enfatizar que todos os alunos devem ter supervisão de um adulto durante o uso do aplicativo, para ajudá-los em qualquer dúvida que possam ter, especialmente ao lidar com a interface, evitando frustrações e promovendo um ambiente de aprendizado seguro. Ao final da aula, incentivar os alunos a explorar as funcionalidades do CapCut pode ajudar a reforçar o conhecimento adquirido e instigar sua curiosidade criativa ([F17], [F18]).
+
+Com essa base inicial sobre o CapCut, os alunos estarão preparados para começar a editar seus próprios clipes e explorar suas habilidades de criação de vídeo, nas próximas atividades práticas que envolvem cortar e dividir clipes.
+
+## Navegando na interface do CapCut
+
+### Fundamentação técnica
+O CapCut possui uma interface intuitiva que facilita a edição de vídeos, mesmo para iniciantes. Ao acessar o aplicativo, seja na versão móvel ou desktop, os usuários se deparam com uma tela dividida em áreas específicas que trabalham juntas para facilitar o processo de edição. As principais seções da interface incluem:
+
+1. **Visualizador**: Esta área exibe uma prévia do vídeo que está sendo editado, permitindo que os usuários vejam em tempo real como as alterações afetam o clipe. É como uma janela que mostra a obra em progresso.
+   
+2. **Linha do tempo**: Localizada na parte inferior da tela, representa o espaço onde todos os clipes de mídia são organizados. Os clipes são dispostos em sequência, permitindo que os usuários arrastem e organizem os elementos de forma que contem a história desejada. É semelhante a uma prateleira onde cada item (clipe) pode ser reposicionado.
+
+3. **Barra de ferramentas**: Contém botões e opções que permitem realizar diferentes ações, como cortar, adicionar efeitos e transições, e inserir textos. Essa seção funciona como um kit de ferramentas, oferecendo tudo o que é necessário para “construir” o vídeo.
+
+Um entendimento básico dessas terminologias permite que os estudantes se sintam mais confortáveis ao navegar pelo CapCut e ao realizar suas edições, além de estarem mais preparados para a executar as atividades práticas que seguirão. Segundo a fonte [F3], ter familiaridade com essas seções da interface é vital para uma edição eficaz.
+
+### Exemplos práticos
+Para ajudar os alunos a se familiarizarem com a interface do CapCut, a prática de navegar dentro do aplicativo é fundamental. Aqui está um passo a passo prático que pode ser seguido durante a aula:
+
+1. **Abrir um projeto**: Os alunos são incentivados a clicar em "Novo Projeto" e importar um clipe de vídeo. Isso serve como um primeiro contato com a interface.
+   
+2. **Exploração da linha do tempo**: Uma vez que os clipes estão na linha do tempo, as crianças devem organizar os clipes conforme desejado. Essa atividade ilustra bem a função de arrastar e soltar, o que é bem simples e intuitivo.
+
+3. **Visualização de mudanças**: Ao selecionar um clipe específico na linha do tempo, a visualização no painel de prévia se atualiza automaticamente, permitindo que os alunos vejam exatamente o que estão editando em tempo real.
+
+Essas atividades práticas ajudam os alunos a entenderem como cada parte da interface está conectada e como as alterações se refletem no resultado final do vídeo, aumentando a autonomia na utilização do software.
+
+### Erros comuns e pontos de atenção
+Durante a navegação pelo CapCut, existem alguns erros comuns que os alunos, especialmente os mais jovens, podem cometer:
+
+1. **Não selecionar o clipe na linha do tempo**: Antes de aplicar efeitos ou cortes, é crucial que os alunos selecionem corretamente o clipe desejado. Um erro comum é tentar fazer alterações enquanto nenhum clipe está selecionado, o que pode causar frustração.
+
+2. **Esquecer de salvar o projeto**: Com frequência, os alunos podem ficar tão envolvidos na edição que esquecem de salvar o projeto. Reforce a importância de salvar frequentemente para evitar perder seu trabalho.
+
+3. **Ficar confuso com muitos botões**: A barra de ferramentas pode parecer intimidante inicialmente. Uma abordagem prática e gradual para apresentar cada ferramenta e sua função é essencial para que as crianças não se sintam sobrecarregadas.
+
+Para mitigar esses erros, incentive um ambiente de apoio onde os alunos possam se ajudar uns aos outros durante a navegação. Um retorno constante e uma comunicação clara ajudam a resolver dúvidas rapidamente e a construir confiança no uso do CapCut. 
+
+Esses aspectos ressaltam a importância de familiarizar os alunos com a interface do CapCut como um passo crítico no processo de edição de vídeo. Segundo a fonte [F2], uma compreensão clara das funções disponíveis pode melhorar significativamente a fluidez da edição.
+
+## Atividade prática: Criar Conta e Navegar
+
+### Fundamentação técnica
+Iniciar utilizando o CapCut requer criar uma conta, que pode ser feita rapidamente utilizando um endereço de e-mail ou uma conta de mídia social como Google ou Facebook. Essa conta permitirá que as crianças salvem seus projetos e acessem o aplicativo em diferentes dispositivos. A interface do CapCut é desenhada para ser intuitiva, com áreas principais como o visualizador (onde o vídeo é reproduzido), a linha do tempo (onde os clipes são organizados para edição) e a barra de ferramentas (que contém opções de edição). Termos como *dividir* e *cortar* são fundamentais: "dividir" separa um clipe em dois, enquanto "cortar" remove partes indesejadas, facilitando a construção de um vídeo mais coeso e interessante ([F9], [F11]).
+
+### Exemplos práticos
+Quando as crianças criam sua conta, o primeiro passo é clicar em "Criar conta" na tela de abertura do CapCut. Então, segue-se o preenchimento dos dados solicitados, que podem incluir a criação de um nome de usuário e a escolha de uma senha. Após a autenticação, a interface principal se apresentará com um visual atrativo; o visualizador mostrará um tutorial de boas-vindas se disponível. Ao selecionar um clipe na linha do tempo, clicando sobre ele, as crianças podem testar a função "Dividir", que se assemelha a utilizar uma tesoura digital — é semelhante a quando brincamos de cortar uma fita com uma tesoura realmente. Isso ajuda a entender que a edição de vídeo é brincadeira de montagem, dando liberdade para criar a narrativa pretendida. Por exemplo, ao dividir um clipe no ponto de uma gravação divertida, elas podem reter apenas a parte que mais gostam e eliminar o resto ([F3], [F8]).
+
+### Erros comuns e pontos de atenção
+Um erro comum é esquecer de clicar no clipe correto antes de usar a função "Dividir", resultando em confusão sobre o que foi cortado. É importante lembrar que devem sempre escolher o clipe na linha do tempo primeiro. Além disso, crianças podem ficar desanimadas se não virem imediatamente seu progresso; portanto, o encorajamento durante toda a atividade é vital. Orientar os alunos a clicarem repetidamente em diferentes partes da linha do tempo pode tornar mais fácil para que eles se sintam confortáveis com a manipulação dos clipes e explorem as funcionalidades do CapCut efetivamente. O feedback positivo é essencial para manter o entusiasmo e motivação deles ao aprender. Ao fim de cada etapa, um momento para discutir os resultados e tirar dúvidas será muito útil para garantir que todos compreendam o que foi feito e como isso afetou o resultado final ([F3], [F12]).
+
+---
+
+### Exemplos de Administração
+- Criar uma conta passo a passo com eles na videochamada, utilizando um compartilhamento de tela que lhes permita ver e ouvir as instruções ao mesmo tempo.
+- Preparar um vídeo divertido ou um clipe conhecido para que utilizem e pratiquem o recorte e divisão de clipes durante a aula, reforçando a didática visual.
+- Caso algum aluno enfrente dificuldades técnicas, estar pronto para dar assistência pontual, promovendo a interação rápida e efetiva como grupo, evitando desapontamentos.
+
+---
+
+Essa atividade proporciona um ambiente interativo, criando a base para que utilizem o CapCut de maneira eficiente e divertida.
+
+## Atividade prática: Cortar e Dividir Clipes
+
+### Fundamentação técnica
+Cortar e dividir clipes são habilidades essenciais em qualquer processo de edição de vídeo. Dentro do CapCut, essa funcionalidade permite que os usuários selecionem partes específicas do vídeo que desejam manter ou remover. O ato de **cortar** refere-se a remover um trecho de um clipe inteiro, enquanto **dividir** significa separar um único clipe em duas partes. Essa operação é fundamental para reorganizar a narrativa, eliminando partes desnecessárias e focando nos momentos mais impactantes. 
+
+O CapCut apresenta um recurso intuitivo para essas atividades. O usuário deve utilizar a linha do tempo para localizar o ponto de corte desejado. Isso é realizado ao mover uma barra de reprodução (playhead) para a posição exata onde a edição deve ocorrer. Uma vez posicionado, basta clicar em "Dividir" (ou "Cortar") para realizar a operação. A interface é projetada para que até mesmo iniciantes consigam entender e aplicar essas funções rapidamente, como se estivessem manuseando uma tesoura em papel — o que os torna mais confortáveis e engajados no processo de edição. Assim, o CapCut se destaca como uma ferramenta acessível para todas as idades. [F1][F2].
+
+### Exemplos práticos
+Para ilustrar a prática de cortes e divisões, considere que os alunos trarão um clipe de vídeo de sua escolha, como uma gravação de uma brincadeira ou um momento divertido. Durante a atividade, o instrutor pode guiar os alunos ao longo do processo de edição, utilizando um exemplo visual no compartilhamento de tela.
+
+Vamos imaginar que um aluno selecionou um vídeo de um animal de estimação fazendo uma travessura. Ao assistir, a criança decide que o início do vídeo (onde o animal aparece apenas dormindo) não é interessante e deseja removê-lo. Nesse caso, passará pelas seguintes etapas:
+
+1. **Abrir o vídeo na linha do tempo**: A criança seleciona o clipe dentro da área de edição.
+2. **Localizar o ponto de início**: Usará a barra de reprodução para assistir ao vídeo até chegar ao momento em que o animal começa a se mover.
+3. **Clicar em "Dividir"**: Quando o playhead estiver na posição correta, o aluno clica no botão de "Dividir".
+4. **Selecionar a parte indesejada**: Agora terá duas partes do clipe, e poderá clicar na parte que deseja eliminar (o segmento que mostra o animal dormindo) e pressionar o ícone de lixeira para removê-la.
+5. **Visualizar o resultado**: Após realizar a edição, o aluno assistirá ao clipe editado para perceber como ficou mais interessante.
+
+Essa abordagem prática, que utiliza vídeos de interesse pessoal, pode estimular a criatividade e o envolvimento dos alunos. 
+
+### Erros comuns e pontos de atenção
+Durante a atividade de cortar e dividir clipes, alguns desafios podem aparecer. É importante que os instrutores estejam cientes dos erros mais comuns que as crianças podem cometer:
+
+1. **Corte em pontos inexistentes**: Crianças podem tentar cortar um clipe sem ter certeza de onde está o ponto de corte. Para evitar isso, é útil pedir que assistam ao vídeo até o momento desejado antes de proceder.
+2. **Remover partes essenciais**: Algumas crianças podem cortar seções que na verdade são importantes para a narrativa do vídeo. Portanto, encoraje os alunos a pensarem criticamente sobre o que devem manter.
+3. **Falta de prática**: Se a criança não pratica o corte e divisão após a primeira explicação, pode esquecer os passos. Incentive a prática repetida com diferentes clipes, para que elas se familiarizem com a função.
+
+Orientações como essas não apenas tornam a atividade mais produtiva, mas também ajudam os alunos a desenvolverem uma compreensão mais aprofundada das funções do CapCut, tornando a experiência de edição de vídeo tanto educativa quanto divertida.
+
+## Síntese
+
+Ao final da aula, os alunos devem ter compreendido e praticado os seguintes conceitos-chave:
+
+1. **O que é o CapCut**: Uma ferramenta de edição de vídeo intuitiva que permite criar vídeos divertidos e criativos, ideal para iniciantes. A interface foi apresentada como um espaço onde se pode trazer clipes, cortar e adicionar efeitos de maneira simples.
+
+2. **Navegação pela Interface**: Os alunos devem ser capazes de identificar as principais áreas da interface do CapCut, que incluem o visualizador (onde assistem seus vídeos), a linha do tempo (onde organizam os clipes) e a barra de ferramentas (onde encontram as funções de edição).
+
+3. **Cortar e Dividir Clipes**: Os alunos devem entender como utilizar as funções de cortar e dividir. Essa habilidade é essencial para editar vídeos, permitindo que selecionem partes específicas para manter ou remover. A atividade prática ajudou a consolidar este conhecimento.
+
+Incentive os alunos a compartilharem suas experiências de edição e a refletirem sobre o que aprenderam hoje. Perguntas podem incluir: "Quais foram as partes mais divertidas?" ou "Houve algo que vocês acharam difícil?". A troca de ideias entre eles pode enriquecer seu aprendizado de maneira lúdica e colaborativa. As crianças aprendem melhor quando se sentem parte ativa do processo de criação.
+
+A prática de edição com ferramentas acessíveis como CapCut abre um mundo de possibilidades para expressão criativa, além de ser uma habilidade valiosa em um mercado cada vez mais voltado para a produção de conteúdo digital ([F4], [F10]).
+
+### Referências da aula
+
+- [F1] Best free video editing software of 2026 — https://www.techradar.com/best/free-video-editing-software
+- [F2] How to Split a Video in CapCut for Precise Timeline Edits — https://www.capcut.com/features/how-to-split-a-video-capcut-workflow-comparison
+- [F3] Cómo usar CapCut paso a paso para principiantes - TutoTech — https://tutotech.net/como-usar-capcut-paso-a-paso-para-principiantes/
+- [F4] About CapCut | TikTok Video Editor — https://ads.tiktok.com/help/article/about-capcut?lang=pt
+- [F5] Atalhos do CapCut: 51 comandos para editar mais rápido | AVATIX News — https://news.avatix.com.br/guias/atalhos-capcut-51-comandos-avatix/
+- [F8] CapCut: Best Free Online Video Editor for Creators — https://www.capcut.com/resource/capcut-video-editor-guide
+- [F9] How to Use CapCut: Get More Creative with Video Edits — https://www.capcut.com/resource/how-to-use-capcut
+- [F10] Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas — https://www.capcut.com/pt-br/help
+- [F11] Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut — https://www.capcut.com/help/is-capcut-appropriate-for-kids
+- [F12] CapCut Help Center | FAQs, Tutorials & Troubleshooting — https://www.capcut.com/help
+- [F17] CapCut é adequado para crianças? Guia de Segurança dos Pais | CapCut — https://www.capcut.com/pt-br/help/is-capcut-appropriate-for-kids
+- [F18] Turn Screen Time into a Creative Skill with CapCut 1-on-1 Training – APVA — https://apva.africa/turn-screen-time-into-a-creative-skill-with-capcut-1-on-1-training/

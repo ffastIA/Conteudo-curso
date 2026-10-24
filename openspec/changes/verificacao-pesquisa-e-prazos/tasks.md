@@ -10,7 +10,7 @@
 
 ## 3. Linha de base
 
-- [ ] 3.1 Gerar 2 cursos de referência e salvar `docs/baseline/<curso>/metricas.json`
+- [x] 3.1 Gerar o curso de referência e salvar `docs/baseline/<curso>/metricas.json` (só o CapCut infantil, a pedido; o curso técnico fica opcional — `node scripts/gerar-baseline.js`)
 
 ## 4. Testes (última etapa)
 

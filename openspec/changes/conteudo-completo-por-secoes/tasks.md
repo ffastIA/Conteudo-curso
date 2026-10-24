@@ -19,5 +19,5 @@
 ## 4. Testes (última etapa)
 
 - [x] 4.1 Seção cortada dispara continuação; incompleta vai para `.partial` e bloqueia a Etapa 5; completude detecta seção ausente e código aberto; meta mínima de palavras; `extractLessonBlock` falha sem cabeçalhos
-- [ ] 4.2 Re-executar a linha de base e comparar tamanho/truncamentos (depende de gerar a linha de base da change 1)
+- [x] 4.2 Linha de base gerada (docs/baseline/capcut): aulas de 17 a 24 KB (média 19,4 KB; referência anterior 3,8 a 6,8 KB), 0 truncadas
 - [x] 4.3 `npm test` verde e `openspec validate --all`
