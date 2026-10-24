@@ -8,33 +8,36 @@ context: |
   Entry point: server.js (porta 3000)
   Skills (prompts): skills.js
   Frontend: public/index.html + public/app.js + public/style.css
-  Specs canônicas: specs.yaml (raiz) + openspec/specs/*.yaml
+  Specs canônicas: openspec/specs/<capability>/spec.md
 
-  Modelos OpenAI em uso:
-    - gpt-4o-mini: ementa, plano de ensino, plano de aula, conteúdo, revisão de qualidade
-    - gpt-4o-search-preview: pesquisa web (Etapa 2) e aplicar melhorias (Etapa 6)
+  Modelos OpenAI em uso (config/modelos.js, ajustáveis por OPENAI_*_MODEL):
+    - gpt-4o-mini: ementa, planos, conteúdo, revisão de qualidade, aplicar melhorias, PPC
+    - gpt-4o: pesquisa web (Etapa 2 e por módulo) pela Responses API com web_search
 
   Padrões do projeto:
     - Streaming via SSE com eventos: progress | site | token | done | error
-    - Sessões in-memory identificadas por cookie HttpOnly (sid)
-    - Arquivos persistidos em saídas/{course-slug}/
+    - Sessões in-memory identificadas por cookie HttpOnly (sessionId)
+    - Arquivos persistidos na pasta do projeto (pastaProjeto; .txt/.json em scr/)
     - Jaccard ≥ 55% usado APENAS como reporte informativo (sem regeneração automática)
     - Convenção de commits em português
 
   Gaps conhecidos (priorizados):
-    G01 (crítico): .env possivelmente versionado
-    G02 (alto): sem autenticação
-    G03 (médio): paths sem sanitização
-    G04 (alto): sessão in-memory perdida ao reiniciar
-    G05 (médio): sem retry em falhas OpenAI
-    G06 (médio): sem logging estruturado
-    G07 (médio): sem testes automatizados
+    Tabela completa e status em PROJECT.md §9. Resumo:
+    G01 resolvido: .env fora do git
+    G02 reduzido: sem autenticação (uso local; bind 127.0.0.1, checagem de Origin)
+    G03 mitigado: pastaProjeto validada
+    G04 reduzido: sessão in-memory, reconstruível do disco
+    G05 resolvido: espera de 429, retentativas e geração retomável
+    G06 resolvido: logger JSON estruturado
+    G07 melhorado: suíte Jest com gate de cobertura
+    G08 resolvido: estimativa de custo antes das etapas
+    G11, G12 resolvidos; G13 reduzido (Langfuse opcional)
 
 rules:
   proposal:
     - Incluir seção "Non-goals" em toda proposta
     - Referenciar o Gap ID correspondente quando a feature resolver um gap conhecido
-    - Manter consistência com os modelos de dados definidos em specs.yaml
+    - Manter consistência com os modelos de dados definidos em PROJECT.md §4 e nas capabilities de openspec/specs/
   tasks:
     - Cada tarefa deve ser completável em até 2 horas
     - Indicar o arquivo exato a modificar (server.js, skills.js, public/app.js, etc.)

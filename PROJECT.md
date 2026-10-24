@@ -16,19 +16,19 @@ Aplicação web que **automatiza a criação de material didático completo** pa
 
 ## 2. Estado atual do projeto
 
-### 2.1 Pipeline implementado (10 etapas, 0–9)
+### 2.1 Pipeline implementado (etapas 0–10)
 
 | # | Etapa | Endpoint | Status |
 |---|-------|----------|--------|
 | 0 | Base Pedagógica (BNCC) | `GET /api/bncc`, `POST /api/bncc/selecionar`, `POST /api/bncc/pular` | ✅ Implementado |
 | 1 | Configuração do curso + Metodologia + Ementa | `POST /api/config`, `GET /api/metodologia` (SSE), `POST /api/metodologia/confirmar` | ✅ Implementado |
-| 2 | Pesquisa web | `GET /api/search` (SSE) | ✅ Implementado |
+| 2 | Pesquisa web geral + pesquisa por módulo | `GET /api/search` (SSE), `GET /api/pesquisa-modulos` (SSE), `GET /api/pesquisa-modulos/status`, `POST /api/pesquisa-modulos/pular` | ✅ Implementado |
 | 3 | Plano de ensino | `GET /api/plano-ensino` (SSE) | ✅ Implementado |
 | 4 | Plano de aulas | `GET /api/plano-aula` (SSE) | ✅ Implementado |
 | 5 | Conteúdo por aula | `GET /api/conteudo` (SSE) | ✅ Implementado |
 | 5★/6 | Revisão de qualidade + Aplicação de melhorias | `GET /api/revisao-qualidade` (SSE), `POST /api/aplicar-melhorias`, `GET /api/aplicar-melhorias/confirmar` (SSE) | ✅ Implementado |
 | 7 | Agente de Qualidade Pedagógica + PPC | `GET /api/qualidade` (SSE), `GET /api/ppc` (SSE) | ✅ Implementado |
-| 8 | Slides (via API do Gamma) | `GET /api/estilos-visuais`, `POST /api/estilos-visuais/selecionar`, `GET /api/slides/parametros`, `POST /api/slides/parametros`, `GET /api/slides/gerar` (SSE) | ✅ Implementado |
+| 8 | Slides (via API do Gamma) | `GET /api/estilos-visuais`, `POST /api/estilos-visuais/selecionar`, `GET /api/slides/templates`, `POST /api/slides/template`, `GET /api/slides/parametros`, `POST /api/slides/parametros`, `GET /api/slides/gerar` (SSE) | ✅ Implementado |
 | 9 | Roteiros de vídeo | `POST /api/roteiro/blocos`, `GET /api/roteiro/prompt`, `POST /api/roteiro/aprovar`, `GET /api/roteiro/gerar` (SSE) | ✅ Implementado |
 | 10 | Vídeo com avatar (HeyGen) | `GET /api/heygen/avatares`, `GET /api/heygen/vozes`, `POST /api/heygen/config`, `GET/POST /api/video-avatar/parametros`, `GET /api/video-avatar/roteiro/gerar` (SSE), `GET /api/video-avatar/gerar` (SSE) | ✅ Implementado |
 
@@ -42,20 +42,34 @@ aula trabalhar a cada rodada (ver capability `video-avatar-generation` em
 `openspec/specs/`).
 
 Endpoints transversais (não amarrados a uma etapa específica):
-`GET /api/escolher-pasta` (seletor nativo de pasta), `GET /api/tokens`
-(consumo acumulado), `POST /api/carregar-projeto` (retomar projeto
-existente), `POST /api/importar` + `POST /api/importar/confirmar`
-(reimportar `.docx` editado), `POST /api/export/:step` (exportar qualquer
-etapa) e `POST /api/finalizar-conteudo`.
+`GET /api/escolher-pasta` (seletor nativo de pasta, só em loopback),
+`GET /api/tokens` (consumo acumulado), `GET /api/estimativa` (tokens e custo
+estimados antes de pesquisa por módulo, conteúdo e revisão),
+`POST /api/carregar-projeto` (retomar projeto existente),
+`POST /api/importar` + `POST /api/importar/confirmar` (reimportar `.docx`
+editado), `POST /api/export/:step` (exportar qualquer etapa),
+`POST /api/finalizar-conteudo` e `GET /api/dev/seed` (dados de exemplo, só
+com `ENABLE_DEV_SEED=true`).
+
+**Contagem de endpoints:** `server.js` registra 45 handlers (44 sempre ativos
+mais `/api/dev/seed`, condicional). Reproduza com
+`grep -cE "^\s*app\.(get|post|put|delete|patch)\(" server.js`. Um teste
+(`tests/unit/docs-sincronizadas.test.js`) falha se este número, o cookie ou a
+lista de rotas do README divergirem do código.
 
 ### 2.2 Changes OpenSpec ativas
 
-Nenhuma change ativa no momento — todas as propostas até aqui foram
-implementadas e arquivadas em `openspec/changes/archive/`. O estado atual
-do sistema está descrito pelas 25 capabilities em `openspec/specs/`
-(validadas via `openspec validate --all`), que são a fonte de verdade —
-prefira consultá-las a este arquivo para o detalhe de um requisito
-específico.
+As propostas antigas estão arquivadas em `openspec/changes/archive/`. As
+changes do plano de correção de 2026-10 já implementadas, ainda não
+arquivadas, são: `verificacao-pesquisa-e-prazos`, `pesquisa-web-real`,
+`observabilidade-langfuse`, `conteudo-completo-por-secoes`,
+`conteudo-fundamentado-em-pesquisa`, `avaliacao-conteudo-integral`,
+`geracao-retomavel`, `endurecer-fronteira-local`, `custo-e-logs`,
+`docx-markdown-completo` e `docs-sincronizadas`; `base-de-testes-realista`
+é a última pendente do plano. O estado atual do sistema está descrito pelas
+capabilities em `openspec/specs/` (validadas via `openspec validate --all`),
+que são a fonte de verdade — prefira consultá-las a este arquivo para o
+detalhe de um requisito específico.
 
 ---
 
@@ -66,38 +80,56 @@ específico.
 ```
 Backend:   Node.js 18+ + Express 4.18
 Frontend:  Vanilla JS + HTML5 + CSS3 (sem frameworks)
-IA:        OpenAI SDK v4 (maxRetries: 6)
+IA:        OpenAI SDK v4 (maxRetries: 0 — espera de 429 e novas tentativas no helper comRateLimit)
 Slides:    API do Gamma v1.0 (REST, chamada direta via fetch — sem SDK)
 Vídeo:     API do HeyGen v3, fluxo "Avatar Video" (REST, fetch — sem SDK)
 Docs:      docx v9 (geração) + mammoth v1 (extração de .docx importado)
 Testes:    Jest 30.4.2 + Supertest 7.2.2
 Protocolo: Server-Sent Events (SSE) para todas as operações assíncronas
-Sessão:    cookie HttpOnly (sid) → objeto in-memory `sessions[sid]`
+Sessão:    cookie HttpOnly + SameSite=Lax (`sessionId`) → objeto in-memory `sessions[sessionId]`
+Logs:      logger JSON próprio (`logger.js`); observabilidade opcional via Langfuse autohospedado (`observabilidade.js`)
 ```
 
 ### 3.2 Modelos de IA em uso
 
 | Modelo/Serviço | Casos de uso |
 |--------|-------------|
-| `gpt-4o-mini` | Todas as skills de geração de texto: ementa, planos, conteúdo, revisão de qualidade, aplicação de melhorias, metodologia, qualidade pedagógica, PPC, estilo visual, roteiro |
-| `gpt-4o-search-preview` | Pesquisa web (Etapa 2), com fallback automático para `gpt-4o-mini` sem busca em caso de falha persistente |
-| API do Gamma (`POST /generations`) | Geração de texto e imagem dos slides (Etapa 8) — substitui a antiga montagem local via `pptxgenjs` + `gpt-image-1.5` |
+| `gpt-4o-mini` (`OPENAI_ECONOMY_MODEL`) | Todas as skills de geração de texto: ementa, planos, revisão de qualidade, aplicação de melhorias, metodologia, qualidade pedagógica, PPC, estilo visual, roteiros |
+| `gpt-4o-mini` (`OPENAI_CONTENT_MODEL`) | Conteúdo das aulas (roteiro da aula, seções e expansão); herda o modelo de economia quando a variável não existe |
+| `gpt-4o` (`OPENAI_RESEARCH_MODEL`) | Pesquisa web (geral e por módulo) pela Responses API com a ferramenta `web_search` — `gpt-4o-search-preview` foi descontinuado e `chat.completions` + `web_search_options` retorna 400 (ver `docs/decisoes/pesquisa-api.md`). O fallback sem busca só roda por decisão do usuário e fica rotulado (`legado`/`sem_web`) |
+| API do Gamma (`POST /generations`) | Geração de texto e imagem dos slides (Etapa 8) — substitui a antiga montagem local via `pptxgenjs` + `gpt-image-1.5`; instruções por template em `GAMMA_TEMPLATE_PROMPTS` |
+| API do HeyGen (v3) | Vídeo com avatar (Etapa 10) |
+
+Os modelos ficam em `config/modelos.js` (padrão atual, sobrescrito por
+`OPENAI_RESEARCH_MODEL`, `OPENAI_CONTENT_MODEL` e `OPENAI_ECONOMY_MODEL`) e os
+preços por milhão de tokens em `config/precos-modelos.json`, usados na
+estimativa de custo e no painel de observabilidade.
 
 ### 3.3 Mapa de arquivos
 
 ```
-server.js          — Express + 30 endpoints REST/SSE + DOCX builder + persistência
-skills.js          — 20 skills de prompt ({model, system, user})
+server.js          — Express + 45 handlers REST/SSE + DOCX builder + persistência
+skills.js          — 29 skills de prompt ({model, system, user})
 bncc-data.js       — 400+ competências/habilidades BNCC (EF1, EF2, EM)
+conteudo-secoes.js — geração do conteúdo por seções (roteiro da aula, seções, estado completa/curta/incompleta)
+fundamentacao.js   — dossiê de fontes por aula, citações [F#] e referências montadas pelo sistema
+avaliacao.js       — orçamento de tokens e map-reduce da avaliação sobre o conteúdo integral
+observabilidade.js — traces e scores das chamadas ao LLM (Langfuse via OTLP, opcional)
+custo.js           — estimativa de custo, trava de orçamento e disjuntor
+logger.js          — logs JSON estruturados (LOG_LEVEL) com reqId e sem segredos
+docx-markdown.js   — Markdown → elementos docx (listas, tabelas, código, links)
+config/            — modelos.js (modelos por ambiente) e precos-modelos.json
 PromptRoteiro.docx — Template-fonte do prompt de roteiro de vídeo (Etapa 9), lido em runtime
-public/index.html  — Frontend HTML (Etapas 0–9, formulários, log panels)
-public/app.js      — Frontend JS (SSE streaming, BNCC UI, navegação entre etapas)
+public/index.html  — Frontend HTML (Etapas 0–10, formulários, log panels)
+public/app.js      — Frontend JS (SSE streaming, BNCC UI, navegação entre etapas, estimativas)
+public/markdown.js — Análise e renderização de Markdown, compartilhada com o gerador de .docx
 public/style.css   — Estilos (card-based, responsivo)
-openspec/specs/    — 25 capabilities canônicas e validadas (fonte de verdade atual do sistema)
+openspec/specs/    — 28 capabilities canônicas e validadas (fonte de verdade atual do sistema)
 openspec/changes/  — Changes do OpenSpec (ativas e arquivadas em changes/archive/)
-scripts/           — Scripts de manutenção pontual, fora do pipeline em produção
+docs/              — decisões (docs/decisoes), guia do Langfuse e linha de base do curso de referência (docs/baseline)
+scripts/           — Smoke da pesquisa, geração da linha de base, dataset do Langfuse e criptografia do .env
 saídas/            — Fallback apenas para projetos legados sem `pastaProjeto` definida ({curso-slug}/*.txt e *.docx)
-tests/             — Testes unitários (skills) e de integração (endpoints, SSE)
+tests/             — Testes unitários (skills, custo, logger, markdown…) e de integração (endpoints, SSE)
 ```
 
 ---
@@ -165,6 +197,7 @@ pesquisa              string
 planoEnsino           string
 planoAula             string
 aulas                 LessonMeta[]
+estadoAulas           { "NN": { estado: completa|curta|incompleta, assinatura, ... } }  (completude do conteúdo por aula)
 conteudoPorAula       LessonContent[]
 conteudo              string        (consolidado em memória; NÃO persistido como conteudo.docx — ver §7)
 revisaoQualidade      string        (Etapa 5★)
@@ -185,6 +218,10 @@ roteirosAvatarGerados string[]      (arquivos roteiroAvatar{NN}.docx já gerados
 duracaoAvatarDefault  number|null   (sticky — última duração em segundos usada)
 videosAvatarGerados   string[]      (arquivos videos/aula{NN}_video.mp4 já gerados nesta sessão)
 inputs                object        (inputs do usuário por etapa — topicos, limite, ajustesEnsino, observacoesAula)
+slidesTemplate        { id, nome }|null   (template Gamma escolhido para o curso)
+geracoesExternas      object        (ids de gerações pendentes no Gamma/HeyGen, para retomar após queda)
+custoProjetoUsd       number        (custo acumulado do projeto; também em projeto.json)
+ultimoAcesso          number        (epoch ms — sessões inativas por mais de 12 h são descartadas)
 ```
 
 ### LessonMeta
@@ -205,9 +242,10 @@ texto     string   conteúdo completo em markdown
 ### SSE Events (padrão de todos os endpoints de streaming)
 ```
 progress  { type, message }          — progresso textual no log panel
-site      { type, url, title }       — citação web capturada (apenas Etapa 2)
+site      { type, url, title }       — citação web capturada (Etapas 2 e pesquisa por módulo)
 token     { type, text }             — chunk de texto gerado pelo modelo
-done      { type, fullText }         — conclusão com texto completo
+warning   { type, text }             — aviso não fatal (aula curta, citação fraca…)
+done      { type, fullText, ... }    — conclusão com texto completo; com chamadas ao LLM traz também traceId, tokens e custoUsd
 error     { type, message }          — erro propagado ao cliente
 ```
 
@@ -215,23 +253,31 @@ error     { type, message }          — erro propagado ao cliente
 
 ## 5. Skills catalog (skills.js)
 
-Cada skill retorna `{ model, [web_search_options], system, user }`.
+Cada skill retorna `{ model, system, user }` (a pesquisa web acrescenta `searchContextSize` e usa a Responses API). O modelo vem de `config/modelos.js`; "mini" abaixo é o modelo de economia.
 
 | Skill | Modelo | Propósito |
 |-------|--------|-----------|
-| `pesquisaWebSkill` | search-preview | Pesquisa tendências, ferramentas e certificações do mercado |
-| `pesquisaFallbackSkill` | mini | Fallback sem busca web quando a pesquisa web falha persistentemente (Etapa 2) |
+| `pesquisaWebSkill` | pesquisa (`gpt-4o` + `web_search`) | Uma consulta de pesquisa geral (tendências, ferramentas, certificações, referências) |
+| `pesquisaModuloSkill` | pesquisa (`gpt-4o` + `web_search`) | Pesquisa por módulo do plano de ensino, alimentando o dossiê de fontes das aulas |
+| `pesquisaFallbackSkill` | mini | Pesquisa sem busca web, só por decisão do usuário após falha da busca (resultado rotulado) |
 | `ementaSkill` | mini | Ementa do curso em 2 parágrafos objetivos |
 | `planoEnsinoSkill` | mini | Plano com módulos, metodologia, avaliação, bibliografia |
 | `planLessonsSkill` | mini | Divide curso em aulas — resposta JSON (`LessonMeta[]`) |
 | `planoAulaSkill` | mini | Plano detalhado de uma aula (sequência didática, timing) |
-| `conteudoSkill` | mini | Conteúdo técnico denso por aula (referência do instrutor) |
-| `revisaoQualidadeSkill` | mini | Relatório de revisão de qualidade por aula, com rubrica de 5 critérios (Etapa 5★) |
+| `conteudoSkill` | conteúdo | Conteúdo técnico por aula em passada única (modo legado `CONTEUDO_MODO=unico`) |
+| `roteiroAulaSkill` | conteúdo | Roteiro JSON da aula (seções e metas de palavras) — geração por seções |
+| `secaoConteudoSkill` | conteúdo | Escreve uma seção da aula, com o dossiê de fontes |
+| `expandirSecaoSkill` | conteúdo | Expande uma seção abaixo da meta de palavras |
+| `recursosAulaSkill` | mini | Recursos e materiais de apoio da aula |
+| `revisaoQualidadeSkill` | mini | Relatório de revisão de qualidade por aula, com rubrica de 5 critérios (Etapa 5★), sobre a aula inteira |
+| `revisaoSecaoSkill` | mini | Avaliação por seção, quando a aula não cabe na janela (map-reduce) |
+| `coerenciaGlobalSkill` | mini | Coerência global da aula a partir das avaliações por seção |
 | `aplicarMelhoriasSkill` | mini | Aplica melhorias anotadas como patch por seção (Etapa 6) |
 | `scoreAulaSkill` | mini | Julgamento pareado original × candidato para o gate de score (Etapa 6) |
 | `realinharPlanoAulaSkill` | mini | Realinha a seção do plano de aula após melhorias aplicadas (Etapa 6) |
 | `metodologiaSkill` | mini | Deriva metodologia pedagógica adequada ao perfil do curso |
 | `qualidadeSkill` | mini | Relatório Técnico-Pedagógico (7 seções, persona especialista) — Agente de Qualidade, Etapa 7 |
+| `qualidadeModuloSkill` | mini | Análise por módulo sobre o conteúdo integral, quando o relatório não cabe numa chamada |
 | `perfilEgressoSkill` | mini | Perfil do egresso do curso (PPC) |
 | `competenciasSkill` | mini | Competências e habilidades desenvolvidas, com BNCC se ativo (PPC) |
 | `perfilDocenteSkill` | mini | Perfil de formação e experiência recomendados para o professor (PPC) |
@@ -239,13 +285,15 @@ Cada skill retorna `{ model, [web_search_options], system, user }`.
 | `ppcAssemblySkill` | mini | Monta PPC formal com 12 seções numeradas |
 | `estiloVisualSkill` | mini | Gera o menu de 3–5 estilos visuais coerentes com o curso (Etapa 8) |
 | `roteiroSkill` | mini | Gera o roteiro de vídeo de uma aula a partir do prompt aprovado (Etapa 9) |
+| `roteiroAvatarSkill` | mini | Roteiro falado para o avatar, com duração em segundos (Etapa 10) |
 
 > A geração dos slides em si (texto e imagem de cada card, Etapa 8) não usa
 > uma skill de prompt local — é delegada à API do Gamma (`POST /generations`),
 > que recebe o conteúdo da aula e o `housePrompt` do estilo escolhido.
 
-**Helper (sem chamada de API):**
+**Helpers (sem chamada de API):**
 - `summarizeLessons(aulas, { excludeIndex })` — mapa enxuto das aulas para contexto sequencial
+- `pedagCtxBlock(metodologia, bnccContext)` e `bnccBlock(bncc)` — contexto pedagógico em formato único
 
 ---
 
@@ -279,8 +327,8 @@ passa a ser um ciclo supervisionado pelo revisor humano:
 ## 7. Persistência
 
 ### Sessão (in-memory)
-- Identificada por cookie HttpOnly `sid`
-- **Perdida ao reiniciar o servidor** (Gap G04)
+- Identificada por cookie HttpOnly `sessionId` (`SameSite=Lax`)
+- **Perdida ao reiniciar o servidor** (Gap G04) e descartada após 12 h sem uso
 - `readMemory(sess, nome)` lê `.txt` do disco para restaurar etapas em sessões novas
 
 ### Sistema de arquivos
@@ -313,16 +361,22 @@ internos (`.txt`, `.json`) ficam em `{pastaProjeto}/scr/`:
   scr/observacoes_pendentes.json       — observações extraídas do último upload da Etapa 6
   scr/ciclo_{NNN}/                     — snapshot do conteúdo antes de cada ciclo de melhorias
   scr/token_usage.json                 — consumo de tokens acumulado do projeto
+  scr/pesquisa.json                    — metadados da pesquisa geral (modelo, consultas, fontes, achados, status)
+  scr/pesquisa_modulos.json            — pesquisa por módulo (consultas, fontes e achados por módulo)
+  scr/geracao_log.json                 — uma linha por chamada ao LLM (traceId, etapa, tokens, custo) e resumo por aula
+  scr/revisao_log.json, notas_aulas.json — registro de leitura e notas da revisão de qualidade
+  scr/plano_aula_progresso.json        — progresso temporário do plano de aula (removido ao consolidar)
 ```
 
 - **Slug**: `"Nome do Curso"` → `"Nome_do_Curso"` (espaços viram `_`) — usado apenas no fallback legado
 - Cada etapa persiste `.txt`/`.json` (memória para próximas etapas) **e** o entregável (`.docx`/`.pptx`)
-- Truncamento a 1.500 caracteres ao passar contexto para skills (controle de tokens)
+- Sem truncamento por caracteres: aulas e documentos de referência entram inteiros nos prompts; quando passam de `AVALIACAO_MAX_TOKENS_ENTRADA` a avaliação usa map-reduce por seção, sem perder trechos
 
 ### Rastreamento de tokens
 - Contador global em memória (`tokenUsage`), resetado ao reiniciar o servidor
 - Acumulado por projeto em `scr/token_usage.json` (`{ total, porDia, atualizadoEm }`), sobrevive a restarts — ver capability `token-usage-tracking`
 - `GET /api/tokens` retorna ambos; o contador da UI exibe o total do projeto ao lado do total da sessão
+- Custo em USD por projeto: `custoProjetoUsd` em `projeto.json`, calculado do `usage` com `config/precos-modelos.json`; `ORCAMENTO_USD` (opcional) trava as etapas ao estourar o teto
 
 ---
 
@@ -359,7 +413,7 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 - **SSE obrigatório** para qualquer operação assíncrona nova — não usar polling ou websockets
 - **Contexto pedagógico injetado** em todas as skills via `pedagCtxBlock(metodologia, bnccContext)` — nunca omitir
 - **Persistência dupla** em toda etapa que gera conteúdo: `.txt` (memória) + `.docx` (entregável)
-- **Truncamento de contexto** a 1.500 chars ao montar prompts a partir de artefatos já gerados
+- **Sem truncamento por caracteres** ao montar prompts a partir de artefatos já gerados: respeite o orçamento de tokens (`avaliacao.js`) e, se não couber, divida por seção
 - **Commits em português**
 
 ---
@@ -372,12 +426,15 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | G02 | Segurança | Reduzido | Sem autenticação (aceito como constraint de uso local, ver `native-folder-picker`), mas o bind padrão é `127.0.0.1` (`HOST`), cookie `SameSite=Lax`, checagem de `Origin`/`Host` em `/api`, seletor de pasta só em loopback, pastas validadas (`validarPastaProjeto`), upload limitado a `.docx` de 20 MB, `/api/dev/seed` só com `ENABLE_DEV_SEED=true` e sessões inativas expiram em 12 h (`endurecer-fronteira-local`) |
 | G03 | Segurança | ✅ Mitigado | `pastaProjeto` é validada contra `..`, caminhos dentro do diretório da aplicação e falta de permissão de escrita |
 | G04 | Persistência | Reduzido | Sessão continua in-memory, mas é totalmente reconstruível do disco sem chamada à OpenAI (`session-persistence`, `session-auto-restore`, `project-load`) |
-| G05 | Confiabilidade | ✅ Resolvido | Cliente OpenAI com `maxRetries: 6`, mais retry/fallback dedicado da pesquisa web (`web-search-resilience`) |
+| G05 | Confiabilidade | ✅ Resolvido | Espera adaptativa de 429 (`retry-after`, backoff com teto), repetição de falhas transitórias e geração retomável (`geracao-retomavel`); retry dedicado da pesquisa web (`web-search-resilience`) |
 | G06 | Observabilidade | ✅ Resolvido | Logger JSON próprio (`logger.js`, `LOG_LEVEL`) com `etapa`, `aula` e `reqId` (= `traceId`), sem segredos (`custo-e-logs`) |
-| G07 | Testes | Melhorado | Baseline estabelecida (`test-verification-baseline`): gate de cobertura 40%, 240 testes, mock da OpenAI compatível com contratos reais — ainda não é cobertura completa |
+| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 40%, mock da OpenAI com erros reais e Responses API; confira o número atual com `npm test` (48 suítes e 657 testes em 2026-10-24) — ainda não é cobertura completa |
 | G08 | UX | ✅ Resolvido | `GET /api/estimativa` e a UI mostram a faixa de tokens/custo antes de pesquisa por módulo, conteúdo e revisão; custo acumulado em `projeto.json`; `ORCAMENTO_USD` opcional (`custo-e-logs`) |
 | G09 | Portabilidade | Baixo | Seletor nativo de pasta é Windows-only por design (PowerShell + `System.Windows.Forms`) |
-| G10 | Escalabilidade | Baixo | Sem rate limiting — múltiplos usuários podem esgotar quota da API |
+| G10 | Escalabilidade | Baixo | Sem rate limiting próprio — múltiplos usuários podem esgotar quota da API (a espera de 429 e `CONTEUDO_PARALELISMO` ≤ 2 só protegem uma instância) |
+| G11 | Qualidade | ✅ Resolvido | Avaliação sobre texto truncado: a revisão, o score e o relatório passam a ler a aula e os documentos inteiros, com map-reduce por seção quando não cabem (`avaliacao-conteudo-integral`) |
+| G12 | Confiabilidade | ✅ Resolvido | Pesquisa sem verificação de fonte: Responses API com `web_search`, citações `url_citation`, status `web`/`legado`/`sem_web` e fundamentação das aulas por dossiê `[F#]` (`pesquisa-web-real`, `conteudo-fundamentado-em-pesquisa`) |
+| G13 | Observabilidade | Reduzido | Observabilidade das chamadas ao LLM: traces e scores no Langfuse autohospedado, opcional (`observabilidade-langfuse`); falta enviar o dataset de avaliação (tarefa 3.2, precisa do Langfuse em execução) |
 
 > Ao propor uma nova funcionalidade, **referencie o Gap ID** caso ela resolva algum deles.
 

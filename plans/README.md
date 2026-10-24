@@ -9,13 +9,17 @@ linha ao terminar.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001 | Tornar visíveis os erros de pré-condição dos endpoints SSE | P1 | S | — | TODO |
-| 002 | Baseline de verificação: gate de cobertura verde + mock JSON + testes críticos | P1 | M | — | TODO |
-| 003 | Abortar chamadas OpenAI quando o cliente desconecta | P1 | M | 002 | TODO |
-| 004 | CLAUDE.md + .env.example + README atualizado | P2 | S | — | TODO |
-| 005 | Remover mcp-server.js (morto e com execSync sem guarda) | P2 | S | — | TODO |
+| 001 | Tornar visíveis os erros de pré-condição dos endpoints SSE | P1 | S | — | DONE |
+| 002 | Baseline de verificação: gate de cobertura verde + mock JSON + testes críticos | P1 | M | — | DONE |
+| 003 | Abortar chamadas OpenAI quando o cliente desconecta | P1 | M | 002 | DONE |
+| 004 | CLAUDE.md + .env.example + README atualizado | P2 | S | — | DONE |
+| 005 | Remover mcp-server.js (morto e com execSync sem guarda) | P2 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (com motivo em 1 linha) | REJECTED (com justificativa em 1 linha)
+
+Status dos planos 001–005 conferido contra o código em 2026-10-24: erros de pré-condição SSE
+visíveis (`sseError`), baseline de testes e mock da OpenAI, abort por desconexão do cliente,
+`CLAUDE.md`/`.env.example`/README atualizados e `mcp-server.js` removido.
 
 ## Dependency notes
 
@@ -71,6 +75,16 @@ Vetados e válidos; o operador optou por não os planejar em 2026-07-07:
 - **Direção C**: reconciliar registro OpenSpec (`bncc-alignment-step` consta
   "sem implementação" mas está entregue e testado; specs citam `MODEL_SEARCH`
   inexistente — código usa `MODEL_RESEARCH`).
+
+## Atualização de 2026-10-24
+
+Itens acima já tratados pelo plano de correção de 2026-10 (changes do OpenSpec):
+
+- **#1 Endurecer fronteira de rede local** → `endurecer-fronteira-local`.
+- **Direção A** (estimativa de custo, G08) → `custo-e-logs`.
+- **Direção B** (timeout/retry em todas as etapas, G05) → `geracao-retomavel`.
+- **Direção C** (reconciliar `MODEL_SEARCH` × `MODEL_RESEARCH`) → modelos centralizados em
+  `config/modelos.js` (`docx-markdown-completo`).
 
 ## Escopo da auditoria de 2026-07-07
 
