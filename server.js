@@ -39,6 +39,8 @@ const { obs: observabilidade } = require('./observabilidade');
 const conteudoSecoes = require('./conteudo-secoes');
 const fundamentacao = require('./fundamentacao');
 const avaliacao = require('./avaliacao');
+const { Readable, Transform } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const bnccData = require('./bncc-data');
 console.log(`[BNCC] Carregado: ${bnccData.competenciasGerais.length} competências, ` +
   `${bnccData.habilidades.ef1.length} EF1, ${bnccData.habilidades.ef2.length} EF2, ` +
@@ -50,7 +52,92 @@ const {
 } = require('docx');
 
 const app = express();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 6 });
+// maxRetries: 0 — o retry de 429/5xx é feito por comRateLimit (visível e abortável).
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 });
+
+// ── Espera adaptativa de rate limit (change geracao-retomavel) ───────────────
+// Em 429 a chamada é repetida esperando o tempo que a própria API pede
+// (`retry-after-ms` / `retry-after`); sem cabeçalho, backoff exponencial a partir
+// de 2 s, com teto de 60 s. Só repete ANTES do primeiro token do stream (o erro
+// vem na abertura da chamada): um erro no meio do stream nunca é repetido, para
+// não duplicar texto já enviado ao cliente. O cliente OpenAI usa maxRetries: 0 —
+// este helper é o único responsável, e a espera é VISÍVEL (progress SSE) e
+// abortável. Erros transitórios (5xx e falhas de conexão) ganham até 2 novas
+// tentativas curtas, já que o SDK deixou de repetir sozinho; os demais (400, 401…)
+// nunca são repetidos.
+const rateLimitConfig = () => {
+  const n = parseInt(process.env.RATE_LIMIT_MAX_RETENTATIVAS, 10);
+  return {
+    maxRetentativas: Number.isInteger(n) && n >= 0 ? n : 4,
+    baseMs: Number(process.env.RATE_LIMIT_BACKOFF_BASE_MS ?? 2000),
+    tetoMs: Number(process.env.RATE_LIMIT_ESPERA_MAX_MS ?? 60_000)
+  };
+};
+
+function esperarAbortavel(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new OpenAI.APIUserAbortError());
+    const t = setTimeout(() => { signal?.removeEventListener?.('abort', aoAbortar); resolve(); }, ms);
+    const aoAbortar = () => { clearTimeout(t); reject(new OpenAI.APIUserAbortError()); };
+    signal?.addEventListener?.('abort', aoAbortar, { once: true });
+  });
+}
+
+function cabecalhoDoErro(err, nome) {
+  const h = err?.headers;
+  if (!h) return undefined;
+  return typeof h.get === 'function' ? h.get(nome) : h[nome];
+}
+
+// Tempo de espera pedido pela API (ms) ou undefined quando não informado.
+function esperaPedidaPelaApi(err) {
+  const brutoMs = cabecalhoDoErro(err, 'retry-after-ms');
+  if (brutoMs !== undefined && brutoMs !== null && brutoMs !== '') {
+    const ms = Number(brutoMs);
+    if (Number.isFinite(ms) && ms >= 0) return ms;
+  }
+  const bruto = cabecalhoDoErro(err, 'retry-after');
+  if (bruto === undefined || bruto === null || bruto === '') return undefined;
+  const seg = Number(bruto);
+  if (Number.isFinite(seg) && seg >= 0) return seg * 1000;
+  const data = Date.parse(bruto); // retry-after também pode ser uma data HTTP
+  return Number.isNaN(data) ? undefined : Math.max(0, data - Date.now());
+}
+
+function ehRateLimit(err) {
+  return err?.status === 429 || (typeof OpenAI.RateLimitError === 'function' && err instanceof OpenAI.RateLimitError);
+}
+
+function ehErroTransitorio(err) {
+  if (typeof err?.status === 'number') return err.status >= 500;
+  return typeof OpenAI.APIConnectionError === 'function' && err instanceof OpenAI.APIConnectionError;
+}
+
+async function comRateLimit(fn, { signal, aoEsperar } = {}) {
+  const cfg = rateLimitConfig();
+  let tentativas429 = 0;
+  let transitorias = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (signal?.aborted || err instanceof OpenAI.APIUserAbortError) throw err;
+      let esperaMs;
+      if (ehRateLimit(err)) {
+        if (tentativas429 >= cfg.maxRetentativas) throw err;
+        esperaMs = Math.min(esperaPedidaPelaApi(err) ?? cfg.baseMs * 2 ** tentativas429, cfg.tetoMs);
+        tentativas429++;
+      } else if (ehErroTransitorio(err) && transitorias < 2) {
+        esperaMs = Math.min(1000 * 2 ** transitorias, cfg.tetoMs);
+        transitorias++;
+      } else {
+        throw err;
+      }
+      aoEsperar?.(Math.max(1, Math.ceil(esperaMs / 1000)), tentativas429 + transitorias, ehRateLimit(err) ? 'rate-limit' : 'transitorio');
+      await esperarAbortavel(esperaMs, signal);
+    }
+  }
+}
 
 // Ponto único de chamada à OpenAI (change observabilidade-langfuse): toda
 // chamada passa por aqui para virar uma `generation` (modelo, parâmetros,
@@ -82,9 +169,22 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
 
   let resultado;
   try {
-    resultado = tipo === 'responses'
-      ? await openai.responses.create(params, options)
-      : await openai.chat.completions.create(params, options);
+    resultado = await comRateLimit(
+      () => (tipo === 'responses'
+        ? openai.responses.create(params, options)
+        : openai.chat.completions.create(params, options)),
+      {
+        signal: options?.signal,
+        aoEsperar: (seg, n, motivo) => {
+          meta.aoEsperar?.(seg); // ex.: reinicia o timer de inatividade do stream
+          const res = observabilidade.contexto()?.res;
+          if (res && !res.writableEnded) {
+            send(res, { type: 'progress', message: motivo === 'rate-limit'
+              ? `Limite da API atingido — aguardando ${seg}s antes de tentar de novo (tentativa ${n + 1})...`
+              : `Falha temporária da API — nova tentativa em ${seg}s...` });
+          }
+        }
+      });
   } catch (err) {
     registrar({ erro: err.message || String(err) });
     throw err;
@@ -168,10 +268,6 @@ const SEARCH_RETRY_TIMEOUT_MS = 60_000;
 // Novas tentativas da mesma consulta de pesquisa após falha transitória.
 const PESQUISA_MAX_RETENTATIVAS = 2;
 const SEARCH_FALLBACK_TIMEOUT_MS = 30_000;
-// Pausa entre aulas consecutivas (proteção simples contra rate limit; padrão 4 s).
-// CONTEUDO_PAUSA_MS=0 desliga — usado nos testes. A espera adaptativa por 429
-// (change geracao-retomavel) substitui esta pausa fixa.
-const PAUSA_ENTRE_AULAS_MS = Number(process.env.CONTEUDO_PAUSA_MS ?? 4000);
 const STALL_TIMEOUT_MS = 45_000;
 const CONTEUDO_SEARCH_TIMEOUT_MS = 90_000;
 // Teto de tokens de saída por aula, uniforme em todas as gerações de conteúdo
@@ -419,6 +515,7 @@ app.use('/api', (req, res, next) => {
     }
   });
   Object.defineProperty(ctx, 'sess', { enumerable: false, get: () => sessions[req.cookies?.sessionId] });
+  Object.defineProperty(ctx, 'res', { enumerable: false, value: res });
   req.id = ctx.traceId;
   res.on('close', () => observabilidade.finalizarContexto(ctx));
   observabilidade.executar(ctx, next);
@@ -1244,6 +1341,8 @@ function saveProject(sess, stageInfo = null) {
   // Estado de completude do conteúdo por aula (completa | curta | incompleta);
   // ausente em projetos antigos = completa.
   if (sess.estadoAulas) projeto.estadoAulas = sess.estadoAulas;
+  // Gerações pendentes no Gamma/HeyGen (ids gravados ao criar) — retomadas após uma queda.
+  if (sess.geracoesExternas) projeto.geracoesExternas = sess.geracoesExternas;
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -1300,6 +1399,72 @@ async function criarGeracaoGamma(payload, client = null, endpointPath = '/genera
   return resp.json();
 }
 
+// ── Downloads robustos e retomada do polling externo (change geracao-retomavel) ──
+
+const DOWNLOAD_TIMEOUT_MS_PADRAO = 300_000; // 5 min no total
+const MAX_DOWNLOAD_BYTES_PADRAO = 500 * 1024 * 1024; // 500 MB
+
+// Baixa `url` para `destino` com timeout total, limite de tamanho e gravação em
+// disco por stream — sem carregar o arquivo inteiro na memória (APIs nativas do
+// Node). Escreve num arquivo temporário e só renomeia no sucesso; em qualquer
+// falha o temporário é removido.
+async function baixarParaArquivo(url, destino, { rotulo = 'o arquivo', timeoutMs, maxBytes } = {}) {
+  const limiteTempo = timeoutMs ?? (Number(process.env.DOWNLOAD_TIMEOUT_MS) || DOWNLOAD_TIMEOUT_MS_PADRAO);
+  const limiteBytes = maxBytes ?? (Number(process.env.MAX_DOWNLOAD_BYTES) || MAX_DOWNLOAD_BYTES_PADRAO);
+  const tmp = `${destino}.baixando`;
+  fs.rmSync(tmp, { force: true });
+  const signal = makeAbortSignal(limiteTempo);
+  try {
+    const resp = await fetchObs(url, { signal });
+    if (!resp.ok) throw new Error(`Falha ao baixar ${rotulo} (status ${resp.status}).`);
+    const declarado = Number(resp.headers?.get?.('content-length'));
+    if (declarado > limiteBytes) {
+      throw new Error(`${rotulo} excede o limite de tamanho (${Math.round(limiteBytes / 1024 / 1024)} MB).`);
+    }
+    if (resp.body && typeof resp.body.getReader === 'function') {
+      let recebidos = 0;
+      const limitador = new Transform({
+        transform(chunk, _enc, cb) {
+          recebidos += chunk.length;
+          if (recebidos > limiteBytes) return cb(new Error(`${rotulo} excede o limite de tamanho (${Math.round(limiteBytes / 1024 / 1024)} MB).`));
+          cb(null, chunk);
+        }
+      });
+      await pipeline(Readable.fromWeb(resp.body), limitador, fs.createWriteStream(tmp), { signal });
+    } else {
+      // Resposta sem stream (ex.: doubles de teste): cai no buffer, ainda com o limite.
+      const buffer = Buffer.from(await resp.arrayBuffer());
+      if (buffer.length > limiteBytes) throw new Error(`${rotulo} excede o limite de tamanho (${Math.round(limiteBytes / 1024 / 1024)} MB).`);
+      fs.writeFileSync(tmp, buffer);
+    }
+    fs.renameSync(tmp, destino);
+    return destino;
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError' || /aborted|timeout/i.test(err?.code || '')) {
+      throw new Error(`Tempo limite excedido ao baixar ${rotulo} (${Math.round(limiteTempo / 1000)} s).`);
+    }
+    throw err;
+  }
+}
+
+// Geração pendente no Gamma/HeyGen (id gravado em projeto.json ao criar): se o
+// servidor cair, o polling continua no MESMO id em vez de criar outra geração.
+function geracaoExternaPendente(sess, provedor, numero) {
+  return sess.geracoesExternas?.[provedor]?.[numero] || null;
+}
+
+function registrarGeracaoExterna(sess, provedor, numero, id) {
+  sess.geracoesExternas = sess.geracoesExternas || {};
+  sess.geracoesExternas[provedor] = sess.geracoesExternas[provedor] || {};
+  sess.geracoesExternas[provedor][numero] = { id, criadoEm: new Date().toISOString() };
+  saveProject(sess);
+}
+
+function limparGeracaoExterna(sess, provedor, numero) {
+  if (sess.geracoesExternas?.[provedor]) delete sess.geracoesExternas[provedor][numero];
+}
+
 // Aguarda a conclusão de uma geração do Gamma via polling (a API não oferece
 // webhook). Respeita a desconexão do cliente SSE e um teto de tempo total —
 // a maioria das gerações conclui em 1-3 min, segundo a documentação do Gamma.
@@ -1314,12 +1479,16 @@ async function aguardarGeracaoGamma(generationId, client) {
       signal: combineSignals(client.signal, timeoutSignal)
     });
     if (!resp.ok) {
-      throw new Error(`Gamma retornou ${resp.status} ao consultar o andamento da geração.`);
+      const erro = new Error(`Gamma retornou ${resp.status} ao consultar o andamento da geração.`);
+      if (resp.status === 404) erro.geracaoInvalida = true; // id expirado/inexistente: não adianta retomar
+      throw erro;
     }
     const data = await resp.json();
     if (data.status === 'completed') return data;
     if (data.status === 'failed') {
-      throw new Error(data.error?.message || 'A geração dos slides falhou no Gamma.');
+      const erro = new Error(data.error?.message || 'A geração dos slides falhou no Gamma.');
+      erro.geracaoInvalida = true;
+      throw erro;
     }
     await new Promise(r => setTimeout(r, GAMMA_POLL_INTERVAL_MS));
   }
@@ -1331,15 +1500,11 @@ async function aguardarGeracaoGamma(generationId, client) {
 // contrato de saída do antigo persistPptxStage, só a origem do arquivo muda.
 // exportUrl é um link de download efêmero (~1 semana) sem controle de acesso;
 // nunca é logado nem devolvido ao cliente — o download acontece só aqui.
-async function persistGammaSlidesStage(sess, baseName, exportUrl) {
-  const resp = await fetchObs(exportUrl);
-  if (!resp.ok) {
-    throw new Error(`Falha ao baixar o .pptx gerado pelo Gamma (status ${resp.status}).`);
-  }
-  const buffer = Buffer.from(await resp.arrayBuffer());
-  const rootDir = courseRootDir(sess);
-  const fullPath = path.join(rootDir, `${baseName}.pptx`);
-  fs.writeFileSync(fullPath, buffer);
+async function persistGammaSlidesStage(sess, baseName, exportUrl, numero = null) {
+  const fullPath = path.join(courseRootDir(sess), `${baseName}.pptx`);
+  await baixarParaArquivo(exportUrl, fullPath, { rotulo: 'o .pptx gerado pelo Gamma' });
+  // Baixado: a geração pendente (id gravado em projeto.json) não precisa mais ser retomada.
+  if (numero) limparGeracaoExterna(sess, 'gamma', numero);
   saveProject(sess, { baseName, fonte: 'ia' });
   return fullPath;
 }
@@ -1573,12 +1738,16 @@ async function aguardarVideoHeygen(videoId, client) {
       signal: combineSignals(client.signal, timeoutSignal)
     });
     if (!resp.ok) {
-      throw new Error(`HeyGen retornou ${resp.status} ao consultar o andamento do vídeo.`);
+      const erro = new Error(`HeyGen retornou ${resp.status} ao consultar o andamento do vídeo.`);
+      if (resp.status === 404) erro.geracaoInvalida = true;
+      throw erro;
     }
     const { data } = await resp.json();
     if (data.status === 'completed') return data;
     if (data.status === 'failed') {
-      throw new Error(data.error?.message || 'A geração do vídeo falhou no HeyGen.');
+      const erro = new Error(data.error?.message || 'A geração do vídeo falhou no HeyGen.');
+      erro.geracaoInvalida = true;
+      throw erro;
     }
     await new Promise(r => setTimeout(r, HEYGEN_POLL_INTERVAL_MS));
   }
@@ -1587,14 +1756,10 @@ async function aguardarVideoHeygen(videoId, client) {
 
 // Baixa o .mp4 pronto e grava em videos/aula{NN}_video.mp4 dentro da pasta do
 // projeto — mesmo contrato de persistGammaSlidesStage, mas em videosDir().
-async function persistHeygenVideoStage(sess, baseName, videoUrl) {
-  const resp = await fetchObs(videoUrl);
-  if (!resp.ok) {
-    throw new Error(`Falha ao baixar o .mp4 gerado pelo HeyGen (status ${resp.status}).`);
-  }
-  const buffer = Buffer.from(await resp.arrayBuffer());
+async function persistHeygenVideoStage(sess, baseName, videoUrl, numero = null) {
   const fullPath = path.join(videosDir(sess), `${baseName}.mp4`);
-  fs.writeFileSync(fullPath, buffer);
+  await baixarParaArquivo(videoUrl, fullPath, { rotulo: 'o .mp4 gerado pelo HeyGen' });
+  if (numero) limparGeracaoExterna(sess, 'heygen', numero);
   saveProject(sess, { baseName, fonte: 'ia' });
   return fullPath;
 }
@@ -1857,7 +2022,7 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
           { role: 'system', content: skill.system },
           { role: 'user', content: skill.user }
         ]
-      });
+      }, { signal: clientAbort(res).signal });
       addUsage(completion.usage, sess);
       sess.ementa = completion.choices[0]?.message?.content?.trim() || '';
       sess._precisaGerarEmenta = false;
@@ -2020,7 +2185,7 @@ app.get('/api/estilos-visuais', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    });
+    }, { signal: clientAbort(res).signal });
     addUsage(completion.usage, sess);
     let estilos = [];
     try {
@@ -2244,10 +2409,25 @@ app.get('/api/slides/gerar', async (req, res) => {
       exportAs: 'pptx'
     };
 
-    const criacao = await criarGeracaoGamma(payload, client, sess.slidesTemplate ? '/generations/from-template' : '/generations');
+    // Retomada: se uma geração desta aula ficou pendente (ex.: o servidor caiu
+    // durante o polling), continua no MESMO id em vez de criar outra (e gastar crédito).
+    let generationId = geracaoExternaPendente(sess, 'gamma', numero)?.id;
+    if (generationId) {
+      send(res, { type: 'progress', message: `Retomando a geração pendente da aula ${index + 1} no Gamma...` });
+    } else {
+      const criacao = await criarGeracaoGamma(payload, client, sess.slidesTemplate ? '/generations/from-template' : '/generations');
+      generationId = criacao.generationId;
+      registrarGeracaoExterna(sess, 'gamma', numero, generationId);
+    }
     send(res, { type: 'progress', message: `Aguardando o Gamma concluir a geração da aula ${index + 1}...` });
 
-    const resultado = await aguardarGeracaoGamma(criacao.generationId, client);
+    let resultado;
+    try {
+      resultado = await aguardarGeracaoGamma(generationId, client);
+    } catch (err) {
+      if (err.geracaoInvalida) { limparGeracaoExterna(sess, 'gamma', numero); saveProject(sess); }
+      throw err;
+    }
     if (client.disconnected) return;
 
     const baseName = `aula${numero}_slides`;
@@ -2262,7 +2442,7 @@ app.get('/api/slides/gerar', async (req, res) => {
     sess.slidesGerados.push({ index, numero, titulo: aula.titulo, baseName, observacao: texto, quantidade, geradoEm: new Date().toISOString() });
     sess.slidesPendente = null;
 
-    await persistGammaSlidesStage(sess, baseName, resultado.exportUrl);
+    await persistGammaSlidesStage(sess, baseName, resultado.exportUrl, numero);
 
     const proximoIndex = index + 1 < aulas.length ? index + 1 : null;
     send(res, { type: 'progress', message: `Slides da aula ${index + 1} concluídos` });
@@ -2594,10 +2774,24 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
       ...(motionPrompt ? { motion_prompt: motionPrompt } : {})
     };
 
-    const criacao = await criarVideoHeygen(payload, client);
+    // Retomada: continua o polling no mesmo videoId se a geração ficou pendente.
+    let videoId = geracaoExternaPendente(sess, 'heygen', numero)?.id;
+    if (videoId) {
+      send(res, { type: 'progress', message: `Retomando o vídeo pendente da aula ${index + 1} no HeyGen...` });
+    } else {
+      const criacao = await criarVideoHeygen(payload, client);
+      videoId = criacao.video_id;
+      registrarGeracaoExterna(sess, 'heygen', numero, videoId);
+    }
     send(res, { type: 'progress', message: `Aguardando o HeyGen gerar o vídeo da aula ${index + 1}... (pode levar alguns minutos)` });
 
-    const resultado = await aguardarVideoHeygen(criacao.video_id, client);
+    let resultado;
+    try {
+      resultado = await aguardarVideoHeygen(videoId, client);
+    } catch (err) {
+      if (err.geracaoInvalida) { limparGeracaoExterna(sess, 'heygen', numero); saveProject(sess); }
+      throw err;
+    }
     if (client.disconnected) return;
 
     const baseName = `aula${numero}_video`;
@@ -2605,7 +2799,7 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
     sess.videosAvatarGerados = sess.videosAvatarGerados || [];
     sess.videosAvatarGerados.push({ index, numero, titulo: aula.titulo, baseName, geradoEm: new Date().toISOString() });
 
-    await persistHeygenVideoStage(sess, baseName, resultado.video_url);
+    await persistHeygenVideoStage(sess, baseName, resultado.video_url, numero);
 
     send(res, { type: 'progress', message: `Vídeo da aula ${index + 1} concluído` });
     send(res, { type: 'done', index, numero, baseName, titulo: aula.titulo });
@@ -2910,6 +3104,14 @@ app.get('/api/plano-ensino', async (req, res) => {
 });
 
 // ── GET /api/plano-aula (SSE) ───────────────────────────────────────────────
+// Retomável (change geracao-retomavel): grava plano_aulaNN.txt assim que cada
+// aula termina e um manifesto com a divisão em aulas (plano_aula_progresso.json),
+// de modo que, após uma queda, a nova execução reaproveita a divisão e as aulas
+// prontas e gera só as que faltam. Ao final consolida plano_de_aula.txt/.docx e
+// remove os arquivos de progresso. `?refazer=1` ignora o progresso anterior.
+// Cada aula usa teto de tokens, timeout de inatividade e continuação em corte.
+const PLANO_AULA_MAX_TOKENS = 8000;
+
 app.get('/api/plano-aula', async (req, res) => {
   const sess = getSession(req, res);
   sseHeaders(res);
@@ -2917,6 +3119,9 @@ app.get('/api/plano-aula', async (req, res) => {
   const { observacoes = '' } = req.query;
   sess.inputs.observacoesAula = observacoes;
   const { nome, duracao, nivel, publico, modalidade } = sess.config;
+  const scrDir = courseScrDir(sess);
+  const manifestoPath = path.join(scrDir, 'plano_aula_progresso.json');
+  const arquivoAula = (i) => path.join(scrDir, `plano_aula${String(i + 1).padStart(2, '0')}.txt`);
 
   send(res, { type: 'progress', message: 'Planejando as aulas do curso...' });
 
@@ -2925,11 +3130,27 @@ app.get('/api/plano-aula', async (req, res) => {
   const planoEnsino = sess.planoEnsino || readMemory(sess, 'plano_de_ensino');
 
   try {
-    const aulas = await planLessons(sess, planoEnsino, msg => send(res, { type: 'progress', message: msg }));
+    // Retomada: reaproveita a divisão em aulas de uma execução interrompida.
+    let aulas = null;
+    if (req.query.refazer !== '1') {
+      const manifesto = lerJsonSeguro(manifestoPath);
+      if (Array.isArray(manifesto?.aulas) && manifesto.aulas.length) aulas = manifesto.aulas;
+    } else {
+      fs.rmSync(manifestoPath, { force: true });
+      fs.readdirSync(scrDir).filter(f => /^plano_aula\d+\.txt$/.test(f)).forEach(f => fs.rmSync(path.join(scrDir, f), { force: true }));
+    }
+    const retomando = !!aulas;
+    if (!aulas) {
+      aulas = await planLessons(sess, planoEnsino, msg => send(res, { type: 'progress', message: msg }), client.signal);
+      fs.writeFileSync(manifestoPath, JSON.stringify({ geradoEm: new Date().toISOString(), aulas }, null, 2), 'utf-8');
+    }
     sess.aulas = aulas;
+    const prontas = aulas.filter((_, i) => (fs.existsSync(arquivoAula(i)) ? fs.readFileSync(arquivoAula(i), 'utf-8').trim() : '')).length;
     send(res, {
       type: 'progress',
-      message: `${aulas.length} aula(s) identificada(s). Gerando plano de cada uma...`
+      message: retomando
+        ? `Retomando o plano de aula: ${prontas} de ${aulas.length} aula(s) já gerada(s); gerando as demais...`
+        : `${aulas.length} aula(s) identificada(s). Gerando plano de cada uma...`
     });
 
     let fullText = '';
@@ -2940,15 +3161,19 @@ app.get('/api/plano-aula', async (req, res) => {
       const aula = aulas[i];
       observabilidade.definirContexto({ aula: i + 1 });
       const titulo = aula.titulo || `Aula ${i + 1}`;
-
-      send(res, {
-        type: 'progress',
-        message: `Gerando plano da aula ${i + 1} de ${aulas.length}: ${titulo}`
-      });
-
       const heading = `${i === 0 ? '' : '\n\n'}# Aula ${i + 1}: ${titulo}\n\n`;
       fullText += heading;
       send(res, { type: 'token', text: heading });
+
+      const existente = fs.existsSync(arquivoAula(i)) ? fs.readFileSync(arquivoAula(i), 'utf-8') : '';
+      if (existente.trim()) {
+        send(res, { type: 'progress', message: `Plano da aula ${i + 1} de ${aulas.length} já gerado — reaproveitado: ${titulo}` });
+        fullText += existente;
+        send(res, { type: 'token', text: existente });
+        continue;
+      }
+
+      send(res, { type: 'progress', message: `Gerando plano da aula ${i + 1} de ${aulas.length}: ${titulo}` });
 
       // Ajuste 3 — consciência sequencial: mapa enxuto (título + objetivos) das
       // demais aulas, para evitar repetição/antecipação de conteúdo (Ajuste 4
@@ -2963,29 +3188,19 @@ app.get('/api/plano-aula', async (req, res) => {
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
       });
 
-      const stream = await chamarOpenAI('chat', {
-        model: skill.model,
-        stream: true,
-        stream_options: { include_usage: true },
-        messages: [
-          { role: 'system', content: skill.system },
-          { role: 'user', content: skill.user }
-        ]
-      }, { signal: client.signal });
-
-      for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content;
-        if (text) {
-          fullText += text;
-          send(res, { type: 'token', text });
-        }
-        if (chunk.usage) addUsage(chunk.usage, sess);
-      }
+      const r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: PLANO_AULA_MAX_TOKENS });
+      if (client.disconnected) break;
+      fullText += r.texto;
+      // Grava a aula assim que termina: é o ponto de retomada se o servidor cair.
+      fs.writeFileSync(arquivoAula(i), r.texto, 'utf-8');
     }
     if (client.disconnected) return;
 
     sess.planoAula = fullText;
     await persistStage(sess, 'plano_de_aula', 'Plano de Aula', fullText);
+    // Consolidado gravado: o progresso temporário não é mais necessário.
+    fs.rmSync(manifestoPath, { force: true });
+    aulas.forEach((_, i) => fs.rmSync(arquivoAula(i), { force: true }));
     send(res, { type: 'progress', message: 'Concluído' });
     send(res, { type: 'done', fullText });
   } catch (err) {
@@ -3000,11 +3215,12 @@ app.get('/api/plano-aula', async (req, res) => {
   }
 });
 
+
 // ── Planeja a divisão do curso em aulas (título + módulo + objetivos) ──────
 // Ajuste 2: usa EXCLUSIVAMENTE o plano de ensino como referência curricular
 // (nunca truncado) e exige um campo "modulo" rastreável a um módulo real do
 // plano de ensino, permitindo auditar a aderência da grade ao currículo.
-async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
+async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}, signal = undefined) {
   const { nome, carga, duracao, nivel, publico, modalidade } = sess.config;
   const totalMinutos = Number(carga) * 60;
   const numAulas = Math.max(1, Math.round(totalMinutos / Number(duracao)));
@@ -3020,7 +3236,7 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}) {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    });
+    }, signal ? { signal } : undefined);
     addUsage(completion.usage, sess);
     let parsed = {};
     try {
@@ -3074,7 +3290,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null
       { role: 'system', content: skill.system },
       { role: 'user', content: skill.user }
     ]
-  }, { signal: controller.signal });
+  }, { signal: controller.signal }, { aoEsperar: resetStallTimer });
   let text = '';
   try {
     for await (const chunk of stream) {
@@ -3598,6 +3814,27 @@ const SECAO_MAX_TOKENS = 4000;
 const MAX_CONTINUACOES_CONTEUDO = 2;
 const conteudoModo = () => ((process.env.CONTEUDO_MODO || 'secoes').toLowerCase() === 'unico' ? 'unico' : 'secoes');
 
+// Assinatura da definição de uma aula e do curso: se mudou, a aula "completa"
+// de uma execução anterior já não vale e é refeita.
+function assinaturaAula(sess, aula) {
+  return require('node:crypto').createHash('sha1')
+    .update(JSON.stringify([aula.titulo, aula.modulo || '', aula.objetivos || '', sess.config.nivel, sess.config.publico, sess.config.duracao, sess.config.preRequisitos || '']))
+    .digest('hex').slice(0, 12);
+}
+
+// Aula já gerada por inteiro (completa ou curta), com a mesma definição e com o
+// .txt oficial em disco — /api/conteudo a pula em vez de recomeçar da primeira.
+function aulaJaCompleta(sess, aula, i) {
+  const numero = String(i + 1).padStart(2, '0');
+  const e = sess.estadoAulas?.[numero];
+  return !!e && ['completa', 'curta'].includes(e.estado) && e.assinatura === assinaturaAula(sess, aula) &&
+    !!readMemory(sess, `aula${numero}_conteudo`).trim();
+}
+
+function lerJsonSeguro(arquivo) {
+  try { return JSON.parse(fs.readFileSync(arquivo, 'utf-8')); } catch { return null; }
+}
+
 // Gera um texto em streaming; se terminar com finish_reason 'length', pede
 // continuação (até MAX_CONTINUACOES_CONTEUDO vezes) e concatena.
 async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_TOKENS_AULA } = {}) {
@@ -3792,11 +4029,12 @@ app.get('/api/conteudo', async (req, res) => {
   const planoAula = sess.planoAula || readMemory(sess, 'plano_de_aula');
 
   try {
-    const aulas = (sess.aulas && sess.aulas.length) ? sess.aulas : await planLessons(sess, planoEnsino, msg => send(res, { type: 'progress', message: msg }));
+    const aulas = (sess.aulas && sess.aulas.length) ? sess.aulas : await planLessons(sess, planoEnsino, msg => send(res, { type: 'progress', message: msg }), client.signal);
     sess.aulas = aulas;
     const alvo = parseAulasAlvo(req.query.aulas, aulas.length);
     if (alvo) restoreConteudoPorAula(sess); // preserva o conteúdo já gravado das demais aulas
-    if (!alvo) sess.estadoAulas = {};
+    const refazer = req.query.refazer === '1';
+    if (refazer) sess.estadoAulas = {};
     sess.estadoAulas = sess.estadoAulas || {};
     const metaPalavrasAula = conteudoSecoes.estimarMetaPalavrasAula({ duracao, nivel });
     send(res, {
@@ -3806,34 +4044,49 @@ app.get('/api/conteudo', async (req, res) => {
         : `${aulas.length} aula(s) identificada(s). Gerando conteúdo técnico de cada uma...`
     });
 
-    let fullText = '';
-    const conteudoPorAula = []; // { titulo, modulo, objetivos, texto }
-    let geradas = 0;
+    // Até 2 aulas ao mesmo tempo (CONTEUDO_PARALELISMO, padrão 1). Com 2 aulas em
+    // paralelo os tokens delas se misturariam na tela: só o progresso é enviado e o
+    // texto completo chega no evento `done`. O limite de taxa é tratado por
+    // comRateLimit (espera adaptativa), não por pausa fixa.
+    const paralelismo = Math.min(2, Math.max(1, parseInt(process.env.CONTEUDO_PARALELISMO, 10) || 1));
+    const resAula = paralelismo > 1
+      ? { write: (dados) => { if (!dados.includes('"type":"token"')) res.write(dados); } }
+      : res;
+    if (paralelismo > 1) send(res, { type: 'progress', message: `Gerando até ${paralelismo} aulas em paralelo (o texto aparece ao final).` });
 
-    for (let i = 0; i < aulas.length; i++) {
-      if (client.disconnected) break;
+    const resultados = new Array(aulas.length); // { heading, texto, entrada } por aula
+    const puladas = [];
+    let proximo = 0;
+    let falha = null;
 
+    const processar = async (i) => {
       const aula = aulas[i];
       const titulo = aula.titulo || `Aula ${i + 1}`;
       const numero = String(i + 1).padStart(2, '0');
       const heading = `${i === 0 ? '' : '\n\n'}# Aula ${i + 1}: ${titulo}\n\n`;
+      const entradaBase = { titulo, modulo: aula.modulo || '', objetivos: aula.objetivos || '' };
 
       if (alvo && !alvo.has(i)) {
-        const existente = sess.conteudoPorAula?.[i] || { titulo, modulo: aula.modulo || '', objetivos: aula.objetivos || '', texto: readMemory(sess, `aula${numero}_conteudo`) };
-        conteudoPorAula.push(existente);
-        fullText += heading + (existente.texto || '');
-        continue;
+        const existente = sess.conteudoPorAula?.[i] || { ...entradaBase, texto: readMemory(sess, `aula${numero}_conteudo`) };
+        resultados[i] = { heading, texto: existente.texto || '', entrada: existente };
+        return;
       }
 
-      if (geradas > 0) await new Promise(r => setTimeout(r, PAUSA_ENTRE_AULAS_MS));
-      if (client.disconnected) break;
+      // Retomada: aula já completa (e com a mesma definição) não é refeita, a menos
+      // que o usuário peça "refazer tudo" (?refazer=1).
+      if (!alvo && !refazer && aulaJaCompleta(sess, aula, i)) {
+        const texto = readMemory(sess, `aula${numero}_conteudo`);
+        puladas.push(i + 1);
+        send(res, { type: 'progress', message: `Aula ${i + 1} (${titulo}) já está completa — mantida. Use "Refazer tudo" para regenerar.` });
+        resultados[i] = { heading, texto, entrada: { ...entradaBase, texto } };
+        return;
+      }
+
+      if (client.disconnected) return;
       observabilidade.definirContexto({ aula: i + 1 });
 
-      send(res, {
-        type: 'progress',
-        message: `Gerando aula ${i + 1} de ${aulas.length}: ${titulo}`
-      });
-      send(res, { type: 'token', text: heading });
+      send(res, { type: 'progress', message: `Gerando aula ${i + 1} de ${aulas.length}: ${titulo}` });
+      send(resAula, { type: 'token', text: heading });
 
       // Ajuste 1 — referência ao trecho ESPECÍFICO desta aula no plano de aula
       // (nunca o início genérico do texto integral).
@@ -3856,12 +4109,12 @@ app.get('/api/conteudo', async (req, res) => {
       let resultado = null;
       try {
         if (conteudoModo() === 'secoes') {
-          resultado = await gerarAulaPorSecoes({ res, sess, client, ctxSkill, aula, metaPalavrasAula });
+          resultado = await gerarAulaPorSecoes({ res: resAula, sess, client, ctxSkill, aula, metaPalavrasAula });
           if (!resultado) {
             send(res, { type: 'warning', text: `Aula ${i + 1}: o roteiro das seções veio inválido — gerando em passada única.` });
           }
         }
-        if (!resultado) resultado = await gerarAulaPassadaUnica({ res, sess, client, ctxSkill });
+        if (!resultado) resultado = await gerarAulaPassadaUnica({ res: resAula, sess, client, ctxSkill });
       } catch (err) {
         if (client.disconnected) {
           console.warn(`[sse] cliente desconectou durante a geração da aula ${i + 1} — interrompendo /api/conteudo`);
@@ -3873,7 +4126,6 @@ app.get('/api/conteudo', async (req, res) => {
         }
         throw err;
       }
-      geradas++;
       if (client.disconnected) return;
 
       let { texto } = resultado;
@@ -3895,6 +4147,7 @@ app.get('/api/conteudo', async (req, res) => {
         secoes: resultado.secoes?.map(s => ({ titulo: s.titulo, palavras: conteudoSecoes.contarPalavras(s.texto), meta: s.meta })),
         dossie: dossie.modo === 'nenhum' ? undefined : { modo: dossie.modo, fontes: dossie.fontes },
         citacoes: citacoes || undefined,
+        assinatura: assinaturaAula(sess, aula),
         geradoEm: new Date().toISOString()
       };
       const partialPath = path.join(courseScrDir(sess), `aula${numero}_conteudo.partial.txt`);
@@ -3925,9 +4178,31 @@ app.get('/api/conteudo', async (req, res) => {
         citacoes: citacoes ? { distintas: citacoes.distintas, idsInvalidos: citacoes.idsInvalidos.length, numerosSemCitacao: citacoes.numerosSemCitacao } : undefined
       });
 
-      fullText += heading + texto;
-      conteudoPorAula.push({ titulo, modulo: aula.modulo || '', objetivos: aula.objetivos || '', texto });
-    }
+      resultados[i] = { heading, texto, entrada: { ...entradaBase, texto } };
+    };
+
+    const trabalhador = async () => {
+      while (!falha && !client.disconnected) {
+        const i = proximo++;
+        if (i >= aulas.length) return;
+        try {
+          await processar(i);
+        } catch (err) {
+          falha = falha || err;
+          return;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: paralelismo }, trabalhador));
+    if (client.disconnected) return;
+    if (falha) throw falha;
+
+    let fullText = '';
+    const conteudoPorAula = []; // { titulo, modulo, objetivos, texto }
+    aulas.forEach((_, i) => {
+      fullText += resultados[i].heading + resultados[i].texto;
+      conteudoPorAula.push(resultados[i].entrada);
+    });
 
     sess.conteudo = fullText;
     sess.conteudoPorAula = conteudoPorAula;
@@ -3936,7 +4211,7 @@ app.get('/api/conteudo', async (req, res) => {
     const incompletas = aulasIncompletas(sess);
     const estadoAulas = Object.fromEntries(Object.entries(sess.estadoAulas).map(([k, v]) => [k, { estado: v.estado, palavras: v.palavras }]));
     send(res, { type: 'progress', message: 'Concluído' });
-    send(res, { type: 'done', fullText, estadoAulas, incompletas });
+    send(res, { type: 'done', fullText, estadoAulas, incompletas, puladas });
   } catch (err) {
     console.error(err);
     if (!err.alreadyReported) {
@@ -4080,6 +4355,7 @@ app.post('/api/carregar-projeto', (req, res) => {
     sess.duracaoAvatarDefault = p.duracaoAvatarDefault || null;
     sess.videosAvatarGerados = p.videosAvatarGerados || [];
     sess.estadoAulas = p.estadoAulas || {};
+    sess.geracoesExternas = p.geracoesExternas || {};
     stages = p.stages || {};
   } else {
     // legado (ou projeto.json corrompido, já preservado como .bak acima):
@@ -4813,7 +5089,6 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         continue;
       }
 
-      if (i > 0) await new Promise(r => setTimeout(r, PAUSA_ENTRE_AULAS_MS));
       if (client.disconnected) break;
 
       send(res, {
@@ -5069,7 +5344,6 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           const i = m.aulaIndex - 1;
           const aula = novasPorAula[i];
           if (!aula) continue;
-          await new Promise(r => setTimeout(r, PAUSA_ENTRE_AULAS_MS));
           send(res, { type: 'progress', message: `Realinhando plano da aula ${i + 1} de ${novasPorAula.length}: ${aula.titulo}` });
           try {
             const planoAulaTrechoAtual = extractLessonBlock(planoAula, i);
@@ -5089,7 +5363,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
                 { role: 'system', content: skill.system },
                 { role: 'user', content: skill.user }
               ]
-            });
+            }, { signal: client.signal });
             addUsage(completion.usage, sess);
             const bruto = completion.choices[0]?.message?.content?.trim() || '';
             if (!bruto) {
@@ -5553,6 +5827,8 @@ module.exports.parseSecoesFixas = parseSecoesFixas;
 module.exports.removerEcoTitulo = removerEcoTitulo;
 module.exports.buildDocx = buildDocx;
 module.exports.limparUrlFonte = limparUrlFonte;
+module.exports.comRateLimit = comRateLimit;
+module.exports.baixarParaArquivo = baixarParaArquivo;
 module.exports.fundamentacaoDaAula = fundamentacaoDaAula;
 module.exports.obs = observabilidade;
 module.exports.validarModeloPesquisa = validarModeloPesquisa;

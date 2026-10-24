@@ -10,6 +10,9 @@ let _finishQueue = [];
 // Função (params) => texto que decide a resposta de cada chamada de chat (tem
 // prioridade sobre a fila/_response). Permite responder por tipo de prompt.
 let _responder = null;
+// Fila de erros por chamada de chat/responses (FIFO): cada chamada lança o próximo
+// erro da fila; esvaziada, as chamadas voltam a responder normalmente.
+let _errorQueue = [];
 
 // PNG 1x1 transparente, usado como resposta padrão de images.generate.
 const FAKE_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -30,6 +33,7 @@ async function* makeStream(text, finishReason) {
 const mockCreate = jest.fn(async (params, options) => {
   const { stream } = params;
   OpenAI.__lastOptions = options;
+  if (_errorQueue.length) throw _errorQueue.shift();
   if (_error) throw _error;
   const text = _responder ? _responder(params) : (_queue.length ? _queue.shift() : _response);
   const finishReason = _finishQueue.length ? _finishQueue.shift() : undefined;
@@ -53,6 +57,7 @@ let _citations = [
 
 const mockResponsesCreate = jest.fn(async (params, options) => {
   OpenAI.__lastOptions = options;
+  if (_errorQueue.length) throw _errorQueue.shift();
   if (_error) throw _error;
   const text = _queue.length ? _queue.shift() : _response;
   return {
@@ -115,12 +120,14 @@ OpenAI.__setImageError = (err) => {
 };
 
 OpenAI.__getMock = () => mockCreate;
+OpenAI.__setErrors = (errs) => { _errorQueue = [...errs]; };
 OpenAI.__setResponder = (fn) => { _responder = fn; };
 OpenAI.__setFinishReasons = (reasons) => { _finishQueue = [...reasons]; };
 OpenAI.__getResponsesMock = () => mockResponsesCreate;
 OpenAI.__setCitations = (citations) => { _citations = citations; };
 
 OpenAI.__reset = () => {
+  _errorQueue = [];
   _responder = null;
   _finishQueue = [];
   mockResponsesCreate.mockClear();
@@ -159,6 +166,15 @@ OpenAI.AuthenticationError = class AuthenticationError extends APIStatusError {
 };
 OpenAI.BadRequestError = class BadRequestError extends APIStatusError {
   constructor(message = 'Bad request.') { super(message, 400); this.name = 'BadRequestError'; }
+};
+OpenAI.RateLimitError = class RateLimitError extends APIStatusError {
+  constructor(message = 'Rate limit reached.', headers = {}) { super(message, 429, headers); this.name = 'RateLimitError'; }
+};
+OpenAI.InternalServerError = class InternalServerError extends APIStatusError {
+  constructor(message = 'Server error.', status = 500) { super(message, status); this.name = 'InternalServerError'; }
+};
+OpenAI.APIConnectionError = class APIConnectionError extends Error {
+  constructor(message = 'Connection error.') { super(message); this.name = 'APIConnectionError'; }
 };
 
 module.exports = OpenAI;

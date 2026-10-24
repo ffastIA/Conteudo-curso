@@ -26,6 +26,13 @@ O helper SHALL repetir a chamada apenas quando o 429 ocorrer antes de qualquer t
 - **WHEN** a API responde 400
 - **THEN** o helper não repete a chamada
 
+### Requirement: Falhas transitórias com poucas tentativas
+Como o cliente OpenAI usa `maxRetries: 0`, o helper SHALL repetir falhas transitórias (HTTP 5xx e erros de conexão) até 2 vezes com espera curta, e SHALL NOT repetir erros 4xx diferentes de 429.
+
+#### Scenario: Erro 500 seguido de sucesso
+- **WHEN** a API responde 500 e depois 200
+- **THEN** a chamada é repetida uma vez e o resultado é devolvido
+
 ### Requirement: Espera visível e abortável
 Durante a espera o sistema SHALL emitir eventos `progress` SSE informando o tempo restante, SHALL impedir que o stall timeout dispare e SHALL abortar a espera quando o cliente desconectar.
 

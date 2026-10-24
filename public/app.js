@@ -534,7 +534,9 @@ document.getElementById('btnPlanoEnsino').addEventListener('click', () => {
 });
 
 // ── STEP 4 — Plano de aula ───────────────────────────────────────────────────
-document.getElementById('btnPlanoAula').addEventListener('click', () => {
+// Retomável: se uma geração anterior foi interrompida, o servidor reaproveita as aulas já
+// prontas; "Refazer do zero" (?refazer=1) ignora esse progresso.
+function executarPlanoAula({ refazer = false } = {}) {
   const observacoes = encodeURIComponent(document.getElementById('observacoesAula').value.trim());
 
   document.getElementById('aulaResultCard').style.display = 'block';
@@ -543,7 +545,7 @@ document.getElementById('btnPlanoAula').addEventListener('click', () => {
   const logPanel = initLog('logAula');
   document.getElementById('btnPlanoAula').disabled = true;
 
-  streamSSE(`/api/plano-aula?observacoes=${observacoes}`, {
+  streamSSE(`/api/plano-aula?observacoes=${observacoes}${refazer ? '&refazer=1' : ''}`, {
     logPanel,
     resultEl: 'resultAula',
     onDone() {
@@ -555,7 +557,10 @@ document.getElementById('btnPlanoAula').addEventListener('click', () => {
       document.getElementById('btnPlanoAula').disabled = false;
     }
   });
-});
+}
+
+document.getElementById('btnPlanoAula').addEventListener('click', () => executarPlanoAula());
+document.getElementById('btnPlanoAulaRefazer').addEventListener('click', () => executarPlanoAula({ refazer: true }));
 
 // ── STEP 5 — Conteúdo ────────────────────────────────────────────────────────
 // ── STEP 5 — Pesquisa por módulo (antes do conteúdo) ─────────────────────────
@@ -664,7 +669,7 @@ function renderEstadosAulas(estadoAulas, incompletas) {
   }
 }
 
-function executarConteudo({ aulas = null } = {}) {
+function executarConteudo({ aulas = null, refazer = false } = {}) {
   document.getElementById('conteudoResultCard').style.display = 'block';
   document.getElementById('conteudoActions').style.display = 'none';
   document.getElementById('conteudoEstados').style.display = 'none';
@@ -673,12 +678,17 @@ function executarConteudo({ aulas = null } = {}) {
   const logPanel = initLog('logConteudo');
   document.getElementById('btnConteudo').disabled = true;
 
-  streamSSE(`/api/conteudo${aulas?.length ? `?aulas=${aulas.join(',')}` : ''}`, {
+  const query = aulas?.length ? `?aulas=${aulas.join(',')}` : (refazer ? '?refazer=1' : '');
+  streamSSE(`/api/conteudo${query}`, {
     logPanel,
     resultEl: 'resultConteudo',
     onDone(_texto, msg) {
       document.getElementById('btnConteudo').disabled = false;
       renderEstadosAulas(msg?.estadoAulas, msg?.incompletas);
+      const total = Object.keys(msg?.estadoAulas || {}).length;
+      if (msg?.puladas?.length && msg.puladas.length === total) {
+        addLog(logPanel, '💡 Todas as aulas já estavam completas e foram mantidas. Use "Refazer tudo" para regenerar.');
+      }
       if (msg?.incompletas?.length) return; // Etapa 5 bloqueada até regenerar
       document.getElementById('conteudoActions').style.display = 'flex';
       document.getElementById('bannerDone').classList.add('active');
@@ -691,6 +701,9 @@ function executarConteudo({ aulas = null } = {}) {
 }
 
 document.getElementById('btnConteudo').addEventListener('click', () => executarConteudo());
+document.getElementById('btnConteudoRefazer').addEventListener('click', () => {
+  if (confirm('Refazer o conteúdo de TODAS as aulas, inclusive as já completas?')) executarConteudo({ refazer: true });
+});
 
 // ── STEP 6 — Revisão de Qualidade e Aplicar Melhorias ───────────────────────
 document.getElementById('btnRevisaoQualidade').addEventListener('click', () => {

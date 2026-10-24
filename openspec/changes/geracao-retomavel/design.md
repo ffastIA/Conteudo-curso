@@ -17,6 +17,11 @@ Hoje um 429 cai no `catch` geral e derruba a etapa. A pausa fixa de 4 s é uma p
 - **D6**: downloads usam `fetch` + `stream.pipeline(Readable.fromWeb(body), fs.createWriteStream)`, com `AbortSignal.timeout`, limite de bytes (`MAX_DOWNLOAD_BYTES`) e arquivo temporário renomeado ao fim.
 - **D7**: `projeto.json` ganha `gamma.generationId` e `heygen[aula].videoId`.
 
+- **D8 (implementação)**: `comRateLimit` fica dentro do wrapper `chamarOpenAI` (ponto único), então cobre todas as chamadas; a espera é avisada por SSE usando o `res` guardado no contexto da requisição. Como o SDK passou a `maxRetries: 0`, o helper também repete **falhas transitórias** (5xx e conexão) até 2 vezes — desvio da spec, para não perder a resiliência que o SDK dava; 400/401 nunca são repetidos.
+- **D9**: plano de aula retomável por `plano_aula_progresso.json` (divisão em aulas) + `plano_aulaNN.txt`, removidos ao consolidar; `?refazer=1` ignora o progresso. Conteúdo pula aulas `completa`/`curta` com a mesma assinatura (título, módulo, objetivos, nível, público, duração, pré-requisitos) e o `.txt` em disco; `?refazer=1` refaz tudo.
+- **D10**: paralelismo por pool de 2 trabalhadores; com 2 aulas simultâneas só o progresso é enviado (sem `token`). Limitação: o contexto de observabilidade (`aula`) é compartilhado entre as duas aulas.
+- **D11**: Gamma/HeyGen gravam `geracoesExternas.<provedor>.<NN>` em `projeto.json` ao criar; a pendência só é limpa após o download (ou em falha/404 do provedor). Downloads: `baixarParaArquivo` (stream, timeout total, limite de bytes, temporário `.baixando`).
+
 ## Risks / Trade-offs
 
 - Conta com TPM baixo (ver comentário em `skills.js:551`) → mais esperas visíveis; paralelismo desligado por padrão.

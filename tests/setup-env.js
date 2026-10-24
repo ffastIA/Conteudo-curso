@@ -12,5 +12,5 @@ process.env.CONTEUDO_MODO = 'unico';
 process.env.PESQUISA_MODULOS_OBRIGATORIA = 'false';
 process.env.PESQUISA_MODULOS_PAUSA_MS = '0';
 
-// Sem a pausa fixa de 4 s entre aulas: acelera os testes e evita timeouts sob carga.
-process.env.CONTEUDO_PAUSA_MS = '0';
+// Espera de rate limit curta nos testes (a pausa fixa de 4 s entre aulas deixou de existir).
+process.env.RATE_LIMIT_BACKOFF_BASE_MS = '10';
