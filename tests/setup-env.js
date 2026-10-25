@@ -24,3 +24,7 @@ process.env.HEYGEN_API_KEY = 'test-heygen-key';
 // Saldo do HeyGen sem espera entre leituras nos testes (a pausa de 3 s do botão é testada à parte).
 process.env.HEYGEN_SALDO_INTERVALO_MS = '0';
 process.env.HEYGEN_SALDO_ESPERA_MS = '0';
+
+// A suíte nunca envia spans ao Langfuse real do desenvolvedor (o .env pode ter LANGFUSE_ENABLED=true).
+// Os testes de observabilidade ligam a flag no próprio arquivo, sempre com fetch simulado.
+process.env.LANGFUSE_ENABLED = 'false';
