@@ -124,7 +124,7 @@ public/index.html  — Frontend HTML (Etapas 0–10, formulários, log panels)
 public/app.js      — Frontend JS (SSE streaming, BNCC UI, navegação entre etapas, estimativas)
 public/markdown.js — Análise e renderização de Markdown, compartilhada com o gerador de .docx
 public/style.css   — Estilos (card-based, responsivo)
-openspec/specs/    — 41 capabilities canônicas e validadas (fonte de verdade atual do sistema)
+openspec/specs/    — 42 capabilities canônicas e validadas (fonte de verdade atual do sistema)
 openspec/changes/  — Changes do OpenSpec (ativas e arquivadas em changes/archive/)
 docs/              — decisões (docs/decisoes), guia do Langfuse e linha de base do curso de referência (docs/baseline)
 scripts/           — Smoke da pesquisa, geração da linha de base, dataset do Langfuse e criptografia do .env
@@ -430,7 +430,7 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | G04 | Persistência | Reduzido | Sessão continua in-memory, mas é totalmente reconstruível do disco sem chamada à OpenAI (`session-persistence`, `session-auto-restore`, `project-load`) |
 | G05 | Confiabilidade | ✅ Resolvido | Espera adaptativa de 429 (`retry-after`, backoff com teto), repetição de falhas transitórias e geração retomável (`geracao-retomavel`); retry dedicado da pesquisa web (`web-search-resilience`) |
 | G06 | Observabilidade | ✅ Resolvido | Logger JSON próprio (`logger.js`, `LOG_LEVEL`) com `etapa`, `aula` e `reqId` (= `traceId`), sem segredos (`custo-e-logs`) |
-| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 70% de linhas (real ~88%), mock da OpenAI que rejeita o que a API real rejeita, com erros, Responses API e truncamento; confira o número atual com `npm test` (50 suítes e 695 testes em 2026-10-25) — a verificação com a chave real (`scripts/smoke-pesquisa.js`) continua manual |
+| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 70% de linhas (real ~90%), mock da OpenAI que rejeita o que a API real rejeita, com erros, Responses API e truncamento; confira o número atual com `npm test` (50 suítes e 713 testes em 2026-10-25) — a verificação com a chave real (`scripts/smoke-pesquisa.js`) continua manual |
 | G08 | UX | ✅ Resolvido | `GET /api/estimativa` e a UI mostram a faixa de tokens/custo antes de pesquisa por módulo, conteúdo e revisão; custo acumulado em `projeto.json`; `ORCAMENTO_USD` opcional (`custo-e-logs`) |
 | G09 | Portabilidade | Baixo | Seletor nativo de pasta é Windows-only por design (PowerShell + `System.Windows.Forms`) |
 | G10 | Escalabilidade | Baixo | Sem rate limiting próprio — múltiplos usuários podem esgotar quota da API (a espera de 429 e `CONTEUDO_PARALELISMO` ≤ 2 só protegem uma instância) |
