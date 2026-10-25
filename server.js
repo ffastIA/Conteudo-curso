@@ -426,7 +426,8 @@ async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null, maxOutputTo
       input: skill.user,
       max_output_tokens: maxOutputTokens
     },
-    { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal }
+    { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal },
+    { nome: 'pesquisa.web' }
   );
 
   let texto = '';
@@ -2277,7 +2278,7 @@ app.get('/api/metodologia', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    }, { signal: client.signal });
+    }, { signal: client.signal }, { nome: 'metodologia.gerar' });
     addUsage(completion.usage, sess);
     sess.metodologia = completion.choices[0]?.message?.content?.trim() || '';
     res.json({ ok: true, metodologia: getMetodologia(sess) });
@@ -2314,7 +2315,7 @@ app.post('/api/metodologia/confirmar', async (req, res) => {
           { role: 'system', content: skill.system },
           { role: 'user', content: skill.user }
         ]
-      }, { signal: clientAbort(res).signal });
+      }, { signal: clientAbort(res).signal }, { nome: 'ementa.gerar' });
       addUsage(completion.usage, sess);
       sess.ementa = completion.choices[0]?.message?.content?.trim() || '';
       sess._precisaGerarEmenta = false;
@@ -2354,7 +2355,7 @@ app.get('/api/qualidade', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    }, { signal: client.signal });
+    }, { signal: client.signal }, { nome: 'qualidade.avaliar' });
 
     let fullText = '';
     for await (const chunk of stream) {
@@ -2397,21 +2398,21 @@ app.get('/api/ppc', async (req, res) => {
 
   try {
     const perfilEgressoSkill = skills.perfilEgressoSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino });
-    const perfilEgressoResp = await chamarOpenAI('chat', { model: perfilEgressoSkill.model, messages: [{ role: 'system', content: perfilEgressoSkill.system }, { role: 'user', content: perfilEgressoSkill.user }] }, { signal: client.signal });
+    const perfilEgressoResp = await chamarOpenAI('chat', { model: perfilEgressoSkill.model, messages: [{ role: 'system', content: perfilEgressoSkill.system }, { role: 'user', content: perfilEgressoSkill.user }] }, { signal: client.signal }, { nome: 'ppc.perfil-egresso' });
     addUsage(perfilEgressoResp.usage, sess);
     const perfilEgresso = perfilEgressoResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Competências e Habilidades...' });
 
     const competenciasSkill = skills.competenciasSkill({ config: sess.config, ementa: sess.ementa, planoEnsino: sess.planoEnsino, bncc: sess.bncc });
-    const competenciasResp = await chamarOpenAI('chat', { model: competenciasSkill.model, messages: [{ role: 'system', content: competenciasSkill.system }, { role: 'user', content: competenciasSkill.user }] }, { signal: client.signal });
+    const competenciasResp = await chamarOpenAI('chat', { model: competenciasSkill.model, messages: [{ role: 'system', content: competenciasSkill.system }, { role: 'user', content: competenciasSkill.user }] }, { signal: client.signal }, { nome: 'ppc.competencias' });
     addUsage(competenciasResp.usage, sess);
     const competencias = competenciasResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
     send(res, { type: 'progress', message: 'Gerando PPC — Perfil Docente...' });
 
     const perfilDocenteSkill = skills.perfilDocenteSkill({ config: sess.config, ementa: sess.ementa });
-    const perfilDocenteResp = await chamarOpenAI('chat', { model: perfilDocenteSkill.model, messages: [{ role: 'system', content: perfilDocenteSkill.system }, { role: 'user', content: perfilDocenteSkill.user }] }, { signal: client.signal });
+    const perfilDocenteResp = await chamarOpenAI('chat', { model: perfilDocenteSkill.model, messages: [{ role: 'system', content: perfilDocenteSkill.system }, { role: 'user', content: perfilDocenteSkill.user }] }, { signal: client.signal }, { nome: 'ppc.perfil-docente' });
     addUsage(perfilDocenteResp.usage, sess);
     const perfilDocente = perfilDocenteResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
@@ -2420,7 +2421,7 @@ app.get('/api/ppc', async (req, res) => {
     const conteudoInfra = await conteudoParaInfraestrutura({ res, sess, client });
     if (client.disconnected) return;
     const infraestruturaSkill = skills.infraestruturaSkill({ config: sess.config, conteudo: conteudoInfra });
-    const infraestruturaResp = await chamarOpenAI('chat', { model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] }, { signal: client.signal });
+    const infraestruturaResp = await chamarOpenAI('chat', { model: infraestruturaSkill.model, messages: [{ role: 'system', content: infraestruturaSkill.system }, { role: 'user', content: infraestruturaSkill.user }] }, { signal: client.signal }, { nome: 'ppc.infraestrutura' });
     addUsage(infraestruturaResp.usage, sess);
     const infraestrutura = infraestruturaResp.choices[0]?.message?.content?.trim() || '';
     if (client.disconnected) return;
@@ -2437,7 +2438,7 @@ app.get('/api/ppc', async (req, res) => {
     const stream = await chamarOpenAI('chat', {
       model: assemblySkill.model, stream: true, stream_options: { include_usage: true },
       messages: [{ role: 'system', content: assemblySkill.system }, { role: 'user', content: assemblySkill.user }]
-    }, { signal: client.signal });
+    }, { signal: client.signal }, { nome: 'ppc.documento' });
 
     let fullText = '';
     for await (const chunk of stream) {
@@ -2477,7 +2478,7 @@ app.get('/api/estilos-visuais', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    }, { signal: clientAbort(res).signal });
+    }, { signal: clientAbort(res).signal }, { nome: 'estilos-visuais.gerar' });
     addUsage(completion.usage, sess);
     let estilos = [];
     try {
@@ -2888,7 +2889,7 @@ app.get('/api/roteiro/gerar', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    }, { signal: client.signal });
+    }, { signal: client.signal }, { nome: 'roteiro.gerar' });
 
     let fullText = '';
     for await (const chunk of stream) {
@@ -3022,7 +3023,7 @@ app.get('/api/video-avatar/roteiro/gerar', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    }, { signal: client.signal });
+    }, { signal: client.signal }, { nome: 'video-avatar.roteiro' });
 
     let fullText = '';
     for await (const chunk of stream) {
@@ -3312,7 +3313,7 @@ app.get('/api/search', async (req, res) => {
           { role: 'system', content: fbSkill.system },
           { role: 'user', content: fbSkill.user }
         ]
-      }, { signal: combineSignals(client.signal, makeAbortSignal(SEARCH_FALLBACK_TIMEOUT_MS)) });
+      }, { signal: combineSignals(client.signal, makeAbortSignal(SEARCH_FALLBACK_TIMEOUT_MS)) }, { nome: 'pesquisa.fallback' });
       if (client.disconnected) return;
       addUsage(completion.usage, sess);
       fullText = SELO_SEM_PESQUISA_WEB + (completion.choices[0]?.message?.content || '');
@@ -3457,7 +3458,7 @@ app.get('/api/plano-ensino', async (req, res) => {
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    }, { signal: client.signal });
+    }, { signal: client.signal }, { nome: 'plano-ensino.gerar' });
 
     let fullText = '';
     let firstChunk = true;
@@ -3625,7 +3626,7 @@ async function planLessons(sess, planoEnsinoOverride, onProgress = () => {}, sig
         { role: 'system', content: skill.system },
         { role: 'user', content: skill.user }
       ]
-    }, signal ? { signal } : undefined);
+    }, signal ? { signal } : undefined, { nome: 'plano-aula.dividir' });
     addUsage(completion.usage, sess);
     let parsed = {};
     try {
@@ -5546,7 +5547,8 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
                 }
               ]
             },
-            { signal: combineSignals(client.signal, makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS)) }
+            { signal: combineSignals(client.signal, makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS)) },
+            { nome: 'aplicar-melhorias.continuar' }
           );
           addUsage(cont.usage, sess);
           const contTexto = cont.choices[0]?.message?.content?.trim() || '';
@@ -5752,7 +5754,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
                 { role: 'system', content: skill.system },
                 { role: 'user', content: skill.user }
               ]
-            }, { signal: client.signal });
+            }, { signal: client.signal }, { nome: 'aplicar-melhorias.realinhar' });
             addUsage(completion.usage, sess);
             const bruto = completion.choices[0]?.message?.content?.trim() || '';
             if (!bruto) {
