@@ -1423,6 +1423,8 @@ function saveProject(sess, stageInfo = null) {
   // Gerações pendentes no Gamma/HeyGen (ids gravados ao criar) — retomadas após uma queda.
   if (sess.geracoesExternas) projeto.geracoesExternas = sess.geracoesExternas;
   if (sess.custoProjetoUsd != null) projeto.custoProjetoUsd = Number(sess.custoProjetoUsd.toFixed(6));
+  // Consumo HeyGen medido pela diferença de saldo (separado do custo em tokens).
+  if ((sess.videosAvatarGerados || []).some(v => v.heygen)) projeto.custoHeygenUsd = recalcularCustoHeygen(sess);
   projeto.ultimaModificacao = new Date().toISOString();
   if (!projeto.stages) projeto.stages = {};
   if (stageInfo?.baseName) {
@@ -1534,10 +1536,10 @@ function geracaoExternaPendente(sess, provedor, numero) {
   return sess.geracoesExternas?.[provedor]?.[numero] || null;
 }
 
-function registrarGeracaoExterna(sess, provedor, numero, id) {
+function registrarGeracaoExterna(sess, provedor, numero, id, extra = {}) {
   sess.geracoesExternas = sess.geracoesExternas || {};
   sess.geracoesExternas[provedor] = sess.geracoesExternas[provedor] || {};
-  sess.geracoesExternas[provedor][numero] = { id, criadoEm: new Date().toISOString() };
+  sess.geracoesExternas[provedor][numero] = { id, criadoEm: new Date().toISOString(), ...extra };
   saveProject(sess);
 }
 
@@ -1842,6 +1844,198 @@ async function persistHeygenVideoStage(sess, baseName, videoUrl, numero = null) 
   if (numero) limparGeracaoExterna(sess, 'heygen', numero);
   saveProject(sess, { baseName, fonte: 'ia' });
   return fullPath;
+}
+
+// ── Saldo e consumo da carteira HeyGen (change observabilidade-heygen) ──────
+// O consumo de um vídeo é a diferença entre o saldo da carteira antes e depois
+// da geração (GET /v3/users/me). Observar o saldo nunca interrompe a geração:
+// qualquer falha vira `disponivel: false` com um motivo.
+const arredondar4 = (n) => Math.round(n * 10_000) / 10_000;
+const envInteiro = (nome, padrao, min = 0) => {
+  const n = parseInt(process.env[nome], 10);
+  return Number.isInteger(n) && n >= min ? n : padrao;
+};
+function heygenSaldoAlertaUsd() {
+  const bruto = String(process.env.HEYGEN_SALDO_ALERTA_USD ?? '').trim();
+  const n = Number(bruto);
+  return bruto !== '' && Number.isFinite(n) && n >= 0 ? n : 2;
+}
+
+// Lê o saldo da carteira. Só saldo, moeda, tipo de cobrança e recarga automática
+// saem daqui: e-mail e nome de usuário que a API devolve são descartados.
+// `observar: true` registra o span HTTP no Langfuse (leituras da geração do
+// vídeo); as leituras da tela usam fetch direto, sem trace.
+async function lerSaldoHeygen({ observar = false } = {}) {
+  if (!HEYGEN_API_KEY) return { disponivel: false, motivo: 'HEYGEN_API_KEY não configurada' };
+  try {
+    const buscar = observar ? fetchObs : fetch;
+    const resp = await buscar(`${HEYGEN_API_BASE}/v3/users/me`, {
+      headers: { 'x-api-key': HEYGEN_API_KEY },
+      signal: makeAbortSignal(15_000)
+    });
+    if (!resp.ok) return { disponivel: false, motivo: `HeyGen retornou ${resp.status} ao consultar o saldo` };
+    const data = (await resp.json())?.data || {};
+    const carteira = data.wallet;
+    const saldo = Number(carteira?.remaining_balance);
+    if (data.billing_type !== 'wallet' || !carteira || carteira.remaining_balance == null || !Number.isFinite(saldo)) {
+      return { disponivel: false, motivo: `conta sem carteira de saldo (cobrança: ${data.billing_type || 'desconhecida'})` };
+    }
+    return {
+      disponivel: true,
+      saldoUsd: arredondar4(saldo),
+      moeda: String(carteira.currency || 'usd').toLowerCase(),
+      tipoCobranca: 'wallet',
+      recargaAutomatica: carteira.auto_reload?.enabled === true,
+      lidoEm: new Date().toISOString()
+    };
+  } catch (err) {
+    return { disponivel: false, motivo: `não foi possível consultar o saldo: ${err.message || err}` };
+  }
+}
+
+// Leituras pedidas pela tela e pelo botão: no máximo uma ao HeyGen a cada
+// HEYGEN_SALDO_INTERVALO_MS (3 s); dentro do intervalo devolve a última.
+let ultimaLeituraSaldo = null;
+async function lerSaldoHeygenLimitado() {
+  const intervalo = envInteiro('HEYGEN_SALDO_INTERVALO_MS', 3000);
+  if (ultimaLeituraSaldo && Date.now() - ultimaLeituraSaldo.em < intervalo) return ultimaLeituraSaldo.valor;
+  const valor = await lerSaldoHeygen();
+  ultimaLeituraSaldo = { em: Date.now(), valor };
+  return valor;
+}
+
+const saldoPublico = (saldo) => saldo.disponivel
+  ? { disponivel: true, saldoUsd: saldo.saldoUsd, moeda: saldo.moeda, tipoCobranca: saldo.tipoCobranca, recargaAutomatica: saldo.recargaAutomatica, lidoEm: saldo.lidoEm }
+  : { disponivel: false, motivo: saldo.motivo };
+
+function emitirSpanSaldoHeygen(fase, inicio, saldo) {
+  observabilidade.registrarSpan({
+    nome: 'heygen.saldo',
+    inicio,
+    extra: {
+      fase,
+      disponivel: saldo.disponivel,
+      saldo_usd: saldo.disponivel ? saldo.saldoUsd : undefined,
+      motivo: saldo.disponivel ? undefined : String(saldo.motivo || '').slice(0, 200)
+    }
+  });
+}
+
+// Soma só os consumos apurados (derivado dos vídeos, nunca um contador solto).
+function recalcularCustoHeygen(sess) {
+  const total = (sess.videosAvatarGerados || [])
+    .filter(v => v.heygen?.apurado && Number.isFinite(v.heygen.consumoUsd))
+    .reduce((acc, v) => acc + v.heygen.consumoUsd, 0);
+  sess.custoHeygenUsd = arredondar4(total);
+  return sess.custoHeygenUsd;
+}
+
+function resumoCustoHeygen(sess) {
+  const apurados = (sess.videosAvatarGerados || []).filter(v => v.heygen?.apurado && Number.isFinite(v.heygen.consumoUsd));
+  const total = recalcularCustoHeygen(sess);
+  return { custoHeygenUsd: total, videosApurados: apurados.length, mediaVideoUsd: apurados.length ? arredondar4(total / apurados.length) : null };
+}
+
+// Relê o saldo depois do vídeo pronto e calcula o consumo. A cobrança pode demorar
+// a aparecer: se a diferença não for positiva, repete a leitura (HEYGEN_SALDO_TENTATIVAS,
+// HEYGEN_SALDO_ESPERA_MS) antes de declarar o consumo "não apurado" — nunca "0".
+async function apurarConsumoHeygen({ saldoInicialUsd, client }) {
+  const tentativas = envInteiro('HEYGEN_SALDO_TENTATIVAS', 3, 1);
+  const espera = envInteiro('HEYGEN_SALDO_ESPERA_MS', 5000);
+  let ultimo = null;
+  for (let i = 1; i <= tentativas; i++) {
+    const inicio = Date.now();
+    ultimo = await lerSaldoHeygen({ observar: true });
+    emitirSpanSaldoHeygen('final', inicio, ultimo);
+    if (!ultimo.disponivel) return { apurado: false, saldoFinalUsd: null, motivo: `saldo final indisponível: ${ultimo.motivo}`, leitura: ultimo };
+    if (saldoInicialUsd == null) return { apurado: false, saldoFinalUsd: ultimo.saldoUsd, motivo: 'saldo inicial desconhecido', leitura: ultimo };
+    const consumoUsd = arredondar4(saldoInicialUsd - ultimo.saldoUsd);
+    if (consumoUsd > 0) return { apurado: true, saldoFinalUsd: ultimo.saldoUsd, consumoUsd, leitura: ultimo };
+    if (i < tentativas) {
+      if (client?.disconnected) break;
+      await new Promise(r => setTimeout(r, espera));
+    }
+  }
+  return { apurado: false, saldoFinalUsd: ultimo.saldoUsd, motivo: 'consumo ainda não refletido no saldo', leitura: ultimo };
+}
+
+// Registro persistido em videosAvatarGerados[].heygen. traceId/traceEnviado
+// permitem enviar depois (apuração manual) o score ao trace do vídeo original.
+function montarRegistroHeygen({ saldoInicialUsd, moeda, apuracao, iniciadoEm }) {
+  const ctx = observabilidade.contexto();
+  return {
+    saldoInicialUsd: saldoInicialUsd ?? null,
+    saldoFinalUsd: apuracao.saldoFinalUsd ?? null,
+    ...(apuracao.apurado ? { consumoUsd: apuracao.consumoUsd } : { motivo: apuracao.motivo }),
+    moeda: moeda || 'usd',
+    apurado: apuracao.apurado,
+    origem: 'automatica',
+    iniciadoEm: iniciadoEm || null,
+    finalizadoEm: new Date().toISOString(),
+    traceId: ctx?.traceId || null,
+    traceEnviado: !!(ctx && observabilidade.enabled && (ctx.amostrado || ctx.forcado))
+  };
+}
+
+const heygenPublico = ({ traceId, traceEnviado, ...resto }) => resto;
+
+// Langfuse: span do vídeo, metadado do trace (separado de custo_usd, que é só LLM)
+// e score numérico agregável nos dashboards. Só números, ids e status.
+function enviarObservabilidadeVideoHeygen({ numero, videoId, inicio, registro, erro = null }) {
+  observabilidade.registrarSpan({
+    nome: 'heygen.video',
+    inicio,
+    erro,
+    extra: {
+      video_id: videoId || undefined,
+      aula: Number(numero),
+      saldo_inicial_usd: registro?.saldoInicialUsd ?? undefined,
+      saldo_final_usd: registro?.saldoFinalUsd ?? undefined,
+      consumo_usd: registro?.consumoUsd,
+      apurado: registro ? registro.apurado : false,
+      origem: registro?.origem
+    }
+  });
+  if (registro?.apurado) {
+    observabilidade.definirMetadadoTrace('custo_heygen_usd', registro.consumoUsd);
+    observabilidade.registrarScore('heygen_consumo_usd', registro.consumoUsd, {
+      comentario: 'diferença entre o saldo inicial e o final da carteira HeyGen'
+    });
+  }
+}
+
+// Apuração manual (botão "Atualizar saldo"): completa o consumo de um vídeo que
+// ficou "não apurado" quando o saldo agora está abaixo do saldo inicial gravado.
+function apurarManualHeygen(sess, numero, saldo) {
+  const videos = sess.videosAvatarGerados || [];
+  const alvo = [...videos].reverse().find(v => v.numero === numero && v.heygen);
+  if (!alvo) return { resultado: 'nao_encontrado', mensagem: 'Nenhum vídeo com medição de saldo foi encontrado para esta aula.' };
+  const h = alvo.heygen;
+  if (h.apurado) return { resultado: 'ja_apurado', mensagem: 'O consumo deste vídeo já foi apurado.', heygen: heygenPublico(h) };
+  if (h.saldoInicialUsd == null) {
+    return { resultado: 'sem_saldo_inicial', mensagem: 'O saldo inicial deste vídeo é desconhecido; confira o consumo no painel do HeyGen.' };
+  }
+  const iniciouDepois = videos.some(v => v !== alvo && v.heygen?.iniciadoEm && h.iniciadoEm && v.heygen.iniciadoEm > h.iniciadoEm);
+  if (iniciouDepois) {
+    return { resultado: 'ambiguo', mensagem: 'Outro vídeo foi iniciado depois deste: a diferença de saldo incluiria o gasto dele. Confira no painel do HeyGen.' };
+  }
+  if (!saldo.disponivel) return { resultado: 'saldo_indisponivel', mensagem: `Saldo indisponível: ${saldo.motivo}` };
+  const consumoUsd = arredondar4(h.saldoInicialUsd - saldo.saldoUsd);
+  if (consumoUsd <= 0) {
+    return { resultado: 'nao_baixou', mensagem: 'O consumo ainda não apareceu no saldo. Tente novamente em instantes.' };
+  }
+  delete h.motivo;
+  Object.assign(h, { saldoFinalUsd: saldo.saldoUsd, consumoUsd, apurado: true, origem: 'manual', finalizadoEm: new Date().toISOString() });
+  recalcularCustoHeygen(sess);
+  saveProject(sess);
+  if (h.traceId && h.traceEnviado) {
+    observabilidade.registrarScore('heygen_consumo_usd', consumoUsd, {
+      comentario: 'diferença entre o saldo inicial e o final da carteira HeyGen (apuração manual)',
+      ctx: { traceId: h.traceId, amostrado: true }
+    });
+  }
+  logger.info(`[heygen] consumo do vídeo ${numero} apurado manualmente: US$ ${consumoUsd}`);
+  return { resultado: 'apurado', mensagem: 'Consumo apurado.', heygen: heygenPublico(h) };
 }
 
 // ── SSE helper ──────────────────────────────────────────────────────────────
@@ -2339,6 +2533,26 @@ app.get('/api/heygen/vozes', async (req, res) => {
     logger.error(err);
     res.status(500).json({ error: err.message || 'Erro ao listar vozes do HeyGen.' });
   }
+});
+
+// GET /api/heygen/saldo — saldo da carteira HeyGen para a tela (só números, sem
+// dados da conta). Leitura curta e síncrona (como as listagens), não SSE.
+app.get('/api/heygen/saldo', async (req, res) => {
+  const sess = getSession(req, res);
+  const saldo = await lerSaldoHeygenLimitado();
+  logger.info(`[heygen] saldo lido pela tela: ${saldo.disponivel ? `US$ ${saldo.saldoUsd}` : saldo.motivo}`);
+  res.json({ ...saldoPublico(saldo), alertaUsd: heygenSaldoAlertaUsd(), ...resumoCustoHeygen(sess) });
+});
+
+// POST /api/heygen/saldo/atualizar { numero? } — botão "Atualizar saldo": relê o
+// saldo e, se um vídeo ficou com o consumo não apurado, tenta completá-lo.
+app.post('/api/heygen/saldo/atualizar', async (req, res) => {
+  const sess = getSession(req, res);
+  const saldo = await lerSaldoHeygenLimitado();
+  const numero = req.body?.numero != null ? String(req.body.numero).padStart(2, '0') : null;
+  const apuracao = numero ? apurarManualHeygen(sess, numero, saldo) : null;
+  logger.info(`[heygen] saldo atualizado manualmente: ${saldo.disponivel ? `US$ ${saldo.saldoUsd}` : saldo.motivo}${apuracao ? ` (apuração ${apuracao.resultado})` : ''}`);
+  res.json({ ...saldoPublico(saldo), alertaUsd: heygenSaldoAlertaUsd(), ...resumoCustoHeygen(sess), ...(apuracao ? { apuracao } : {}) });
 });
 
 app.post('/api/heygen/config', (req, res) => {
@@ -2859,10 +3073,17 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
     return sseError(res, 'Gere e confirme o roteiro de avatar desta aula antes de enviar ao HeyGen.');
   }
 
+  if (sess.heygenVideoEmAndamento) {
+    return sseError(res, 'Já existe um vídeo do HeyGen sendo gerado nesta sessão. Aguarde ele terminar antes de iniciar outro.');
+  }
+  sess.heygenVideoEmAndamento = true;
+
   sseHeaders(res);
   const client = clientAbort(res);
   const aula = sess.conteudoPorAula[index];
   const { avatarId, avatarType, voiceId, expressiveness, motionPrompt } = sess.heygenConfig;
+  const inicioVideo = Date.now();
+  let videoIdAtual = null;
 
   try {
     send(res, { type: 'progress', message: `Enviando roteiro da aula ${index + 1} para o HeyGen...` });
@@ -2882,14 +3103,27 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
     };
 
     // Retomada: continua o polling no mesmo videoId se a geração ficou pendente.
-    let videoId = geracaoExternaPendente(sess, 'heygen', numero)?.id;
+    const pendente = geracaoExternaPendente(sess, 'heygen', numero);
+    let videoId = pendente?.id;
+    // Saldo medido pelo servidor imediatamente antes de criar o vídeo (o da tela pode estar velho);
+    // na retomada vale o que foi gravado na criação, nunca o saldo de agora.
+    let saldoInicialUsd = pendente?.saldoInicialUsd ?? null;
+    let moedaHeygen = pendente?.moeda || 'usd';
+    let iniciadoEm = pendente?.iniciadoEm || pendente?.criadoEm || null;
     if (videoId) {
       send(res, { type: 'progress', message: `Retomando o vídeo pendente da aula ${index + 1} no HeyGen...` });
     } else {
+      const inicioLeitura = Date.now();
+      const saldoAntes = await lerSaldoHeygen({ observar: true });
+      emitirSpanSaldoHeygen('inicial', inicioLeitura, saldoAntes);
+      if (saldoAntes.disponivel) { saldoInicialUsd = saldoAntes.saldoUsd; moedaHeygen = saldoAntes.moeda; }
+      iniciadoEm = new Date().toISOString();
+      send(res, { type: 'saldo-heygen', fase: 'inicial', ...saldoPublico(saldoAntes) });
       const criacao = await criarVideoHeygen(payload, client);
       videoId = criacao.video_id;
-      registrarGeracaoExterna(sess, 'heygen', numero, videoId);
+      registrarGeracaoExterna(sess, 'heygen', numero, videoId, { saldoInicialUsd, moeda: moedaHeygen, iniciadoEm });
     }
+    videoIdAtual = videoId;
     send(res, { type: 'progress', message: `Aguardando o HeyGen gerar o vídeo da aula ${index + 1}... (pode levar alguns minutos)` });
 
     let resultado;
@@ -2904,13 +3138,31 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
     const baseName = `aula${numero}_video`;
 
     sess.videosAvatarGerados = sess.videosAvatarGerados || [];
-    sess.videosAvatarGerados.push({ index, numero, titulo: aula.titulo, baseName, geradoEm: new Date().toISOString() });
+    const registroVideo = { index, numero, titulo: aula.titulo, baseName, geradoEm: new Date().toISOString() };
+    sess.videosAvatarGerados.push(registroVideo);
 
     await persistHeygenVideoStage(sess, baseName, resultado.video_url, numero);
 
+    // Consumo = saldo inicial − saldo final. Nunca impede a entrega do vídeo.
+    let heygen;
+    try {
+      const apuracao = await apurarConsumoHeygen({ saldoInicialUsd, client });
+      heygen = montarRegistroHeygen({ saldoInicialUsd, moeda: moedaHeygen, apuracao, iniciadoEm });
+      if (apuracao.leitura) send(res, { type: 'saldo-heygen', fase: 'final', ...saldoPublico(apuracao.leitura) });
+    } catch (err) {
+      logger.warn('[heygen] não foi possível apurar o consumo do vídeo:', err.message);
+      heygen = montarRegistroHeygen({ saldoInicialUsd, moeda: moedaHeygen, iniciadoEm, apuracao: { apurado: false, saldoFinalUsd: null, motivo: 'falha ao ler o saldo final' } });
+    }
+    registroVideo.heygen = heygen;
+    const resumoCusto = resumoCustoHeygen(sess);
+    saveProject(sess);
+    enviarObservabilidadeVideoHeygen({ numero, videoId, inicio: inicioVideo, registro: heygen });
+    logger.info(`[heygen] vídeo ${numero}: saldo ${heygen.saldoInicialUsd} → ${heygen.saldoFinalUsd}, consumo ${heygen.apurado ? heygen.consumoUsd : 'não apurado'}`);
+
     send(res, { type: 'progress', message: `Vídeo da aula ${index + 1} concluído` });
-    send(res, { type: 'done', index, numero, baseName, titulo: aula.titulo });
+    send(res, { type: 'done', index, numero, baseName, titulo: aula.titulo, heygen: heygenPublico(heygen), ...resumoCusto });
   } catch (err) {
+    enviarObservabilidadeVideoHeygen({ numero, videoId: videoIdAtual, inicio: inicioVideo, registro: null, erro: err.message || 'erro' });
     if (client.disconnected) {
       logger.warn('[sse] cliente desconectou durante a geração do vídeo — interrompendo /api/video-avatar/gerar');
       return;
@@ -2918,6 +3170,7 @@ app.get('/api/video-avatar/gerar', async (req, res) => {
     logger.error(err);
     send(res, { type: 'error', message: err.message || 'Erro ao gerar vídeo do avatar' });
   } finally {
+    sess.heygenVideoEmAndamento = false;
     res.end();
   }
 });
@@ -4531,6 +4784,7 @@ app.post('/api/carregar-projeto', (req, res) => {
     sess.estadoAulas = p.estadoAulas || {};
     sess.geracoesExternas = p.geracoesExternas || {};
     sess.custoProjetoUsd = p.custoProjetoUsd || 0;
+    recalcularCustoHeygen(sess);
     stages = p.stages || {};
   } else {
     // legado (ou projeto.json corrompido, já preservado como .bak acima):
@@ -4593,7 +4847,7 @@ app.post('/api/carregar-projeto', (req, res) => {
 
   const arquivos = listarArquivosDoProjeto(baseDir);
 
-  res.json({ ok: true, ...(avisoCorrompido ? { aviso: avisoCorrompido, ...(backupCorrompido ? { backup: backupCorrompido } : {}) } : {}), etapasCarregadas, camposFaltantes, stages, pesquisaMeta: sess.pesquisaMeta || null, estadoAulas: sess.estadoAulas || {}, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [] });
+  res.json({ ok: true, ...(avisoCorrompido ? { aviso: avisoCorrompido, ...(backupCorrompido ? { backup: backupCorrompido } : {}) } : {}), etapasCarregadas, camposFaltantes, stages, pesquisaMeta: sess.pesquisaMeta || null, estadoAulas: sess.estadoAulas || {}, arquivos, nome: sess.config?.nome, config: sess.config, metodologia: getMetodologia(sess), inputs: sess.inputs || {}, estiloVisual: sess.estiloVisual || null, slidesTemplate: sess.slidesTemplate || null, roteiroBlocos: sess.roteiroBlocos || null, roteirosGerados: sess.roteirosGerados || [], slidesObservacaoDefault: sess.slidesObservacaoDefault || '', slidesQuantidadeDefault: sess.slidesQuantidadeDefault || null, slidesGerados: sess.slidesGerados || [], heygenConfig: sess.heygenConfig || null, roteirosAvatarGerados: sess.roteirosAvatarGerados || [], duracaoAvatarDefault: sess.duracaoAvatarDefault || null, videosAvatarGerados: sess.videosAvatarGerados || [], ...resumoCustoHeygen(sess) });
 });
 
 // ── POST /api/importar — detecta stage de um .docx enviado pelo usuário ──────

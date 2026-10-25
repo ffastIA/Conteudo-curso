@@ -438,7 +438,7 @@ describe('Gamma: geração pendente é retomada no mesmo id', () => {
   test('o mesmo mecanismo existe para o HeyGen (videoId gravado e retomado)', () => {
     const fonte = fs.readFileSync(path.join(__dirname, '..', '..', 'server.js'), 'utf-8');
     expect(fonte).toMatch(/geracaoExternaPendente\(sess, 'heygen', numero\)/);
-    expect(fonte).toMatch(/registrarGeracaoExterna\(sess, 'heygen', numero, videoId\)/);
+    expect(fonte).toMatch(/registrarGeracaoExterna\(sess, 'heygen', numero, videoId, \{/);
     expect(fonte).toMatch(/persistHeygenVideoStage\(sess, baseName, resultado\.video_url, numero\)/);
   });
 });

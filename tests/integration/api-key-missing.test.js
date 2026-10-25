@@ -126,6 +126,16 @@ describe('Guard de HEYGEN_API_KEY ausente', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  test('GET /api/heygen/saldo informa saldo indisponível sem chamar o HeyGen (observar não exige a chave)', async () => {
+    const ag = agent();
+    const res = await ag.get('/api/heygen/saldo');
+
+    expect(res.status).toBe(200);
+    expect(res.body.disponivel).toBe(false);
+    expect(res.body.motivo).toMatch(/HEYGEN_API_KEY/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   test('GET /api/video-avatar/gerar retorna erro citando HEYGEN_API_KEY e não chama fetch', async () => {
     const ag = agent();
     await configurarCursoComConteudo(ag, [{ titulo: 'Aula única', modulo: '', objetivos: 'Obj' }]);

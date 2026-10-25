@@ -678,6 +678,17 @@
         <label for="videoAvatarAulaSelect">Aula</label>
         <select id="videoAvatarAulaSelect"></select>
       </div>
+      <!-- Saldo da carteira HeyGen: lido antes de gerar e atualizado ao fim de cada vídeo -->
+      <div id="heygenSaldoPanel" style="margin-top:14px">
+        <div class="btn-row" style="justify-content:flex-start;align-items:center;gap:10px;flex-wrap:wrap">
+          <strong>Saldo HeyGen:</strong>
+          <span id="heygenSaldoValor">—</span>
+          <span id="heygenSaldoHora" class="field-hint"></span>
+          <button id="btnAtualizarSaldoHeygen" class="btn btn-ghost btn-sm" type="button">↻ Atualizar saldo</button>
+        </div>
+        <div id="heygenSaldoAviso" class="field-hint" style="margin-top:6px"></div>
+        <div id="heygenCustoResumo" class="field-hint" style="margin-top:6px"></div>
+      </div>
     </div>
 
     <!-- Parâmetros da aula (duração em segundos) + roteiro -->

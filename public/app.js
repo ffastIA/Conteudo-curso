@@ -1477,6 +1477,7 @@ async function carregarSeletorAulasVideoAvatar() {
       `<option value="${i}">Aula ${i + 1}</option>`
     ).join('');
     document.getElementById('videoAvatarAulaCard').style.display = 'block';
+    atualizarSaldoHeygen();
     await abrirParametrosVideoAvatar(0);
   } catch (err) {
     alert('Erro ao carregar aulas: ' + err.message);
@@ -1573,9 +1574,14 @@ document.getElementById('btnEnviarHeygen').addEventListener('click', () => {
     if (msg.type === 'progress') {
       if (msg.message.includes('concluído')) finishLog(logPanel, msg.message);
       else addLog(logPanel, msg.message);
+    } else if (msg.type === 'saldo-heygen') {
+      addLog(logPanel, msg.disponivel
+        ? `Saldo HeyGen (${msg.fase}): ${fmtUsd(msg.saldoUsd)}`
+        : `Saldo HeyGen (${msg.fase}) indisponível: ${msg.motivo}`);
     } else if (msg.type === 'done') {
       clearSpinner(logPanel);
       registrarArquivoVideoAvatarGerado(msg);
+      atualizarSaldoHeygen();
       markDone(10);
       es.close();
       refreshTokenCounter();
@@ -1597,11 +1603,110 @@ document.getElementById('btnEnviarHeygen').addEventListener('click', () => {
   };
 });
 
+// ── Saldo e consumo do HeyGen (Etapa 10) ─────────────────────────────────────
+// O consumo de um vídeo é a diferença entre o saldo da carteira antes e depois da
+// geração (calculada no servidor). Aqui só exibimos; nada disso bloqueia a geração.
+function fmtUsd(n) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
+  return 'US$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: Math.abs(n) < 1 ? 4 : 2 });
+}
+
+function renderSaldoHeygen(d) {
+  const valor = document.getElementById('heygenSaldoValor');
+  const hora = document.getElementById('heygenSaldoHora');
+  const aviso = document.getElementById('heygenSaldoAviso');
+  if (!valor) return;
+  hora.textContent = ` (atualizado às ${new Date().toLocaleTimeString('pt-BR')})`;
+  if (!d || !d.disponivel) {
+    valor.textContent = 'indisponível';
+    aviso.textContent = d?.motivo ? `Não foi possível ler o saldo: ${d.motivo}. A geração do vídeo continua funcionando.` : '';
+    aviso.style.color = '#6b7280';
+    return;
+  }
+  valor.textContent = fmtUsd(d.saldoUsd);
+  const avisos = [];
+  let cor = '#b45309';
+  if (d.saldoUsd <= 0) { avisos.push('Saldo zerado: o HeyGen deve recusar novos vídeos.'); cor = '#b91c1c'; }
+  else if (d.saldoUsd < d.alertaUsd) avisos.push(`Saldo baixo (abaixo de ${fmtUsd(d.alertaUsd)}).`);
+  if (d.recargaAutomatica === false) avisos.push('Recarga automática desligada.');
+  aviso.textContent = avisos.join(' ');
+  aviso.style.color = cor;
+}
+
+function renderResumoCustoHeygen(d) {
+  const el = document.getElementById('heygenCustoResumo');
+  if (!el || !d) return;
+  el.textContent = d.videosApurados
+    ? `Consumo HeyGen no projeto: ${fmtUsd(d.custoHeygenUsd)} em ${d.videosApurados} vídeo(s) — média de ${fmtUsd(d.mediaVideoUsd)} por vídeo (referência, não é previsão).`
+    : '';
+}
+
+// manual = botão "Atualizar saldo" (POST); sem manual é a leitura simples da tela (GET).
+// Com `numero`, o servidor tenta completar o consumo não apurado daquele vídeo.
+async function atualizarSaldoHeygen({ manual = false, numero = null } = {}) {
+  const btn = document.getElementById('btnAtualizarSaldoHeygen');
+  if (btn) btn.disabled = true;
+  try {
+    const r = manual
+      ? await fetch('/api/heygen/saldo/atualizar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(numero ? { numero } : {}) })
+      : await fetch('/api/heygen/saldo');
+    const d = await r.json();
+    renderSaldoHeygen(d);
+    renderResumoCustoHeygen(d);
+    return d;
+  } catch (err) {
+    renderSaldoHeygen({ disponivel: false, motivo: err.message });
+    return null;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function textoConsumoHeygen(h) {
+  if (!h) return '';
+  if (h.apurado) {
+    return `Saldo ${fmtUsd(h.saldoInicialUsd)} → ${fmtUsd(h.saldoFinalUsd)} · consumo ${fmtUsd(h.consumoUsd)} (medido pela diferença de saldo${h.origem === 'manual' ? ', apurado manualmente' : ''})`;
+  }
+  const motivo = h.motivo && h.motivo !== 'consumo ainda não refletido no saldo' ? ` (${h.motivo})` : '';
+  return `Consumo ainda não refletido no saldo${motivo}.`;
+}
+
+function itemVideoAvatarHtml(a) {
+  const h = a.heygen;
+  const apurar = h && !h.apurado && h.saldoInicialUsd != null
+    ? `<button class="btn btn-ghost btn-sm" type="button" data-apurar-heygen="${escHtml(a.numero)}">Apurar consumo</button>`
+    : '';
+  return `<div class="video-avatar-item" data-numero="${escHtml(a.numero)}" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%">` +
+    `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🧑‍🏫 Vídeo ${escHtml(a.numero)}: ${escHtml(a.titulo)}</span>` +
+    `<span class="field-hint video-avatar-consumo">${escHtml(textoConsumoHeygen(h))}</span>${apurar}</div>`;
+}
+
+document.getElementById('btnAtualizarSaldoHeygen').addEventListener('click', () => atualizarSaldoHeygen({ manual: true }));
+
+// "Apurar consumo": relê o saldo e completa a apuração de um vídeo cuja cobrança ainda não tinha aparecido.
+document.getElementById('videoAvatarArquivos').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-apurar-heygen]');
+  if (!btn) return;
+  const numero = btn.getAttribute('data-apurar-heygen');
+  const item = btn.closest('.video-avatar-item');
+  const nota = item.querySelector('.video-avatar-consumo');
+  btn.disabled = true;
+  const d = await atualizarSaldoHeygen({ manual: true, numero });
+  btn.disabled = false;
+  if (!d || !d.apuracao) { nota.textContent = 'Não foi possível atualizar agora. Tente novamente.'; return; }
+  if (d.apuracao.resultado === 'apurado' || d.apuracao.resultado === 'ja_apurado') {
+    nota.textContent = textoConsumoHeygen(d.apuracao.heygen);
+    if (btn.isConnected) btn.remove();
+  } else {
+    nota.textContent = d.apuracao.mensagem;
+  }
+});
+
 function registrarArquivoVideoAvatarGerado(msg) {
   const container = document.getElementById('videoAvatarArquivos');
   container.style.display = 'flex';
-  container.insertAdjacentHTML('beforeend',
-    `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🧑‍🏫 Vídeo ${escHtml(msg.numero)}: ${escHtml(msg.titulo)}</span>`);
+  container.insertAdjacentHTML('beforeend', itemVideoAvatarHtml(msg));
+  renderResumoCustoHeygen(msg);
 }
 
 // ── Copiar ───────────────────────────────────────────────────────────────────
@@ -1752,9 +1857,8 @@ async function carregarProjetoPorPasta(pasta) {
     if (data.videosAvatarGerados?.length) {
       const container = document.getElementById('videoAvatarArquivos');
       container.style.display = 'flex';
-      container.innerHTML = data.videosAvatarGerados.map(a =>
-        `<span style="background:#ede9fb;color:#4A3B8C;border-radius:6px;padding:4px 10px;font-size:.8rem">🧑‍🏫 Vídeo ${escHtml(a.numero)}: ${escHtml(a.titulo)}</span>`
-      ).join('');
+      container.innerHTML = data.videosAvatarGerados.map(itemVideoAvatarHtml).join('');
+      renderResumoCustoHeygen(data);
       document.getElementById('videoAvatarResultCard').style.display = 'block';
       markDone(10);
     }

@@ -193,6 +193,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
       custoDesconhecido: false,
       tokens: { entrada: 0, saida: 0, total: 0 },
       meta: {},
+      traceMeta: {},
       ...props
     };
     // sessionId pode ser calculado de forma preguiçosa (a sessão só é conhecida
@@ -209,6 +210,13 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
   function definirContexto(patch) {
     const ctx = contexto();
     if (ctx) Object.assign(ctx.meta, patch);
+  }
+
+  // Metadado do TRACE (não de cada span): aparece em langfuse.trace.metadata.<chave>
+  // no span raiz, enviado ao fechar a resposta. Só valores numéricos/booleanos/texto curtos.
+  function definirMetadadoTrace(chave, valor) {
+    const ctx = contexto();
+    if (ctx && valor !== undefined && valor !== null) ctx.traceMeta[chave] = valor;
   }
 
   function atributosComuns(ctx, extra = {}) {
@@ -312,6 +320,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
       'langfuse.trace.metadata.tokens_total': ctx.tokens.total,
       'langfuse.trace.metadata.custo_usd': ctx.custoUsd
     };
+    for (const [k, v] of Object.entries(ctx.traceMeta || {})) attrs[`langfuse.trace.metadata.${k}`] = v;
     enfileirar(span({ ctx, nome: ctx.etapa, inicio: ctx.inicio, fim: Date.now(), attrs, erro, root: true }));
   }
 
@@ -366,7 +375,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
   return {
     config: cfg,
     enabled: cfg.enabled,
-    contexto, criarContexto, executar, definirContexto, finalizarContexto,
+    contexto, criarContexto, executar, definirContexto, definirMetadadoTrace, finalizarContexto,
     registrarGeneration, registrarSpan, registrarScore, envolverStream,
     flush, shutdown, urlTrace,
     _fila: fila

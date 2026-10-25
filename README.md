@@ -127,6 +127,8 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 | GET    | `/api/roteiro/gerar`                    | SSE — gera os roteiros de vídeo                         |
 | GET    | `/api/heygen/avatares`                  | Lista avatares do HeyGen                                |
 | GET    | `/api/heygen/vozes`                     | Lista vozes do HeyGen                                   |
+| GET    | `/api/heygen/saldo`                     | Saldo da carteira HeyGen (só saldo, moeda e recarga)    |
+| POST   | `/api/heygen/saldo/atualizar`           | Botão "Atualizar saldo"; completa o consumo não apurado |
 | POST   | `/api/heygen/config`                    | Salva avatar, voz e expressividade                      |
 | GET    | `/api/video-avatar/parametros`          | Parâmetros do vídeo de uma aula                         |
 | POST   | `/api/video-avatar/parametros`          | Aprova a duração do vídeo                               |
