@@ -124,7 +124,7 @@ public/index.html  — Frontend HTML (Etapas 0–10, formulários, log panels)
 public/app.js      — Frontend JS (SSE streaming, BNCC UI, navegação entre etapas, estimativas)
 public/markdown.js — Análise e renderização de Markdown, compartilhada com o gerador de .docx
 public/style.css   — Estilos (card-based, responsivo)
-openspec/specs/    — 40 capabilities canônicas e validadas (fonte de verdade atual do sistema)
+openspec/specs/    — 41 capabilities canônicas e validadas (fonte de verdade atual do sistema)
 openspec/changes/  — Changes do OpenSpec (ativas e arquivadas em changes/archive/)
 docs/              — decisões (docs/decisoes), guia do Langfuse e linha de base do curso de referência (docs/baseline)
 scripts/           — Smoke da pesquisa, geração da linha de base, dataset do Langfuse e criptografia do .env
