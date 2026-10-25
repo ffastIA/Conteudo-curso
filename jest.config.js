@@ -17,6 +17,7 @@ module.exports = {
     'avaliacao.js',
     'observabilidade.js',
     'custo.js',
+    'orcamento.js',
     'logger.js',
     'docx-markdown.js',
     'config/modelos.js',

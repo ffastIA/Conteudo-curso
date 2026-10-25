@@ -22,12 +22,16 @@ const mockImagesGenerate = jest.fn(async () => {
   return { data: [{ b64_json: FAKE_PNG_B64 }] };
 });
 
+// Uso (tokens) devolvido pelas respostas; ajustável com OpenAI.__setUsage para simular gasto de verdade.
+let _usage = { prompt_tokens: 10, completion_tokens: 20 };
+const usoAtual = () => ({ prompt_tokens: _usage.prompt_tokens, completion_tokens: _usage.completion_tokens, total_tokens: _usage.prompt_tokens + _usage.completion_tokens });
+
 async function* makeStream(text, finishReason) {
   const words = text.split(' ');
   for (const word of words) {
     yield { choices: [{ delta: { content: word + ' ' } }] };
   }
-  yield { choices: [{ delta: {}, ...(finishReason ? { finish_reason: finishReason } : {}) }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } };
+  yield { choices: [{ delta: {}, ...(finishReason ? { finish_reason: finishReason } : {}) }], usage: usoAtual() };
 }
 
 // Validação de parâmetros como a API real (verificada em docs/decisoes/pesquisa-api.md):
@@ -83,7 +87,7 @@ const mockCreate = jest.fn(async (params, options) => {
   }
   return {
     choices: [{ message: { content: text }, ...(finishReason ? { finish_reason: finishReason } : {}) }],
-    usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 }
+    usage: usoAtual()
   };
 });
 
@@ -111,7 +115,7 @@ function montarResposta(text) {
         }]
       }
     ],
-    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 }
+    usage: { input_tokens: _usage.prompt_tokens, output_tokens: _usage.completion_tokens, total_tokens: _usage.prompt_tokens + _usage.completion_tokens }
   };
 }
 
@@ -185,7 +189,10 @@ OpenAI.__setFinishReason = (reason) => { _finishQueue = [reason]; };
 OpenAI.__getResponsesMock = () => mockResponsesCreate;
 OpenAI.__setCitations = (citations) => { _citations = citations; };
 
+OpenAI.__setUsage = (promptTokens, completionTokens) => { _usage = { prompt_tokens: promptTokens, completion_tokens: completionTokens }; };
+
 OpenAI.__reset = () => {
+  _usage = { prompt_tokens: 10, completion_tokens: 20 };
   _errorQueue = [];
   _responder = null;
   _finishQueue = [];

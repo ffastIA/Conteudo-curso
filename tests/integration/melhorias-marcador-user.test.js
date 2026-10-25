@@ -14,6 +14,7 @@ const OpenAI = require('openai');
 const mammoth = require('mammoth');
 const os = require('os');
 const path = require('path');
+const fs = require('fs');
 const app = require('../../server');
 
 const VALID_CONFIG = {
@@ -41,6 +42,9 @@ afterAll(() => {
 
 beforeEach(() => {
   OpenAI.__reset();
+  // Pasta limpa a cada teste: histórico de ciclos e uso.json (inclusive um disparo pendente do
+  // disjuntor) persistem em disco e não podem vazar de uma execução para outra.
+  fs.rmSync(VALID_CONFIG.pastaProjeto, { recursive: true, force: true });
 });
 
 function parseSSE(body) {

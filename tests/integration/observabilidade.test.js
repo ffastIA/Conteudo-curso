@@ -245,3 +245,33 @@ describe('sessão do trace', () => {
     }
   });
 });
+
+describe('metadados da governança de custo no Langfuse', () => {
+  test('o trace leva o perfil e o saldo restante; cada generation leva o papel do modelo', async () => {
+    fs.rmSync(VALID_CONFIG.pastaProjeto, { recursive: true, force: true }); // uso.json persiste na pasta do projeto
+    OpenAI.__setResponse('plano de ensino gerado pelo mock');
+    const ag = await sessao();
+    await ag.post('/api/orcamento').send({ tetos: { projeto: 5 }, perfil: 'premium' });
+    await sse(ag, '/api/plano-ensino');
+    await app.obs.flush();
+    const spans = spansOtlp();
+    const raiz = spans.find(s => !s.parentSpanId && attr(s, 'langfuse.trace.name') === 'plano-ensino');
+    expect(attr(raiz, 'langfuse.trace.metadata.perfil')).toBe('premium');
+    const restante = Number(attr(raiz, 'langfuse.trace.metadata.orcamento_restante_usd'));
+    expect(restante).toBeGreaterThan(4.9);
+    expect(restante).toBeLessThanOrEqual(5);
+    const generation = spans.find(s => attr(s, 'langfuse.observation.type') === 'generation');
+    expect(attr(generation, 'langfuse.observation.metadata.papel')).toBe('resumos');
+  });
+
+  test('sem teto, o trace leva o perfil mas não leva saldo restante', async () => {
+    fs.rmSync(VALID_CONFIG.pastaProjeto, { recursive: true, force: true });
+    OpenAI.__setResponse('plano de ensino gerado pelo mock');
+    const ag = await sessao();
+    await sse(ag, '/api/plano-ensino');
+    await app.obs.flush();
+    const raiz = spansOtlp().find(s => !s.parentSpanId && attr(s, 'langfuse.trace.name') === 'plano-ensino');
+    expect(attr(raiz, 'langfuse.trace.metadata.perfil')).toBe('padrao');
+    expect(attr(raiz, 'langfuse.trace.metadata.orcamento_restante_usd')).toBeUndefined();
+  });
+});

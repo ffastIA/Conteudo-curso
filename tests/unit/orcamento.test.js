@@ -347,7 +347,7 @@ describe('perfis e degradação', () => {
     expect(G.perfil(sess).id).toBe('premium');
     G.ajustar(sess, { perfil: 'economico' });
     expect(G.perfil(sess).id).toBe('economico');
-    expect(G.perfil(sess)).toMatchObject({ consultasPesquisa: 2, contextoBusca: 'low', ciclosMelhoriaMax: 1, fontesPorSecao: 3, juizForte: 'nunca' });
+    expect(G.perfil(sess)).toMatchObject({ consultasPesquisa: 2, contextoBusca: 'low', ciclosMelhoriaMax: 1, achadosDossie: 3, juizForte: 'nunca' });
   });
 
   test('o alerta marca a degradação, que só vale entre unidades de trabalho (um nível por vez)', () => {

@@ -23,6 +23,7 @@ async function refreshTokenCounter() {
     const projetoTotal = data.projeto?.total?.total;
     document.getElementById('tokenCount').textContent =
       projetoTotal ? `${sessao} · projeto: ${projetoTotal.toLocaleString('pt-BR')}` : sessao;
+    if (typeof atualizarOrcamento === 'function') atualizarOrcamento(); // saldo e perfil acompanham o gasto
   } catch {
     // contador é apenas informativo — falha de rede não deve incomodar o usuário
   }
@@ -84,7 +85,9 @@ async function atualizarEstimativas() {
       const faixa = e.custoUsd
         ? `US$ ${e.custoUsd.minimo.toFixed(2)} a ${e.custoUsd.maximo.toFixed(2)}`
         : 'custo indisponível (modelo sem preço cadastrado)';
-      const orcamento = e.orcamentoUsd ? ` · acumulado US$ ${e.custoProjetoUsd.toFixed(2)} de US$ ${e.orcamentoUsd.toFixed(2)}` : '';
+      const orcamento = e.saldo?.restanteUsd !== null && e.saldo?.restanteUsd !== undefined
+        ? ` · saldo restante US$ ${e.saldo.restanteUsd.toFixed(2)} (perfil ${e.perfil})`
+        : (e.orcamentoUsd ? ` · acumulado US$ ${e.custoProjetoUsd.toFixed(2)} de US$ ${e.orcamentoUsd.toFixed(2)}` : '');
       el.textContent = `💲 ${rotulo} (estimativa): ${e.unidades} ${e.unidade}(s) · ~${e.tokens.minimo.toLocaleString('pt-BR')} a ${e.tokens.maximo.toLocaleString('pt-BR')} tokens · ${faixa}${orcamento}`;
     } catch {
       el.textContent = '';
@@ -202,6 +205,7 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
 
   let fullText = '';
   let rafHandle = null;
+  let decisaoPendente = null; // pausa por orçamento / disjuntor: a decisão abre depois do evento de erro
 
   // Agrupa (coalesce) qualquer quantidade de eventos 'token' chegados entre
   // frames em uma única atualização de DOM, evitando custo O(n²) ao
@@ -250,12 +254,16 @@ function streamSSE(url, { logPanel, resultEl, onSite, onDone, onError }) {
       if (onDone) onDone(fullText, msg);
     } else if (msg.type === 'warning') {
       warnLog(logPanel, msg.text);
+    } else if (['alerta_orcamento', 'perfil_alterado', 'pausado_orcamento', 'disjuntor'].includes(msg.type)) {
+      const decidir = tratarEventoOrcamento(msg, logPanel);
+      if (decidir) decisaoPendente = decidir;
     } else if (msg.type === 'error') {
       cancelScheduledRender();
       errLog(logPanel, msg.message);
       es.close();
       refreshTokenCounter();
       if (onError) onError(msg.message, msg);
+      if (decisaoPendente) { const decidir = decisaoPendente; decisaoPendente = null; decidir(); }
     }
   };
 
@@ -599,7 +607,8 @@ async function atualizarStatusPesquisaModulos() {
   }
 }
 
-document.getElementById('btnPesquisaModulos').addEventListener('click', () => {
+document.getElementById('btnPesquisaModulos').addEventListener('click', async () => {
+  if (!(await confirmarEstimativa('pesquisa-modulos'))) return;
   const logPanel = initLog('logPesquisaModulos');
   const sites = document.getElementById('pesquisaModulosSites');
   sites.innerHTML = '';
@@ -682,7 +691,8 @@ function renderEstadosAulas(estadoAulas, incompletas) {
   }
 }
 
-function executarConteudo({ aulas = null, refazer = false } = {}) {
+async function executarConteudo({ aulas = null, refazer = false } = {}) {
+  if (!(await confirmarEstimativa('conteudo'))) return;
   document.getElementById('conteudoResultCard').style.display = 'block';
   document.getElementById('conteudoActions').style.display = 'none';
   document.getElementById('conteudoEstados').style.display = 'none';
@@ -719,11 +729,12 @@ document.getElementById('btnConteudoRefazer').addEventListener('click', () => {
 });
 
 // ── STEP 6 — Revisão de Qualidade e Aplicar Melhorias ───────────────────────
-document.getElementById('btnRevisaoQualidade').addEventListener('click', () => {
+document.getElementById('btnRevisaoQualidade').addEventListener('click', async () => {
   if (!state.doneSteps.has(5)) {
     alert('Conclua a Etapa 5 (Conteúdo) antes de gerar a revisão de qualidade.');
     return;
   }
+  if (!(await confirmarEstimativa('revisao'))) return;
 
   document.getElementById('revisaoQualidadeResultCard').style.display = 'block';
   document.getElementById('revisaoQualidadeActions').style.display = 'none';

@@ -36,6 +36,8 @@ A garantia é "não exceder o teto além do erro de estimativa de **uma** chamad
 
 ### D2. `scr/uso.json` e o arquivo global
 
+O arquivo diário é **relido a cada uso** (é minúsculo), sem cache em memória, para refletir o gasto de outros projetos e processos.
+
 `scr/uso.json` (por projeto) guarda: gasto por dia, por etapa e por modelo, a calibração (D6), os tetos ajustados pelo usuário e o estado de pausa. Gravação **atômica** (escrever em arquivo temporário e renomear) para que queda do servidor não deixe JSON truncado; leitura tolerante (arquivo ausente ou corrompido vira estado vazio, com aviso). É preservado por carregar-projeto e importar, como `projeto.json` e `geracao_log.json`. `.uso-diario.json` guarda só `{ data, totalUsd }` do dia.
 
 O estado em memória (reservas em voo) **não** é persistido: após uma queda, as reservas somem e vale o gasto acertado, que é o que realmente foi cobrado.
@@ -56,10 +58,10 @@ Um perfil é um pacote de parâmetros em `config/perfis-custo.json`, lido em tem
 | contexto da busca web | baixo | médio | alto |
 | modelo de redação | pequeno | intermediário | melhor disponível |
 | ciclos de melhoria (máx.) | 1 | 2 | 3 |
-| fontes do dossiê por seção | 3 | 5 | 8 |
+| achados da pesquisa no dossiê de cada aula | 3 | 6 | 8 |
 | juiz final forte | nunca | só em casos duvidosos | sempre |
 
-Os valores acima são **ilustrativos** (vêm do plano) e ficam no arquivo de configuração; os modelos de cada perfil apontam para os papéis de D5, nunca para um nome de modelo fixo no código. `CUSTO_PERFIL` escolhe o perfil (padrão `padrao`); o perfil é um valor por projeto, guardado em `uso.json`, e o painel mostra o ativo.
+O dossiê hoje limita **achados por aula** (6), não fontes por seção; o padrão 6 preserva o comportamento atual. A consulta extra da BNCC não conta no número de consultas, e o máximo de ciclos só é imposto com teto ou perfil escolhido de propósito (senão os ciclos seguem ilimitados). Os valores acima são **ilustrativos** (vêm do plano) e ficam no arquivo de configuração; os modelos de cada perfil apontam para os papéis de D5, nunca para um nome de modelo fixo no código. `CUSTO_PERFIL` escolhe o perfil (padrão `padrao`); o perfil é um valor por projeto, guardado em `uso.json`, e o painel mostra o ativo.
 
 **Degradação automática** (decisão 12 do plano): quando **qualquer** escopo atinge o alerta de 80% e o perfil ativo não é o Econômico, o perfil desce **um nível por vez**, **entre unidades de trabalho** (nunca no meio de uma aula ou seção), com o evento SSE `perfil_alterado` informando o motivo. Nunca sobe sozinho. `CUSTO_DEGRADACAO_AUTOMATICA=false` desliga. Sem nenhum teto configurado, nada degrada.
 

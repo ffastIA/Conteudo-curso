@@ -25,9 +25,9 @@ const PERFIS_PADRAO = {
   padrao: 'padrao',
   ordem: ['economico', 'padrao', 'premium'],
   perfis: {
-    economico: { rotulo: 'Econômico', consultasPesquisa: 2, contextoBusca: 'low', modeloRedacao: 'economia', ciclosMelhoriaMax: 1, fontesPorSecao: 3, juizForte: 'nunca', disjuntorSemGanho: 'interrompe' },
-    padrao: { rotulo: 'Padrão', consultasPesquisa: 4, contextoBusca: 'medium', modeloRedacao: 'conteudo', ciclosMelhoriaMax: 2, fontesPorSecao: 5, juizForte: 'duvidoso', disjuntorSemGanho: 'interrompe' },
-    premium: { rotulo: 'Premium', consultasPesquisa: 5, contextoBusca: 'high', modeloRedacao: 'juiz', ciclosMelhoriaMax: 3, fontesPorSecao: 8, juizForte: 'sempre', disjuntorSemGanho: 'avisa' }
+    economico: { rotulo: 'Econômico', consultasPesquisa: 2, contextoBusca: 'low', modeloRedacao: 'economia', ciclosMelhoriaMax: 1, achadosDossie: 3, juizForte: 'nunca', disjuntorSemGanho: 'interrompe' },
+    padrao: { rotulo: 'Padrão', consultasPesquisa: 4, contextoBusca: 'medium', modeloRedacao: 'conteudo', ciclosMelhoriaMax: 2, achadosDossie: 6, juizForte: 'duvidoso', disjuntorSemGanho: 'interrompe' },
+    premium: { rotulo: 'Premium', consultasPesquisa: 5, contextoBusca: 'high', modeloRedacao: 'juiz', ciclosMelhoriaMax: 3, achadosDossie: 8, juizForte: 'sempre', disjuntorSemGanho: 'avisa' }
   }
 };
 
@@ -151,37 +151,30 @@ function criarGovernanca({
   }
 
   // ── Teto diário entre projetos (arquivo global) ─────────────────────────────
-  let diario = null; // { data, total }
+  // O arquivo é relido a cada uso (é minúsculo): assim o total reflete outros projetos e processos.
   let diarioDesligado = false;
   const arquivoDiario = () => (env.USO_DIARIO_FILE || arquivoDiarioPadrao);
-
-  function lerDiario(hoje) {
-    try {
-      const j = JSON.parse(fs.readFileSync(arquivoDiario(), 'utf-8'));
-      diario = j && j.data === hoje && Number.isFinite(j.totalUsd) ? { data: hoje, total: j.totalUsd } : { data: hoje, total: 0 };
-    } catch (err) {
-      if (err.code === 'ENOENT') { diario = { data: hoje, total: 0 }; return; }
-      diarioDesligado = true;
-      avisarUma('diario', `[orcamento] o arquivo de gasto diário não pôde ser lido (${err.message}) — teto diário desligado`);
-    }
-  }
 
   function totalDiario() {
     if (diarioDesligado) return 0;
     const hoje = hojeLocal(agora());
-    if (!diario || diario.data !== hoje) lerDiario(hoje);
-    if (diarioDesligado || !diario) return 0;
-    if (diario.data !== hoje) diario = { data: hoje, total: 0 };
-    return diario.total;
+    try {
+      const j = JSON.parse(fs.readFileSync(arquivoDiario(), 'utf-8'));
+      return j && j.data === hoje && Number.isFinite(j.totalUsd) ? j.totalUsd : 0; // outra data: o dia virou
+    } catch (err) {
+      if (err.code === 'ENOENT') return 0;
+      diarioDesligado = true;
+      avisarUma('diario', `[orcamento] o arquivo de gasto diário não pôde ser lido (${err.message}) — teto diário desligado`);
+      return 0;
+    }
   }
 
   function somarDiario(usd) {
     const total = totalDiario();
-    if (diarioDesligado || !diario) return;
-    diario.total = total + usd;
+    if (diarioDesligado) return;
     try {
       const tmp = `${arquivoDiario()}.tmp-${process.pid}`;
-      fs.writeFileSync(tmp, JSON.stringify({ data: diario.data, totalUsd: arred(diario.total) }, null, 2), 'utf-8');
+      fs.writeFileSync(tmp, JSON.stringify({ data: hojeLocal(agora()), totalUsd: arred(total + usd) }, null, 2), 'utf-8');
       fs.renameSync(tmp, arquivoDiario());
     } catch (err) {
       diarioDesligado = true;
@@ -274,9 +267,10 @@ function criarGovernanca({
     const nomeEscopo = { projeto: 'do projeto', dia: 'diário', etapa: 'da etapa' }[escopo.nome];
     const varEnv = { projeto: env.ORCAMENTO_MAX_USD ? 'ORCAMENTO_MAX_USD' : (env.ORCAMENTO_USD ? 'ORCAMENTO_USD' : 'ORCAMENTO_MAX_USD'), dia: 'ORCAMENTO_DIA_MAX_USD', etapa: 'ORCAMENTO_ETAPA_MAX_USD' }[escopo.nome];
     const varTeto = numPositivo(uso.tetos?.[escopo.nome]) ? 'teto ajustado na tela' : varEnv;
+    const usd = (n) => n.toFixed(n < 1 ? 4 : 2); // tetos pequenos precisam de mais casas para não aparecerem como 0,00
     const err = new Error(
-      `Orçamento ${nomeEscopo} atingido: custo acumulado US$ ${escopo.gastoUsd.toFixed(4)} + próxima chamada ~US$ ${estimativaUsd.toFixed(4)} ` +
-      `ultrapassa o teto de US$ ${escopo.tetoUsd.toFixed(2)} (${varTeto}). Aumente o teto ou troque o perfil e execute a etapa de novo para continuar de onde parou.`);
+      `Orçamento ${nomeEscopo} atingido: custo acumulado US$ ${usd(escopo.gastoUsd)} + próxima chamada ~US$ ${usd(estimativaUsd)} ` +
+      `ultrapassa o teto de US$ ${usd(escopo.tetoUsd)} (${varTeto}). Aumente o teto ou troque o perfil e execute a etapa de novo para continuar de onde parou.`);
     err.code = 'ORCAMENTO_EXCEDIDO';
     err.detalhes = info;
     err.alreadyReported = false;
@@ -290,7 +284,8 @@ function criarGovernanca({
       fatorCusto: numPositivo(l.fatorCusto) ?? numPositivo(env.DISJUNTOR_FATOR_CUSTO) ?? 2,
       errosSeguidos: Math.floor(numPositivo(l.errosSeguidos) ?? numPositivo(env.DISJUNTOR_ERROS_SEGUIDOS) ?? 3),
       ganhoMin: numPositivo(l.ganhoMin) ?? numPositivo(env.DISJUNTOR_GANHO_MIN) ?? EPSILON_GANHO_PADRAO,
-      continuacoesExtra: Math.max(0, Math.floor(Number(l.continuacoesExtra) || 0))
+      continuacoesExtra: Math.max(0, Math.floor(Number(l.continuacoesExtra) || 0)),
+      ciclosExtra: Math.max(0, Math.floor(Number(l.ciclosExtra) || 0))
     };
   }
 
@@ -315,6 +310,7 @@ function criarGovernanca({
       case 'custo': return `Disjuntor: o custo${onde} (US$ ${Number(valores.custoUsd || 0).toFixed(4)}) passou de ${valores.fator}× a estimativa (US$ ${Number(valores.estimativaUsd || 0).toFixed(4)}).${fim}`;
       case 'erro_repetido': return `Disjuntor: o mesmo erro (${valores.codigo}) se repetiu ${valores.vezes} vezes seguidas${onde}.${fim}`;
       case 'sem_ganho': return `Disjuntor: o último ciclo de melhoria elevou a nota em apenas ${valores.ganhoMedio} (mínimo ${valores.ganhoMin}).${fim}`;
+      case 'limite_ciclos': return `Disjuntor: o perfil de custo permite ${valores.max} ciclo(s) de melhoria e este projeto já tem ${valores.ciclos}.${fim}`;
       case 'continuacoes': return `Disjuntor: as continuações${onde} chegaram ao limite sem terminar o texto.${fim}`;
       default: return `Disjuntor disparado (${motivo})${onde}.${fim}`;
     }
@@ -373,15 +369,21 @@ function criarGovernanca({
   }
 
   // ── Antes e depois de cada chamada ──────────────────────────────────────────
+  // Disparo anterior ainda sem decisão do usuário: devolve o erro (e reemite o evento) em vez de gastar.
+  function bloqueioPendente(sess) {
+    const uso = usoDe(sess);
+    if (!uso.disjuntor || uso.disjuntor.resolvido) return null;
+    emitir({ type: 'disjuntor', motivo: uso.disjuntor.motivo, unidade: uso.disjuntor.unidade, valores: uso.disjuntor.valores, opcoes: ['aumentar-limite', 'trocar-perfil', 'pular'] });
+    const err = new Error(mensagemDisjuntor(uso.disjuntor.motivo, uso.disjuntor.unidade, uso.disjuntor.valores));
+    err.code = 'DISJUNTOR_DISPARADO';
+    err.detalhes = uso.disjuntor;
+    return err;
+  }
+
   function antes(sess, etapa, params) {
     const uso = usoDe(sess);
-    if (uso.disjuntor && !uso.disjuntor.resolvido) {
-      emitir({ type: 'disjuntor', motivo: uso.disjuntor.motivo, unidade: uso.disjuntor.unidade, valores: uso.disjuntor.valores, opcoes: ['aumentar-limite', 'trocar-perfil', 'pular'] });
-      const err = new Error(mensagemDisjuntor(uso.disjuntor.motivo, uso.disjuntor.unidade, uso.disjuntor.valores));
-      err.code = 'DISJUNTOR_DISPARADO';
-      err.detalhes = uso.disjuntor;
-      throw err;
-    }
+    const pendente = bloqueioPendente(sess);
+    if (pendente) throw pendente;
     verificarUnidade(sess);
 
     const tetos = tetosDe(sess);
@@ -447,7 +449,7 @@ function criarGovernanca({
       verificarAlertas(sess, etapa);
       gravarUso(sess);
     }
-    if (!erro) errosSeguidos.delete(etapa);
+    if (!erro) errosSeguidos.delete(`${chaveProjeto(sess)}:${etapa}`);
   }
 
   // Erro repetido: o mesmo código N vezes em sequência na mesma etapa. Devolve o erro do
@@ -455,12 +457,13 @@ function criarGovernanca({
   function registrarErro(sess, etapa, err) {
     if (!err || err.code === 'ORCAMENTO_EXCEDIDO' || err.code === 'DISJUNTOR_DISPARADO' || err.name === 'APIUserAbortError') return null;
     const codigo = String(err.status ?? err.code ?? err.name ?? 'erro');
-    const atual = errosSeguidos.get(etapa);
+    const chave = `${chaveProjeto(sess)}:${etapa}`;
+    const atual = errosSeguidos.get(chave);
     const n = atual && atual.codigo === codigo ? atual.n + 1 : 1;
-    errosSeguidos.set(etapa, { codigo, n });
+    errosSeguidos.set(chave, { codigo, n });
     const { errosSeguidos: limite } = limitesDisjuntor(sess);
     if (n >= limite) {
-      errosSeguidos.delete(etapa);
+      errosSeguidos.delete(chave);
       return disparar(sess, 'erro_repetido', { unidade: etapa, valores: { codigo, vezes: n } });
     }
     return null;
@@ -490,8 +493,21 @@ function criarGovernanca({
     return { interrompe: true, erro: disparar(sess, 'sem_ganho', { unidade: 'ciclo de melhoria', valores: { ganhoMedio: arred(ganhoMedio, 4), ganhoMin } }) };
   }
 
+  // Limite de ciclos de melhoria do perfil ativo (mais os que o usuário liberou). Devolve o erro ou null.
+  // Só vale com algum teto configurado ou com um perfil escolhido de propósito (CUSTO_PERFIL ou a tela):
+  // sem isso o comportamento anterior (ciclos ilimitados) é mantido.
+  function gatilhoLimiteCiclos(sess, ciclos) {
+    const explicito = !!usoDe(sess).perfil || !!(env.CUSTO_PERFIL || '').trim();
+    if (!explicito && !temTeto(tetosDe(sess))) return null;
+    const max = (Number(perfil(sess).ciclosMelhoriaMax) || 0) + limitesDisjuntor(sess).ciclosExtra;
+    if (!(max > 0) || ciclos < max) return null;
+    return disparar(sess, 'limite_ciclos', { unidade: 'ciclo de melhoria', valores: { ciclos, max } });
+  }
+
   const limiteContinuacoes = (sess, base) => base + limitesDisjuntor(sess).continuacoesExtra;
   const unidadePulada = (sess, chave) => !!usoDe(sess).puladas?.[chave];
+  const limparPulada = (sess, chave) => { const p = usoDe(sess).puladas; if (p && p[chave]) { delete p[chave]; gravarUso(sess); } };
+  const rotuloUnidade = () => unidadeAls.getStore()?.rotulo || null;
 
   // ── Consulta e ajuste (GET/POST /api/orcamento) ─────────────────────────────
   function linhaEscopo(e) {
@@ -581,6 +597,10 @@ function criarGovernanca({
         else if (d.motivo === 'erro_repetido') uso.limites.errosSeguidos = v ?? l.errosSeguidos + 2;
         else if (d.motivo === 'sem_ganho') uso.limites.ganhoMin = v ?? l.ganhoMin / 2;
         else if (d.motivo === 'continuacoes') uso.limites.continuacoesExtra = l.continuacoesExtra + (v ?? 1);
+        else if (d.motivo === 'limite_ciclos') {
+          const base = Number(perfil(sess).ciclosMelhoriaMax) || 0;
+          uso.limites.ciclosExtra = v !== null ? l.ciclosExtra + Math.floor(v) : Math.max(l.ciclosExtra + 1, (Number(d.valores?.ciclos) || 0) + 1 - base);
+        }
       } else if (corpo.decisao === 'pular') {
         if (d.unidade) uso.puladas[d.unidade] = true;
       }
@@ -599,7 +619,7 @@ function criarGovernanca({
     // fluxo de cada chamada
     antes, depois, registrarErro, emUnidade, verificarUnidade,
     // perfis e papéis
-    perfil, aplicarDegradacao, decidirJuizForte, limiteContinuacoes, unidadePulada,
+    perfil, aplicarDegradacao, decidirJuizForte, limiteContinuacoes, unidadePulada, limparPulada, rotuloUnidade,
     modeloPara(sess, nome, original) {
       const papel = modelos.papelDaChamada(nome);
       if (!papel) return original;
@@ -607,7 +627,8 @@ function criarGovernanca({
     },
     papelDe: (nome) => modelos.papelDaChamada(nome),
     // disjuntor
-    gatilhoContinuacoes, gatilhoSemGanho, limitesDisjuntor, disparar,
+    gatilhoContinuacoes, gatilhoSemGanho, gatilhoLimiteCiclos, bloqueioPendente, limitesDisjuntor, disparar,
+    disjuntorPendente: (sess) => !!(usoDe(sess).disjuntor && !usoDe(sess).disjuntor.resolvido),
     // internos expostos para testes
     fatorCalibracao: (sess, etapa) => fatorDe(usoDe(sess), etapa),
     _tetosDe: tetosDe, _reservas: reservas

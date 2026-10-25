@@ -19,7 +19,22 @@
   <div class="token-counter" id="tokenCounter" title="Total de tokens consumidos pela API da OpenAI em todas as etapas">
     🔢 <span id="tokenCount">0</span> tokens
   </div>
+  <button type="button" class="token-counter orcamento-badge" id="btnOrcamento" title="Orçamento, perfil de custo e decisões (pausa e disjuntor)">
+    💲 <span id="orcamentoResumo">orçamento</span>
+  </button>
 </header>
+
+<!-- Orçamento e custo: saldo, perfil, tetos e decisões após pausa ou disjuntor -->
+<div id="orcamentoOverlay" class="orcamento-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="orcamentoTitulo">
+  <div class="orcamento-painel">
+    <div class="orcamento-topo">
+      <h2 id="orcamentoTitulo">Orçamento e custo</h2>
+      <button type="button" class="btn btn-ghost btn-sm" id="btnFecharOrcamento" aria-label="Fechar">✕</button>
+    </div>
+    <div id="orcamentoDecisao" class="orcamento-decisao" style="display:none"></div>
+    <div id="orcamentoCorpo"></div>
+  </div>
+</div>
 
 <main class="main">
 
@@ -721,6 +736,7 @@
 </main>
 
 <script src="markdown.js" defer></script>
+<script src="orcamento.js" defer></script>
 <script src="app.js" defer></script>
 
 <!-- Modal de importação de .docx -->

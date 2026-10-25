@@ -342,3 +342,35 @@ input[type="file"]:hover { border-color: #7B68D4; background: #f3f0ff; }
   font-size: .85rem;
   color: #166534;
 }
+
+/* ── Orçamento e custo (governança de custo) ── */
+.orcamento-badge { margin-left: 8px; cursor: pointer; color: inherit; font-family: inherit; }
+.orcamento-badge:hover { background: rgba(255,255,255,.22); }
+.orcamento-badge.orcamento-alerta { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+.orcamento-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(20, 15, 40, .55);
+  align-items: flex-start; justify-content: center;
+  padding: 48px 16px; overflow-y: auto;
+}
+.orcamento-painel {
+  background: #fff; color: #1f1b3a; width: min(720px, 100%);
+  border-radius: 12px; padding: 20px 24px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.35);
+}
+.orcamento-topo { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.orcamento-topo h2 { font-size: 1.1rem; margin: 0; }
+.orcamento-tabela { width: 100%; border-collapse: collapse; font-size: .85rem; margin-bottom: 12px; }
+.orcamento-tabela th, .orcamento-tabela td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+.orcamento-tabela .orcamento-sub td { color: #555; font-size: .8rem; }
+.orcamento-avisos { margin: 0 0 12px 18px; padding: 0; font-size: .8rem; color: #92400e; }
+.orcamento-form { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 8px; }
+.orcamento-form label, .orcamento-decisao-acoes label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; font-weight: 600; }
+.orcamento-form input, .orcamento-form select, .orcamento-decisao-acoes input, .orcamento-decisao-acoes select {
+  padding: 5px 8px; border: 1px solid #c9c4e8; border-radius: 6px; font: inherit; min-width: 110px;
+}
+.orcamento-decisao { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+.orcamento-decisao h3 { margin: 0 0 6px; font-size: 1rem; color: #92400e; }
+.orcamento-decisao p { margin: 0 0 10px; font-size: .88rem; }
+.orcamento-decisao-acoes { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+@media (max-width: 640px) { .orcamento-overlay { padding: 16px 8px; } .orcamento-painel { padding: 14px; } }

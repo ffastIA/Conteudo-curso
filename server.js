@@ -361,7 +361,14 @@ const MAX_TOKENS_AULA = 16_000;
 // por limite de tokens antes de desistir e preservar o conteúdo anterior.
 const MAX_CONTINUACOES_MELHORIA = 2;
 
+// Erros da governança de custo (pausa por orçamento, disjuntor): nunca são retentados nem
+// engolidos por laços que toleram falhas — interrompem a etapa para o usuário decidir.
+function ehErroDeGovernanca(err) {
+  return err?.code === 'ORCAMENTO_EXCEDIDO' || err?.code === 'DISJUNTOR_DISPARADO';
+}
+
 function isRetriable(err) {
+  if (ehErroDeGovernanca(err)) return false;
   if (err instanceof OpenAI.AuthenticationError) return false;
   if (err instanceof OpenAI.BadRequestError) return false;
   if (err?.configInvalida) return false;
@@ -3368,7 +3375,11 @@ app.get('/api/search', async (req, res) => {
       };
     } else {
       const ano = new Date().getFullYear();
-      const consultas = skills.planejarConsultasPesquisa({ nome, nivel, publico, topicos, bnccAtivo: !!sess.bncc?.ativo, ano });
+      // O perfil de custo define quantas consultas planejadas entram (Econômico 2, Padrão 4, Premium 5);
+      // a consulta extra de referências educacionais (BNCC ativa) não conta no limite.
+      const consultasPlanejadas = skills.planejarConsultasPesquisa({ nome, nivel, publico, topicos, bnccAtivo: !!sess.bncc?.ativo, ano });
+      const limiteConsultas = (governanca.perfil(sess).consultasPesquisa || consultasPlanejadas.length) + (sess.bncc?.ativo ? 1 : 0);
+      const consultas = consultasPlanejadas.slice(0, Math.max(1, limiteConsultas));
       const fontes = [];
       const fontePorUrl = new Map();
       const achados = [];
@@ -3381,7 +3392,9 @@ app.get('/api/search', async (req, res) => {
         const consulta = consultas[i];
         observabilidade.definirContexto({ consulta: consulta.id });
         send(res, { type: 'progress', message: `Consulta ${i + 1}/${consultas.length}: ${consulta.titulo}...` });
+        governanca.aplicarDegradacao(sess); // entre unidades de trabalho
         const skill = skills.pesquisaWebSkill({ ...skillArgs, consulta, ano });
+        skill.searchContextSize = governanca.perfil(sess).contextoBusca || skill.searchContextSize;
         modelo = skill.model;
 
         let completion;
@@ -3392,7 +3405,7 @@ app.get('/api/search', async (req, res) => {
           });
         } catch (err) {
           // Erro de configuração/chave afeta todas as consultas: interrompe já.
-          if (err.configInvalida || err instanceof OpenAI.AuthenticationError || client.disconnected) throw err;
+          if (err.configInvalida || err instanceof OpenAI.AuthenticationError || client.disconnected || ehErroDeGovernanca(err)) throw err;
           ultimoErro = err;
           send(res, { type: 'progress', message: `⚠️ Consulta "${consulta.titulo}" falhou: ${err.message}` });
           continue;
@@ -3830,7 +3843,10 @@ function dossieDaAula(sess, aula, aulas) {
   if (modulos?.pulada) return { modo: 'sem_web', achados: [], fontes: [] };
   if (!modulos?.completo) return { modo: 'nenhum', achados: [], fontes: [] };
   const geral = (() => { const m = sess.pesquisaMeta || lerPesquisaMeta(sess); return m?.status === 'web' ? m : null; })();
-  const { achados, fontes } = fundamentacao.selecionarFontesParaAula({ aula, aulas, pesquisaModulos: modulos, pesquisaGeral: geral });
+  const { achados, fontes } = fundamentacao.selecionarFontesParaAula({
+    aula, aulas, pesquisaModulos: modulos, pesquisaGeral: geral,
+    maxAchados: governanca.perfil(sess).achadosDossie || fundamentacao.MAX_ACHADOS_POR_AULA // o perfil de custo define quantos achados entram
+  });
   return fontes.length ? { modo: 'web', achados, fontes } : { modo: 'nenhum', achados: [], fontes: [] };
 }
 
@@ -3970,10 +3986,12 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
       if (pesquisadosAgora > 0 && PESQUISA_MODULOS_PAUSA_MS > 0) await new Promise(r => setTimeout(r, PESQUISA_MODULOS_PAUSA_MS));
       send(res, { type: 'progress', message: `Pesquisando módulo ${k + 1}/${modulos.length}: ${modulo.titulo}...` });
       observabilidade.definirContexto({ modulo: modulo.titulo });
+      governanca.aplicarDegradacao(sess); // entre unidades de trabalho
       const skill = skills.pesquisaModuloSkill({
         nome, nivel, publico, modalidade, modulo, ano,
         metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess)
       });
+      skill.searchContextSize = governanca.perfil(sess).contextoBusca || skill.searchContextSize;
 
       let completion;
       try {
@@ -3982,7 +4000,7 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
           onRetry: () => send(res, { type: 'progress', message: 'Reconectando...' })
         });
       } catch (err) {
-        if (err.configInvalida || err instanceof OpenAI.AuthenticationError || client.disconnected) throw err;
+        if (err.configInvalida || err instanceof OpenAI.AuthenticationError || client.disconnected || ehErroDeGovernanca(err)) throw err;
         falhas.push({ titulo: modulo.titulo, erro: err.message });
         send(res, { type: 'progress', message: `⚠️ Módulo "${modulo.titulo}" falhou: ${err.message}` });
         continue;
@@ -4160,7 +4178,7 @@ function notasAulasTexto(sess) {
 // o gate avalia por seção alterada (pares emparelhados, sem cortar) e agrega
 // por média ponderada, mais uma checagem global de coerência com o resumo de TODAS
 // as seções. Mesmo modelo de nota composta; EPSILON_ACEITE e a regra [user] intactos.
-async function julgarVersoes({ sess, aula, aulas, textoAntigo, textoMesclado, planoAulaTrecho, ementa, planoEnsino, client }) {
+async function julgarVersoes({ sess, aula, aulas, textoAntigo, textoMesclado, planoAulaTrecho, ementa, planoEnsino, client, prefixo = 'score' }) {
   const limite = avaliacao.limiteTokensEntrada();
   const alter = avaliacao.secoesAlteradas(textoAntigo, textoMesclado);
   const base = {
@@ -4179,7 +4197,7 @@ async function julgarVersoes({ sess, aula, aulas, textoAntigo, textoMesclado, pl
 
   const unica = skills.scoreAulaSkill({ ...base, textoOriginal: textoAntigo, textoCandidato: textoMesclado, secoesAlteradas: alter.alteradas.map(a => a.titulo) });
   if (avaliacao.estimarTokens(unica.system + unica.user) <= limite) {
-    const julgamento = await chamar(unica, 'score.pareado');
+    const julgamento = await chamar(unica, `${prefixo}.pareado`);
     const vistas = [...new Set([...avaliacao.dividirEmPartes(textoAntigo, Number.MAX_SAFE_INTEGER).map(p => p.secao), ...alter.titulos])];
     return { julgamento, modo: 'unica', secoesVistas: vistas, secoesAlteradas: alter.alteradas.map(a => a.titulo) };
   }
@@ -4195,7 +4213,7 @@ async function julgarVersoes({ sess, aula, aulas, textoAntigo, textoMesclado, pl
         textoOriginal: par.original || '(esta seção não existia na versão original)',
         textoCandidato: par.candidato || '(esta seção foi removida na versão candidata)'
       });
-      const j = await chamar(sk, 'score.pareado-secao');
+      const j = await chamar(sk, `${prefixo}.pareado-secao`);
       itens.push({ original: j.original, candidato: j.candidato, peso: Math.max(avaliacao.contarPalavras(par.original), avaliacao.contarPalavras(par.candidato)) });
     }
     vistas.push(sec.titulo);
@@ -4204,7 +4222,7 @@ async function julgarVersoes({ sess, aula, aulas, textoAntigo, textoMesclado, pl
     skills.coerenciaGlobalSkill({
       aulaTitulo: aula.titulo, aulaObjetivos: aula.objetivos,
       resumoOriginal: avaliacao.resumoSecoes(textoAntigo), resumoCandidato: avaliacao.resumoSecoes(textoMesclado)
-    }), 'score.coerencia-global');
+    }), `${prefixo}.coerencia-global`);
   const agregar = (lado) => {
     const c = avaliacao.mediaPonderadaCriterios(itens.map(it => ({ criterios: it[lado], peso: it.peso })));
     const global = typeof coerencia[lado] === 'number' ? coerencia[lado] : null;
@@ -4330,15 +4348,42 @@ function lerJsonSeguro(arquivo) {
 
 // Gera um texto em streaming; se terminar com finish_reason 'length', pede
 // continuação (até MAX_CONTINUACOES_CONTEUDO vezes) e concatena.
-async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_TOKENS_AULA, nome } = {}) {
+// Guarda em aulaNN_conteudo.partial.txt o que foi gerado de uma aula interrompida pela
+// governança (pausa por orçamento ou disjuntor): nunca vai para o arquivo oficial.
+function guardarParcialAula(sess, numeroAula, texto) {
+  if (!texto || !String(texto).trim()) return;
+  try {
+    const arquivo = path.join(courseScrDir(sess), `aula${String(numeroAula).padStart(2, '0')}_conteudo.partial.txt`);
+    fs.writeFileSync(arquivo, texto, 'utf-8');
+  } catch (err) {
+    logger.warn(`[orcamento] não foi possível gravar o texto parcial da aula ${numeroAula}: ${err.message}`);
+  }
+}
+
+// Estimativa (esperada, calibrada) do custo de UMA aula de conteúdo, para o gatilho de custo do disjuntor.
+function estimativaDaAula(sess) {
+  try {
+    const modelo = modelosConfig.resolverModelo('redacao', { modeloRedacao: governanca.perfil(sess).modeloRedacao, original: skills.modeloConteudo() });
+    const est = custo.estimarEtapa('conteudo', {
+      unidades: 1,
+      modelos: { pesquisa: skills.modeloPesquisa(), economia: modelo },
+      fator: governanca.fatorCalibracao(sess, 'conteudo')
+    });
+    return est?.custoUsd?.esperado || 0;
+  } catch { return 0; }
+}
+
+async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_TOKENS_AULA, nome, governar = false } = {}) {
   const meta = { maxTokens, silenciarTruncamento: true, nome };
   let texto = await streamSkillToClient(res, skill, sess, meta, client);
   let tokens = meta.completionTokens || 0;
   let finishReason = meta.finishReason;
   let continuacoes = 0;
-  while (finishReason === 'length' && continuacoes < MAX_CONTINUACOES_CONTEUDO && !client?.disconnected) {
+  // Com a governança ligada (conteúdo das aulas) o limite pode ser ampliado pelo usuário após o disparo.
+  const limiteContinuacoes = governar ? governanca.limiteContinuacoes(sess, MAX_CONTINUACOES_CONTEUDO) : MAX_CONTINUACOES_CONTEUDO;
+  while (finishReason === 'length' && continuacoes < limiteContinuacoes && !client?.disconnected) {
     continuacoes++;
-    send(res, { type: 'progress', message: `Resposta cortada — solicitando continuação (${continuacoes}/${MAX_CONTINUACOES_CONTEUDO})...` });
+    send(res, { type: 'progress', message: `Resposta cortada — solicitando continuação (${continuacoes}/${limiteContinuacoes})...` });
     const metaCont = { maxTokens, silenciarTruncamento: true, nome: nome ? `${nome}.continuar` : undefined };
     const contSkill = {
       ...skill,
@@ -4360,6 +4405,14 @@ async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_T
     finishReason = metaCont.finishReason;
   }
   const truncada = finishReason === 'length';
+  if (truncada && governar && !client?.disconnected) {
+    // Continuações esgotadas sem terminar: o disjuntor interrompe e o usuário decide.
+    const c = observabilidade.contexto();
+    const unidade = governanca.rotuloUnidade() || (c?.meta?.aula ? `aula ${c.meta.aula}` : (c?.etapa || 'etapa'));
+    const erro = governanca.gatilhoContinuacoes(sess, unidade);
+    erro.parcial = texto;
+    throw erro;
+  }
   if (truncada) {
     send(res, { type: 'warning', text: 'Resposta truncada pelo limite de tokens mesmo após continuação — o trecho gerado será tratado como incompleto.' });
   }
@@ -4406,49 +4459,56 @@ async function gerarAulaPorSecoes({ res, sess, client, ctxSkill, aula, metaPalav
   let tokens = 0;
   let continuacoes = 0;
 
-  for (let n = 0; n < secoes.length; n++) {
-    if (client.disconnected) break;
-    const s = secoes[n];
-    observabilidade.definirContexto({ secao: s.titulo });
-    send(res, { type: 'progress', message: `Aula ${i + 1}: seção ${n + 1} de ${secoes.length} — ${s.titulo}` });
-    const resumoEscritas = secoes.slice(0, n).map(a => `- ${a.titulo}: ${resumirSecao(a.texto)}`).join('\n');
-    const sk = skills.secaoConteudoSkill({ ...ctxSkill, secao: s, secoesPlanejadas: titulos, resumoEscritas, metaPalavras: s.meta });
-    if (n > 0) send(res, { type: 'token', text: '\n\n' });
-    const r = await gerarComContinuacao(res, sk, sess, client, { maxTokens: SECAO_MAX_TOKENS, nome: 'conteudo.secao' });
-    s.texto = comTituloDaSecao(r.texto, s.titulo);
-    s.truncada = r.truncada;
-    tokens += r.completionTokens;
-    continuacoes += r.continuacoes;
-  }
-  observabilidade.definirContexto({ secao: undefined });
-
-  // Passada de expansão: refaz só as seções abaixo de 80% da meta.
-  // (Aula já incompleta — truncada ou com seção ausente — não gasta chamadas expandindo.)
-  let verificacao = conteudoSecoes.verificarCompletude({ secoes });
-  const paraExpandir = verificacao.estado === 'incompleta' ? [] : verificacao.curtas;
-  for (const titulo of paraExpandir) {
-    if (client.disconnected) break;
-    const s = secoes.find(x => x.titulo === titulo);
-    send(res, { type: 'progress', message: `Aula ${i + 1}: expandindo a seção curta "${titulo}"...` });
-    const sk = skills.expandirSecaoSkill({
-      secao: s, textoAtual: s.texto, metaPalavras: s.meta, palavrasAtuais: conteudoSecoes.contarPalavras(s.texto),
-      aulaTitulo: aula.titulo, nivel: ctxSkill.nivel, metodologia: ctxSkill.metodologia, bnccContext: ctxSkill.bnccContext
-    });
-    observabilidade.definirContexto({ secao: titulo });
-    const comp = await chamarOpenAI('chat', {
-      model: sk.model, max_tokens: SECAO_MAX_TOKENS,
-      messages: [{ role: 'system', content: sk.system }, { role: 'user', content: sk.user }]
-    }, { signal: combineSignals(client.signal, makeAbortSignal(90_000)) }, { nome: 'conteudo.expandir-secao' });
-    addUsage(comp.usage, sess);
-    tokens += comp.usage?.completion_tokens || 0;
-    const novo = comTituloDaSecao(comp.choices[0]?.message?.content || '', titulo);
-    // Só aceita a expansão se terminou normalmente e realmente aumentou a seção.
-    if (comp.choices[0]?.finish_reason !== 'length' && conteudoSecoes.contarPalavras(novo) > conteudoSecoes.contarPalavras(s.texto)) {
-      s.texto = novo;
+  let verificacao;
+  try {
+    for (let n = 0; n < secoes.length; n++) {
+      if (client.disconnected) break;
+      const s = secoes[n];
+      observabilidade.definirContexto({ secao: s.titulo });
+      send(res, { type: 'progress', message: `Aula ${i + 1}: seção ${n + 1} de ${secoes.length} — ${s.titulo}` });
+      const resumoEscritas = secoes.slice(0, n).map(a => `- ${a.titulo}: ${resumirSecao(a.texto)}`).join('\n');
+      const sk = skills.secaoConteudoSkill({ ...ctxSkill, secao: s, secoesPlanejadas: titulos, resumoEscritas, metaPalavras: s.meta });
+      if (n > 0) send(res, { type: 'token', text: '\n\n' });
+      const r = await gerarComContinuacao(res, sk, sess, client, { maxTokens: SECAO_MAX_TOKENS, nome: 'conteudo.secao', governar: true });
+      s.texto = comTituloDaSecao(r.texto, s.titulo);
+      s.truncada = r.truncada;
+      tokens += r.completionTokens;
+      continuacoes += r.continuacoes;
     }
+    observabilidade.definirContexto({ secao: undefined });
+
+    // Passada de expansão: refaz só as seções abaixo de 80% da meta.
+    // (Aula já incompleta — truncada ou com seção ausente — não gasta chamadas expandindo.)
+    verificacao = conteudoSecoes.verificarCompletude({ secoes });
+    const paraExpandir = verificacao.estado === 'incompleta' ? [] : verificacao.curtas;
+    for (const titulo of paraExpandir) {
+      if (client.disconnected) break;
+      const s = secoes.find(x => x.titulo === titulo);
+      send(res, { type: 'progress', message: `Aula ${i + 1}: expandindo a seção curta "${titulo}"...` });
+      const sk = skills.expandirSecaoSkill({
+        secao: s, textoAtual: s.texto, metaPalavras: s.meta, palavrasAtuais: conteudoSecoes.contarPalavras(s.texto),
+        aulaTitulo: aula.titulo, nivel: ctxSkill.nivel, metodologia: ctxSkill.metodologia, bnccContext: ctxSkill.bnccContext
+      });
+      observabilidade.definirContexto({ secao: titulo });
+      const comp = await chamarOpenAI('chat', {
+        model: sk.model, max_tokens: SECAO_MAX_TOKENS,
+        messages: [{ role: 'system', content: sk.system }, { role: 'user', content: sk.user }]
+      }, { signal: combineSignals(client.signal, makeAbortSignal(90_000)) }, { nome: 'conteudo.expandir-secao' });
+      addUsage(comp.usage, sess);
+      tokens += comp.usage?.completion_tokens || 0;
+      const novo = comTituloDaSecao(comp.choices[0]?.message?.content || '', titulo);
+      // Só aceita a expansão se terminou normalmente e realmente aumentou a seção.
+      if (comp.choices[0]?.finish_reason !== 'length' && conteudoSecoes.contarPalavras(novo) > conteudoSecoes.contarPalavras(s.texto)) {
+        s.texto = novo;
+      }
+    }
+    observabilidade.definirContexto({ secao: undefined });
+    verificacao = conteudoSecoes.verificarCompletude({ secoes });
+  } catch (err) {
+    // Pausa por orçamento ou disjuntor no meio da aula: o que já foi escrito vai para o .partial (nunca para o oficial).
+    if (ehErroDeGovernanca(err)) guardarParcialAula(sess, i + 1, [...secoes.map(x => x.texto), err.parcial].filter(Boolean).join('\n\n'));
+    throw err;
   }
-  observabilidade.definirContexto({ secao: undefined });
-  verificacao = conteudoSecoes.verificarCompletude({ secoes });
 
   return {
     texto: secoes.map(s => s.texto).join('\n\n'),
@@ -4463,7 +4523,13 @@ async function gerarAulaPorSecoes({ res, sess, client, ctxSkill, aula, metaPalav
 
 async function gerarAulaPassadaUnica({ res, sess, client, ctxSkill }) {
   const skill = skills.conteudoSkill(ctxSkill);
-  const r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: MAX_TOKENS_AULA, nome: 'conteudo.aula' });
+  let r;
+  try {
+    r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: MAX_TOKENS_AULA, nome: 'conteudo.aula', governar: true });
+  } catch (err) {
+    if (ehErroDeGovernanca(err)) guardarParcialAula(sess, ctxSkill.index + 1, err.parcial);
+    throw err;
+  }
   const verificacao = conteudoSecoes.verificarCompletude({ texto: r.texto, truncada: r.truncada });
   return {
     texto: r.texto,
@@ -4577,6 +4643,15 @@ app.get('/api/conteudo', async (req, res) => {
 
       if (client.disconnected) return;
       observabilidade.definirContexto({ aula: i + 1 });
+      governanca.aplicarDegradacao(sess); // perfil só muda entre aulas
+      // Regenerar de propósito (aulas alvo ou "refazer") desfaz um "pular" anterior.
+      if ((alvo && alvo.has(i)) || refazer) governanca.limparPulada(sess, `aula ${i + 1}`);
+      if (governanca.unidadePulada(sess, `aula ${i + 1}`)) {
+        sess.estadoAulas[numero] = sess.estadoAulas[numero] || { estado: 'incompleta', motivos: ['pulada por decisão do usuário após o disjuntor'], geradoEm: new Date().toISOString() };
+        send(res, { type: 'warning', text: `Aula ${i + 1} pulada por decisão do usuário — continua INCOMPLETA. Regenere a aula para concluí-la.` });
+        resultados[i] = { heading, texto: '', entrada: { ...entradaBase, texto: '' } };
+        return;
+      }
 
       send(res, { type: 'progress', message: `Gerando aula ${i + 1} de ${aulas.length}: ${titulo}` });
       send(resAula, { type: 'token', text: heading });
@@ -4601,14 +4676,22 @@ app.get('/api/conteudo', async (req, res) => {
 
       let resultado = null;
       try {
-        if (conteudoModo() === 'secoes') {
-          resultado = await gerarAulaPorSecoes({ res: resAula, sess, client, ctxSkill, aula, metaPalavrasAula });
-          if (!resultado) {
-            send(res, { type: 'warning', text: `Aula ${i + 1}: o roteiro das seções veio inválido — gerando em passada única.` });
+        // A unidade de trabalho mede o custo real da aula contra a estimativa (gatilho de custo do disjuntor).
+        resultado = await governanca.emUnidade(sess, { tipo: 'aula', numero: i + 1, estimativaUsd: estimativaDaAula(sess) }, async () => {
+          let r = null;
+          if (conteudoModo() === 'secoes') {
+            r = await gerarAulaPorSecoes({ res: resAula, sess, client, ctxSkill, aula, metaPalavrasAula });
+            if (!r) {
+              send(res, { type: 'warning', text: `Aula ${i + 1}: o roteiro das seções veio inválido — gerando em passada única.` });
+            }
           }
-        }
-        if (!resultado) resultado = await gerarAulaPassadaUnica({ res: resAula, sess, client, ctxSkill });
+          return r || gerarAulaPassadaUnica({ res: resAula, sess, client, ctxSkill });
+        });
       } catch (err) {
+        if (err?.code === 'DISJUNTOR_DISPARADO') {
+          sess.estadoAulas[numero] = { estado: 'incompleta', motivos: [`disjuntor: ${err.detalhes?.motivo}`], geradoEm: new Date().toISOString() };
+          saveProject(sess);
+        }
         if (client.disconnected) {
           logger.warn(`[sse] cliente desconectou durante a geração da aula ${i + 1} — interrompendo /api/conteudo`);
           return;
@@ -5200,6 +5283,7 @@ app.get('/api/revisao-qualidade', async (req, res) => {
   try {
     for (let i = 0; i < aulas.length; i++) {
       if (client.disconnected) break;
+      governanca.aplicarDegradacao(sess); // perfil só muda entre aulas
 
       const aula = aulas[i];
       send(res, {
@@ -5480,6 +5564,29 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
   const client = clientAbort(res);
   send(res, { type: 'progress', message: 'Iniciando aplicação de melhorias...' });
 
+  // Governança (antes de criar o snapshot do ciclo e de gastar): disparo anterior sem decisão,
+  // limite de ciclos do perfil e ciclo anterior sem o ganho mínimo.
+  try {
+    const pendente = governanca.bloqueioPendente(sess);
+    if (pendente) throw pendente;
+    const ciclosGov = readScoreHistorico(sess).ciclos.filter(c => (c.formulaVersao || '1') === avaliacao.FORMULA_VERSAO);
+    const limiteCiclos = governanca.gatilhoLimiteCiclos(sess, ciclosGov.length);
+    if (limiteCiclos) throw limiteCiclos;
+    const ultimoGov = ciclosGov[ciclosGov.length - 1];
+    if (ultimoGov && typeof ultimoGov.ganhoMedio === 'number') {
+      if (governanca.unidadePulada(sess, 'ciclo de melhoria')) {
+        governanca.limparPulada(sess, 'ciclo de melhoria'); // decisão de pular vale uma vez
+      } else {
+        const g = governanca.gatilhoSemGanho(sess, ultimoGov.ganhoMedio);
+        if (g.aviso) send(res, { type: 'warning', text: `O último ciclo elevou a nota em apenas ${g.ganhoMedio} (mínimo ${g.ganhoMin}); no perfil Premium o ciclo segue, mas o ganho é pequeno.` });
+        if (g.interrompe) throw g.erro;
+      }
+    }
+  } catch (err) {
+    send(res, { type: 'error', message: err.message });
+    return res.end();
+  }
+
   const observacoes = sess.observacoesMelhorias ||
     sess.conteudoPorAula.map(a => ({ titulo: a.titulo, observacoes: '' }));
   const aulas = sess.conteudoPorAula;
@@ -5525,6 +5632,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
   try {
     for (let i = 0; i < aulas.length; i++) {
       if (client.disconnected) break;
+      governanca.aplicarDegradacao(sess); // perfil só muda entre aulas
 
       const aula = aulas[i];
       const obs = observacoes[i]?.observacoes || '';
@@ -5631,6 +5739,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
           meta.finishReason = cont.choices[0]?.finish_reason;
           logger.info(`[melhorias] aula ${i + 1}: continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA} finish=${meta.finishReason || '?'}`);
         } catch (e) {
+          if (ehErroDeGovernanca(e)) throw e;
           logger.error(`[melhorias] aula ${i + 1}: falha na continuação ${tentativa}/${MAX_CONTINUACOES_MELHORIA}:`, e.message);
           break;
         }
@@ -5702,24 +5811,38 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         try {
           // Juiz pareado com a aula INTEIRA: as duas versões completas quando cabem; senão
           // por seção alterada + checagem global de coerência (nada é cortado).
-          const julgado = await julgarVersoes({
+          const argsJulgar = {
             sess, aula, aulas, textoAntigo, textoMesclado,
             planoAulaTrecho: extractLessonBlock(planoAulaScoreRef, i),
             ementa: ementaScoreRef, planoEnsino: planoEnsinoScoreRef, client
-          });
-          const julgamento = julgado.julgamento;
-          modoJulgamento = julgado.modo;
-          secoesVistas = julgado.secoesVistas;
+          };
+          let julgado = await julgarVersoes(argsJulgar);
 
           const determOriginal = computeScoreDeterministico(textoAntigo, aula, maiorSobreposicao(textoAntigo), fundamentacaoDaAula(sess, aula, aulas, textoAntigo)).determ;
           const determCandidato = computeScoreDeterministico(textoMesclado, aula, maiorSobreposicao(textoMesclado), fundamentacaoDaAula(sess, aula, aulas, textoMesclado)).determ;
-          scoreOriginal = computeScoreComposto(julgamento.original, determOriginal).score;
-          scoreCandidato = computeScoreComposto(julgamento.candidato, determCandidato).score;
+          let compOriginal = computeScoreComposto(julgado.julgamento.original, determOriginal);
+          let compCandidato = computeScoreComposto(julgado.julgamento.candidato, determCandidato);
+
+          // Juiz final em cascata (governança de custo): o modelo forte só reavalia os casos duvidosos —
+          // ganho perto do limiar de aceite ou rubrica e determinístico divergentes. Sem um modelo forte
+          // distinto do da primeira passada (OPENAI_JUDGE_MODEL) a reavaliação não traria nada.
+          if (modelosConfig.modeloJuiz() !== modelosConfig.modeloAvaliacao()
+              && governanca.decidirJuizForte(sess, { ganho: compCandidato.score - compOriginal.score, divergencia: Math.abs(compCandidato.rubricaLLM - determCandidato) })) {
+            send(res, { type: 'progress', message: `Aula ${i + 1}: caso duvidoso — consultando o juiz final...` });
+            julgado = await julgarVersoes({ ...argsJulgar, prefixo: 'score.juiz-final' });
+            compOriginal = computeScoreComposto(julgado.julgamento.original, determOriginal);
+            compCandidato = computeScoreComposto(julgado.julgamento.candidato, determCandidato);
+          }
+          modoJulgamento = julgado.modo;
+          secoesVistas = julgado.secoesVistas;
+          scoreOriginal = compOriginal.score;
+          scoreCandidato = compCandidato.score;
           aceita = scoreCandidato >= scoreOriginal + EPSILON_ACEITE;
           observabilidade.registrarScore('score_original', scoreOriginal, { comentario: `Aula ${i + 1}` });
           observabilidade.registrarScore('score_candidato', scoreCandidato, { comentario: `Aula ${i + 1}` });
           logger.info(`[melhorias] aula ${i + 1}: score original=${scoreOriginal} candidato=${scoreCandidato} aceita=${aceita}`);
         } catch (e) {
+          if (ehErroDeGovernanca(e)) throw e;
           logger.error(`[melhorias] aula ${i + 1}: falha no julgamento de score:`, e.message);
           aceita = false; // não avaliada — mesma política de preservação do conteúdo anterior
         }
@@ -5847,6 +5970,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
             planoAula = replaceLessonBlock(planoAula, i, corpo);
             realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): seção do plano realinhada.`);
           } catch (e) {
+            if (ehErroDeGovernanca(e)) throw e;
             logger.error(`Erro ao realinhar plano da aula ${i + 1}:`, e.message);
             realinhamentoLog.push(`Aula ${i + 1} (${aula.titulo}): falha no realinhamento (${e.message}) — seção mantida.`);
           }
@@ -5862,6 +5986,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
         send(res, { type: 'progress', message: 'Plano de aula realinhado com o conteúdo melhorado' });
       }
     } catch (e) {
+      if (ehErroDeGovernanca(e)) throw e;
       logger.error('Erro na fase de realinhamento:', e.message);
       realinhamentoLog.push(`Falha geral no realinhamento: ${e.message} — melhorias já aplicadas foram preservadas.`);
     }

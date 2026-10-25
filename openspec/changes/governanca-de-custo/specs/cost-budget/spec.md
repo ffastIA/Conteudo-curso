@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Tetos de orçamento por escopo
-O sistema SHALL aceitar tetos de gasto em USD para três escopos: projeto (`ORCAMENTO_MAX_USD`), dia (`ORCAMENTO_DIA_MAX_USD`) e etapa (`ORCAMENTO_ETAPA_MAX_USD`). `ORCAMENTO_USD` SHALL continuar aceita como sinônimo de `ORCAMENTO_MAX_USD`, com um aviso de depreciação único no log. Um escopo sem teto SHALL não aplicar nenhuma trava, e valores não numéricos, zero ou negativos SHALL ser tratados como "sem teto". Sem nenhum teto configurado, o comportamento do sistema SHALL ser idêntico ao anterior a esta capability.
+O sistema SHALL aceitar tetos de gasto em USD para três escopos: projeto (`ORCAMENTO_MAX_USD`), dia (`ORCAMENTO_DIA_MAX_USD`) e etapa (`ORCAMENTO_ETAPA_MAX_USD`). `ORCAMENTO_USD` SHALL continuar aceita como sinônimo de `ORCAMENTO_MAX_USD`, com um aviso de depreciação único no log. Um escopo sem teto SHALL não aplicar nenhuma trava, e valores não numéricos, zero ou negativos SHALL ser tratados como "sem teto". Sem nenhum teto configurado, nenhuma chamada SHALL ser reservada com efeito, barrada, alertada nem ter o perfil degradado por orçamento, e o perfil padrão não SHALL impor limite de ciclos de melhoria; os gatilhos do disjuntor por unidade de trabalho (`cost-circuit-breaker`) continuam ativos.
 
 #### Scenario: Teto por projeto
 - **WHEN** `ORCAMENTO_MAX_USD=5` e o gasto acertado do projeto é US$ 4,99 com uma chamada estimada em US$ 0,05

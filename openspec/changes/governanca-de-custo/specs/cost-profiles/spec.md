@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Perfis de custo
-O sistema SHALL oferecer os perfis Econômico, Padrão e Premium, escolhidos por `CUSTO_PERFIL` (padrão `padrao`) e guardados por projeto. Cada perfil SHALL ser um pacote de parâmetros lido de `config/perfis-custo.json` em tempo de execução, contendo o número de consultas de pesquisa por módulo, o contexto da busca web, o papel do modelo de redação, o máximo de ciclos de melhoria, o número de fontes do dossiê por seção e a política do juiz final. Um perfil desconhecido em `CUSTO_PERFIL` SHALL cair no `padrao` com um aviso. Os valores do arquivo SHALL ser configuráveis sem alterar o código.
+O sistema SHALL oferecer os perfis Econômico, Padrão e Premium, escolhidos por `CUSTO_PERFIL` (padrão `padrao`) e guardados por projeto. Cada perfil SHALL ser um pacote de parâmetros lido de `config/perfis-custo.json` em tempo de execução, contendo o número de consultas de pesquisa por módulo, o contexto da busca web, o papel do modelo de redação, o máximo de ciclos de melhoria, o número de achados da pesquisa que entram no dossiê de cada aula (`achadosDossie`; o padrão 6 mantém o comportamento anterior) e a política do juiz final. A consulta extra de referências educacionais (BNCC ativa) SHALL NOT contar no número de consultas. O máximo de ciclos SHALL ser imposto somente quando houver algum teto configurado ou o perfil tiver sido escolhido de propósito (`CUSTO_PERFIL` ou a interface); sem isso os ciclos continuam ilimitados. Um perfil desconhecido em `CUSTO_PERFIL` SHALL cair no `padrao` com um aviso. Os valores do arquivo SHALL ser configuráveis sem alterar o código.
 
 #### Scenario: Perfil padrão
 - **WHEN** `CUSTO_PERFIL` não está definida
@@ -10,6 +10,10 @@ O sistema SHALL oferecer os perfis Econômico, Padrão e Premium, escolhidos por
 #### Scenario: Econômico reduz o gasto por aula
 - **WHEN** o perfil ativo é Econômico
 - **THEN** a pesquisa por módulo usa o número de consultas do Econômico, o contexto de busca baixo e no máximo um ciclo de melhoria
+
+#### Scenario: Máximo de ciclos só com teto ou perfil escolhido
+- **WHEN** o projeto já tem 2 ciclos de melhoria, não há teto e o perfil é o padrão não escolhido
+- **THEN** um novo ciclo é permitido; com o perfil Econômico (máx. 1 ciclo) escolhido de propósito, o disjuntor barra o ciclo com o motivo `limite_ciclos`
 
 #### Scenario: Perfil inválido
 - **WHEN** `CUSTO_PERFIL=ultra`
@@ -77,7 +81,7 @@ Na inicialização, o sistema SHALL conferir cada papel contra a tabela de capac
 - **THEN** nenhum aviso é emitido
 
 ### Requirement: Juiz final em cascata
-O juiz forte (papel `juiz final`) SHALL ser acionado somente quando o ganho de nota do candidato ficar a até `JUIZ_MARGEM_GANHO` do limiar de aceitação existente (`EPSILON_CONVERGENCIA`) ou quando a nota da rubrica e o componente determinístico divergirem em mais que `JUIZ_DIVERGENCIA_MAX`. Casos claramente bons ou claramente ruins SHALL ser decididos sem o juiz forte. O perfil Premium SHALL acionar o juiz forte sempre e o Econômico nunca.
+O juiz forte (papel `juiz final`) SHALL ser acionado somente quando o ganho de nota do candidato ficar a até `JUIZ_MARGEM_GANHO` do limiar de aceitação existente (`EPSILON_CONVERGENCIA`) ou quando a nota da rubrica e o componente determinístico divergirem em mais que `JUIZ_DIVERGENCIA_MAX`. Casos claramente bons ou claramente ruins SHALL ser decididos sem o juiz forte. O perfil Premium SHALL acionar o juiz forte sempre e o Econômico nunca. Quando o modelo do juiz final for o mesmo da avaliação de primeira passada, o sistema SHALL NOT refazer o julgamento, pois não traria informação nova.
 
 #### Scenario: Caso claramente bom
 - **WHEN** o ganho de nota do candidato está bem acima do limiar e a rubrica concorda com o determinístico

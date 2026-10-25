@@ -13,6 +13,9 @@ saidas/
 # Ambiente virtual Python
 .venv/
 
+# Gasto diário da governança de custo (estado local da máquina)
+.uso-diario.json
+
 # Cobertura de testes
 coverage/
 

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Gatilhos do disjuntor por unidade de trabalho
-Além das falhas consecutivas da API, o disjuntor SHALL disparar por quatro gatilhos avaliados por unidade de trabalho (módulo ou aula): (1) o custo real de uma aula passa de `DISJUNTOR_FATOR_CUSTO` (padrão 2) vezes a estimativa dela; (2) o mesmo código de erro se repete `DISJUNTOR_ERROS_SEGUIDOS` (padrão 3) vezes em sequência; (3) um ciclo de melhoria termina com ganho médio menor que `DISJUNTOR_GANHO_MIN` (padrão igual a `EPSILON_CONVERGENCIA`); (4) as continuações de uma unidade esgotam `MAX_CONTINUACOES_*` sem terminar. Os limites SHALL ser configuráveis por variável. O gatilho (3) SHALL interromper a etapa nos perfis Econômico e Padrão e SHALL apenas avisar no Premium. Sem teto de orçamento configurado, os gatilhos SHALL continuar ativos, pois protegem de comportamento anormal e não do total.
+Além das falhas consecutivas da API, o disjuntor SHALL disparar por quatro gatilhos avaliados por unidade de trabalho (módulo ou aula): (1) o custo real de uma aula passa de `DISJUNTOR_FATOR_CUSTO` (padrão 2) vezes a estimativa dela; (2) o mesmo código de erro se repete `DISJUNTOR_ERROS_SEGUIDOS` (padrão 3) vezes em sequência; (3) um ciclo de melhoria termina com ganho médio menor que `DISJUNTOR_GANHO_MIN` (padrão igual a `EPSILON_CONVERGENCIA`); (4) as continuações de uma aula de conteúdo esgotam `MAX_CONTINUACOES_CONTEUDO` sem terminar; (5) o projeto já tem tantos ciclos de melhoria quanto o máximo do perfil escolhido (`limite_ciclos`, imposto só com teto ou perfil escolhido de propósito). Os limites SHALL ser configuráveis por variável e o usuário SHALL poder liberá-los pela decisão `aumentar-limite`. O plano de aula mantém o comportamento anterior de texto truncado. O gatilho (3) SHALL interromper a etapa nos perfis Econômico e Padrão e SHALL apenas avisar no Premium. Sem teto de orçamento configurado, os gatilhos SHALL continuar ativos, pois protegem de comportamento anormal e não do total.
 
 #### Scenario: Gatilho de custo
 - **WHEN** uma aula estimada em US$ 0,05 já custou US$ 0,11 e ainda não terminou
@@ -22,6 +22,10 @@ Além das falhas consecutivas da API, o disjuntor SHALL disparar por quatro gati
 #### Scenario: Continuações esgotadas
 - **WHEN** uma seção atinge o limite de continuações sem terminar
 - **THEN** o disjuntor dispara com o motivo `continuacoes`
+
+#### Scenario: Limite de ciclos do perfil
+- **WHEN** o perfil Econômico foi escolhido (máx. 1 ciclo) e o projeto já tem 2 ciclos
+- **THEN** o disjuntor dispara com o motivo `limite_ciclos` antes de qualquer chamada e antes de criar o snapshot do ciclo
 
 #### Scenario: Falhas da API continuam contando
 - **WHEN** a API falha `DISJUNTOR_FALHAS` vezes seguidas

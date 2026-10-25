@@ -187,18 +187,19 @@ describe('truncamento: continuação automática e aula incompleta', () => {
 
     const eventos = await sse(ag, '/api/conteudo');
 
-    expect(chamadas()).toHaveLength(6);
-    const done = eventos.find(e => e.type === 'done');
-    expect(done.incompletas).toEqual([1]);
-    expect(done.estadoAulas['01'].estado).toBe('incompleta');
-    expect(eventos.some(e => e.type === 'warning' && /INCOMPLETA/.test(e.text))).toBe(true);
+    // Continuações esgotadas: o disjuntor interrompe a etapa (a seção 3 nem chega a ser gerada).
+    expect(chamadas()).toHaveLength(5);
+    expect(eventos.find(e => e.type === 'done')).toBeUndefined();
+    expect(eventos.find(e => e.type === 'disjuntor')).toMatchObject({ motivo: 'continuacoes', unidade: 'aula 1', opcoes: ['aumentar-limite', 'trocar-perfil', 'pular'] });
+    expect(eventos.find(e => e.type === 'error').message).toMatch(/Disjuntor.*continuações/);
     expect(fs.existsSync(txtAula())).toBe(false);
     expect(fs.existsSync(path.join(PASTA, 'aula01_conteudo.docx'))).toBe(false);
-    expect(fs.readFileSync(partialAula(), 'utf-8')).toContain('## Funções em JavaScript');
+    const parcial = fs.readFileSync(partialAula(), 'utf-8');
+    expect(parcial).toContain('Variáveis em JavaScript'); // seção já escrita
+    expect(parcial).toContain('## Funções em JavaScript'); // seção em curso, cortada
     const estado = projeto().estadoAulas['01'];
     expect(estado.estado).toBe('incompleta');
-    expect(estado.finishReason).toBe('length');
-    expect(estado.motivos.join(' ')).toMatch(/cortada/);
+    expect(estado.motivos.join(' ')).toMatch(/disjuntor: continuacoes/);
   });
 
   test('aula incompleta bloqueia as etapas dependentes até ser regenerada', async () => {
@@ -208,6 +209,11 @@ describe('truncamento: continuação automática e aula incompleta', () => {
     await sse(ag, '/api/conteudo');
     OpenAI.__reset();
 
+    // Reexecutar sem decidir interrompe de imediato, sem nenhuma chamada à OpenAI.
+    const semDecidir = await sse(ag, '/api/conteudo?aulas=1');
+    expect(semDecidir.find(e => e.type === 'error').message).toMatch(/Disjuntor/);
+    expect(OpenAI.__getMock()).not.toHaveBeenCalled();
+
     for (const rota of ['/api/qualidade', '/api/ppc', '/api/revisao-qualidade', '/api/aplicar-melhorias/confirmar']) {
       const erro = (await sse(ag, rota)).find(e => e.type === 'error');
       expect(erro.message).toMatch(/Conteúdo incompleto.*aula\(s\) 01/);
@@ -215,7 +221,8 @@ describe('truncamento: continuação automática e aula incompleta', () => {
     expect((await ag.post('/api/aplicar-melhorias')).status).toBe(409);
     expect(OpenAI.__getMock()).not.toHaveBeenCalled();
 
-    // regenerar só a aula 1 (?aulas=1) com sucesso libera o fluxo
+    // o usuário decide (aumentar o limite) e regenera só a aula 1 (?aulas=1): libera o fluxo
+    expect((await ag.post('/api/orcamento').send({ decisao: 'aumentar-limite' })).status).toBe(200);
     OpenAI.__setResponses([ROTEIRO, SEC1, SEC2, SEC3]);
     const eventos = await sse(ag, '/api/conteudo?aulas=1');
     expect(eventos.find(e => e.type === 'done').incompletas).toEqual([]);
@@ -256,9 +263,11 @@ describe('truncamento: continuação automática e aula incompleta', () => {
       const ag = await sessaoComPlano();
       OpenAI.__setFinishReasons(['length', 'length', 'length']);
       OpenAI.__setResponses(['Início do texto cortado', ' continua', ' ainda cortado']);
-      const done = (await sse(ag, '/api/conteudo')).find(e => e.type === 'done');
+      const eventos = await sse(ag, '/api/conteudo');
       expect(chamadas()).toHaveLength(3); // 1 + 2 continuações
-      expect(done.incompletas).toEqual([1]);
+      expect(eventos.find(e => e.type === 'done')).toBeUndefined();
+      expect(eventos.find(e => e.type === 'disjuntor')).toMatchObject({ motivo: 'continuacoes' });
+      expect(projeto().estadoAulas['01'].estado).toBe('incompleta');
       expect(fs.existsSync(txtAula())).toBe(false);
       expect(fs.readFileSync(partialAula(), 'utf-8').replace(/\s+/g, ' ').trim()).toBe('Início do texto cortado continua ainda cortado');
     } finally {

@@ -248,15 +248,18 @@ describe('conteúdo retomável: pula aulas completas', () => {
     OpenAI.__setFinishReasons(['length', 'length', 'length', 'stop', 'stop']);
     let n = 0;
     OpenAI.__setResponder(() => (++n <= 3 ? 'Texto cortado no meio de' : 'Texto completo e fechado.'));
-    await sse(ag, '/api/conteudo'); // aula 1 incompleta (3 length); aulas 2 e 3 completas
+    const primeira = await sse(ag, '/api/conteudo'); // aula 1 incompleta (3 length): o disjuntor interrompe a etapa
+    expect(primeira.find(e => e.type === 'disjuntor')).toMatchObject({ motivo: 'continuacoes' });
     expect(json('projeto.json').estadoAulas['01'].estado).toBe('incompleta');
     OpenAI.__reset();
     OpenAI.__setResponder(() => 'Agora completa.');
+    await ag.post('/api/orcamento').send({ decisao: 'aumentar-limite' }); // decisão do usuário
 
     const eventos = await sse(ag, '/api/conteudo');
 
-    expect(chatCalls()).toHaveLength(1);
-    expect(eventos.find(e => e.type === 'done').puladas).toEqual([2, 3]);
+    // a aula 1 incompleta é regenerada (não pulada) e as aulas 2 e 3, que ainda não existiam, também
+    expect(chatCalls()).toHaveLength(3);
+    expect(eventos.find(e => e.type === 'done').puladas).toEqual([]);
     expect(json('projeto.json').estadoAulas['01'].estado).toBe('completa');
   });
 });
