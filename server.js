@@ -3578,7 +3578,7 @@ app.get('/api/plano-aula', async (req, res) => {
         proporcaoTeoricoPratico: sess.config.proporcaoTeoricoPratico
       });
 
-      const r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: PLANO_AULA_MAX_TOKENS });
+      const r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: PLANO_AULA_MAX_TOKENS, nome: 'plano-aula.aula' });
       if (client.disconnected) break;
       fullText += r.texto;
       // Grava a aula assim que termina: é o ponto de retomada se o servidor cair.
@@ -3680,7 +3680,7 @@ async function streamSkillToClient(res, skill, sess, meta = {}, clientCtx = null
       { role: 'system', content: skill.system },
       { role: 'user', content: skill.user }
     ]
-  }, { signal: controller.signal }, { aoEsperar: resetStallTimer });
+  }, { signal: controller.signal }, { aoEsperar: resetStallTimer, nome: meta.nome });
   let text = '';
   try {
     for await (const chunk of stream) {
@@ -4014,7 +4014,7 @@ async function revisarAula({ res, sess, client, aula, i, ctxRev }) {
     .map(p => ({ titulo: p.titulo, palavras: avaliacao.contarPalavras(p.texto), lida: true }));
 
   if (tokensEstimados <= limite) {
-    const texto = await streamSkillToClient(res, skillUnica, sess, {}, client);
+    const texto = await streamSkillToClient(res, skillUnica, sess, { nome: 'revisao.aula' }, client);
     return { texto, modo: 'unica', tokensEstimados, secoes: secoesLidas, notasConsolidadas: null };
   }
 
@@ -4054,7 +4054,7 @@ async function revisarAula({ res, sess, client, aula, i, ctxRev }) {
   // Reduce: uma chamada final produz a revisão da aula, o resumo de melhorias e a
   // nota (fórmula existente: 0,7 × rubrica + 0,3 × determinístico, no caller).
   const skillReduce = skills.revisaoQualidadeSkill({ ...ctxRev, aulaConteudo: '', avaliacoesSecoes, notasFixas: Object.keys(notasFixas).length ? notasFixas : null });
-  const texto = await streamSkillToClient(res, skillReduce, sess, {}, client);
+  const texto = await streamSkillToClient(res, skillReduce, sess, { nome: 'revisao.consolidar' }, client);
   return { texto, modo: 'map-reduce', tokensEstimados, secoes: secoesLidas, notasConsolidadas: notas, partes: partes.length };
 }
 
@@ -4260,8 +4260,8 @@ function lerJsonSeguro(arquivo) {
 
 // Gera um texto em streaming; se terminar com finish_reason 'length', pede
 // continuação (até MAX_CONTINUACOES_CONTEUDO vezes) e concatena.
-async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_TOKENS_AULA } = {}) {
-  const meta = { maxTokens, silenciarTruncamento: true };
+async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_TOKENS_AULA, nome } = {}) {
+  const meta = { maxTokens, silenciarTruncamento: true, nome };
   let texto = await streamSkillToClient(res, skill, sess, meta, client);
   let tokens = meta.completionTokens || 0;
   let finishReason = meta.finishReason;
@@ -4269,7 +4269,7 @@ async function gerarComContinuacao(res, skill, sess, client, { maxTokens = MAX_T
   while (finishReason === 'length' && continuacoes < MAX_CONTINUACOES_CONTEUDO && !client?.disconnected) {
     continuacoes++;
     send(res, { type: 'progress', message: `Resposta cortada — solicitando continuação (${continuacoes}/${MAX_CONTINUACOES_CONTEUDO})...` });
-    const metaCont = { maxTokens, silenciarTruncamento: true };
+    const metaCont = { maxTokens, silenciarTruncamento: true, nome: nome ? `${nome}.continuar` : undefined };
     const contSkill = {
       ...skill,
       messages: [
@@ -4344,7 +4344,7 @@ async function gerarAulaPorSecoes({ res, sess, client, ctxSkill, aula, metaPalav
     const resumoEscritas = secoes.slice(0, n).map(a => `- ${a.titulo}: ${resumirSecao(a.texto)}`).join('\n');
     const sk = skills.secaoConteudoSkill({ ...ctxSkill, secao: s, secoesPlanejadas: titulos, resumoEscritas, metaPalavras: s.meta });
     if (n > 0) send(res, { type: 'token', text: '\n\n' });
-    const r = await gerarComContinuacao(res, sk, sess, client, { maxTokens: SECAO_MAX_TOKENS });
+    const r = await gerarComContinuacao(res, sk, sess, client, { maxTokens: SECAO_MAX_TOKENS, nome: 'conteudo.secao' });
     s.texto = comTituloDaSecao(r.texto, s.titulo);
     s.truncada = r.truncada;
     tokens += r.completionTokens;
@@ -4393,7 +4393,7 @@ async function gerarAulaPorSecoes({ res, sess, client, ctxSkill, aula, metaPalav
 
 async function gerarAulaPassadaUnica({ res, sess, client, ctxSkill }) {
   const skill = skills.conteudoSkill(ctxSkill);
-  const r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: MAX_TOKENS_AULA });
+  const r = await gerarComContinuacao(res, skill, sess, client, { maxTokens: MAX_TOKENS_AULA, nome: 'conteudo.aula' });
   const verificacao = conteudoSecoes.verificarCompletude({ texto: r.texto, truncada: r.truncada });
   return {
     texto: r.texto,
@@ -5503,7 +5503,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
       });
 
       const textoAntigo = aula.texto;
-      const meta = {};
+      const meta = { nome: 'aplicar-melhorias.aula' };
       let texto;
       try {
         texto = await streamSkillToClient(res, skill, sess, meta, client);
