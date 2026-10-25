@@ -51,7 +51,7 @@ editado), `POST /api/export/:step` (exportar qualquer etapa),
 `POST /api/finalizar-conteudo` e `GET /api/dev/seed` (dados de exemplo, só
 com `ENABLE_DEV_SEED=true`).
 
-**Contagem de endpoints:** `server.js` registra 47 handlers (46 sempre ativos
+**Contagem de endpoints:** `server.js` registra 49 handlers (48 sempre ativos
 mais `/api/dev/seed`, condicional). Reproduza com
 `grep -cE "^\s*app\.(get|post|put|delete|patch)\(" server.js`. Um teste
 (`tests/unit/docs-sincronizadas.test.js`) falha se este número, o cookie ou a
@@ -108,7 +108,7 @@ estimativa de custo e no painel de observabilidade.
 ### 3.3 Mapa de arquivos
 
 ```
-server.js          — Express + 47 handlers REST/SSE + DOCX builder + persistência
+server.js          — Express + 49 handlers REST/SSE + DOCX builder + persistência
 skills.js          — 29 skills de prompt ({model, system, user})
 bncc-data.js       — 400+ competências/habilidades BNCC (EF1, EF2, EM)
 conteudo-secoes.js — geração do conteúdo por seções (roteiro da aula, seções, estado completa/curta/incompleta)

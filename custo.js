@@ -24,7 +24,7 @@ const FAIXA_MAX = 1.6;
 // Aproximação por caracteres (≈ 4 por token em português).
 const estimarTokens = (texto) => Math.ceil(String(texto || '').length / 4);
 
-function estimarEtapa(etapa, { unidades, modelos, precos = carregarPrecos() }) {
+function estimarEtapa(etapa, { unidades, modelos, precos = carregarPrecos(), fator = 1 }) {
   const perfil = PERFIS[etapa];
   if (!perfil) return null;
   const n = Math.max(0, Math.floor(unidades) || 0);
@@ -32,6 +32,7 @@ function estimarEtapa(etapa, { unidades, modelos, precos = carregarPrecos() }) {
   const entrada = perfil.entrada * n;
   const saida = perfil.saida * n;
   const base = calcularCusto({ prompt_tokens: entrada, completion_tokens: saida }, modelo, precos);
+  const k = Number.isFinite(fator) && fator > 0 ? fator : 1; // calibração com o uso real (orcamento.js)
   return {
     etapa,
     unidade: perfil.unidade,
@@ -43,10 +44,11 @@ function estimarEtapa(etapa, { unidades, modelos, precos = carregarPrecos() }) {
       maximo: Math.round((entrada + saida) * FAIXA_MAX)
     },
     custoUsd: base === null ? null : {
-      minimo: Number((base * FAIXA_MIN).toFixed(4)),
-      esperado: Number(base.toFixed(4)),
-      maximo: Number((base * FAIXA_MAX).toFixed(4))
+      minimo: Number((base * k * FAIXA_MIN).toFixed(4)),
+      esperado: Number((base * k).toFixed(4)),
+      maximo: Number((base * k * FAIXA_MAX).toFixed(4))
     },
+    fatorCalibracao: k,
     estimativa: true
   };
 }
@@ -63,9 +65,19 @@ function estimarCustoChamada(params, precos = carregarPrecos()) {
   return custo ?? 0;
 }
 
+// Teto do projeto: ORCAMENTO_MAX_USD (ORCAMENTO_USD segue valendo como sinônimo).
 const lerOrcamento = (env = process.env) => {
-  const n = Number(env.ORCAMENTO_USD);
-  return env.ORCAMENTO_USD !== undefined && env.ORCAMENTO_USD !== '' && Number.isFinite(n) && n > 0 ? n : null;
+  for (const nome of ['ORCAMENTO_MAX_USD', 'ORCAMENTO_USD']) {
+    const n = Number(env[nome]);
+    if (env[nome] !== undefined && env[nome] !== '' && Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+};
+
+// Cobrança por chamada da ferramenta de busca web (config/precos-modelos.json). Padrão 0.
+const tarifaBuscaWeb = (precos = carregarPrecos()) => {
+  const n = Number(precos.buscaWebPorChamadaUsd);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
 // Erro com mensagem clara (custo e teto) quando a próxima chamada estoura o orçamento.
@@ -103,4 +115,4 @@ function criarDisjuntor({ limite = 5, esperaMs = 60_000, agora = () => Date.now(
   };
 }
 
-module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, criarDisjuntor, PERFIS };
+module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, tarifaBuscaWeb, criarDisjuntor, PERFIS };

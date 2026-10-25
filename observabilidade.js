@@ -309,17 +309,19 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
   // Registra uma chamada ao LLM como generation. `usage` normalizado:
   // { prompt_tokens, completion_tokens, total_tokens }. Sempre acumula
   // tokens/custo no contexto (UI e geracao_log.json), mesmo sem Langfuse.
-  function registrarGeneration({ nome, modelo, parametros = {}, input, output, usage, finishReason, inicio, fim = Date.now(), erro = null, extra = {} }) {
+  function registrarGeneration({ nome, modelo, parametros = {}, input, output, usage, finishReason, inicio, fim = Date.now(), erro = null, extra = {}, tarifaUsd = 0 }) {
     const ctx = contexto();
     if (!ctx) return null;
-    const custo = calcularCusto(usage, modelo, tabelaPrecos);
+    let custo = calcularCusto(usage, modelo, tabelaPrecos);
+    // Cobrança fixa por chamada (ex.: ferramenta de busca web), somada ao custo dos tokens.
+    if (custo !== null && tarifaUsd > 0) custo += tarifaUsd;
     ctx.geracoes += 1;
     ctx.tokens.entrada += usage?.prompt_tokens || 0;
     ctx.tokens.saida += usage?.completion_tokens || 0;
     ctx.tokens.total += usage?.total_tokens || 0;
     if (custo === null) { if (usage) ctx.custoDesconhecido = true; } else ctx.custoUsd += custo;
 
-    const resumo = { traceId: ctx.traceId, nome, modelo, usage, finishReason, custoUsd: custo, latenciaMs: fim - inicio, erro: erro ? String(erro) : null, ...extra };
+    const resumo = { traceId: ctx.traceId, nome, modelo, usage, finishReason, custoUsd: custo, tarifaUsd: tarifaUsd > 0 ? tarifaUsd : 0, latenciaMs: fim - inicio, erro: erro ? String(erro) : null, ...extra };
     const incompleta = finishReason === 'length';
     if (!deveEnviar(ctx, !!erro || incompleta)) return resumo;
     ctx.filhos += 1;

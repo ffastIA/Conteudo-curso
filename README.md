@@ -129,6 +129,8 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 | GET    | `/api/heygen/vozes`                     | Lista vozes do HeyGen                                   |
 | GET    | `/api/heygen/saldo`                     | Saldo da carteira HeyGen (só saldo, moeda e recarga)    |
 | POST   | `/api/heygen/saldo/atualizar`           | Botão "Atualizar saldo"; completa o consumo não apurado |
+| GET    | `/api/orcamento`                        | Tetos, gasto por escopo/etapa/modelo, perfil e alertas  |
+| POST   | `/api/orcamento`                        | Ajusta tetos/perfil e registra a decisão após pausa ou disjuntor |
 | POST   | `/api/heygen/config`                    | Salva avatar, voz e expressividade                      |
 | GET    | `/api/video-avatar/parametros`          | Parâmetros do vídeo de uma aula                         |
 | POST   | `/api/video-avatar/parametros`          | Aprova a duração do vídeo                               |

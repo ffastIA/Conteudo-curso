@@ -1,0 +1,16 @@
+{
+  "_comentario": "Capacidades conhecidas dos modelos, usadas só para AVISAR na inicialização (nunca para impedir o uso). Modelo ausente desta tabela gera um aviso de 'capacidade não conferida'. Confira e ajuste conforme a documentação da OpenAI.",
+  "modelos": {
+    "gpt-4o": { "busca_web": true, "saida_estruturada": true },
+    "gpt-4o-mini": { "busca_web": true, "saida_estruturada": true },
+    "gpt-4.1": { "busca_web": true, "saida_estruturada": true },
+    "gpt-4.1-mini": { "busca_web": true, "saida_estruturada": true }
+  },
+  "exigencias": {
+    "pesquisa": ["busca_web"],
+    "resumos": [],
+    "redacao": [],
+    "avaliacao": [],
+    "juiz": []
+  }
+}

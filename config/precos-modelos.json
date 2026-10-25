@@ -1,7 +1,8 @@
 {
   "vigencia": "2026-10-24",
   "moeda": "USD",
-  "observacao": "Preço por 1 milhão de tokens. Chaves casam por prefixo do nome do modelo (a mais longa vence). Não inclui o custo por chamada da ferramenta web_search. Ajuste conforme a tabela vigente da OpenAI.",
+  "observacao": "Preço por 1 milhão de tokens. Chaves casam por prefixo do nome do modelo (a mais longa vence). Ajuste conforme a tabela vigente da OpenAI. buscaWebPorChamadaUsd é a cobrança por chamada da ferramenta web_search (USD por chamada): o padrão 0 NÃO é um preço real — enquanto for 0 o custo da pesquisa fica subestimado; preencha com o valor da tabela de preços da OpenAI.",
+  "buscaWebPorChamadaUsd": 0,
   "porMilhaoDeTokens": {
     "gpt-4o": { "entrada": 2.5, "saida": 10 },
     "gpt-4o-mini": { "entrada": 0.15, "saida": 0.6 }

@@ -38,6 +38,8 @@ const skills = require('./skills');
 const { obs: observabilidade } = require('./observabilidade');
 const { criarLogger } = require('./logger');
 const custo = require('./custo');
+const orcamento = require('./orcamento');
+const modelosConfig = require('./config/modelos');
 const docxMarkdown = require('./docx-markdown');
 const logger = criarLogger({ contexto: () => observabilidade.contexto() });
 const conteudoSecoes = require('./conteudo-secoes');
@@ -155,17 +157,38 @@ const disjuntorApi = custo.criarDisjuntor({
   esperaMs: Number(process.env.DISJUNTOR_ESPERA_MS) > 0 ? Number(process.env.DISJUNTOR_ESPERA_MS) : 60_000
 });
 
+// Governança de custo (change governanca-de-custo): tetos por escopo com reserva
+// antes e acerto depois, perfis, papéis de modelo e gatilhos do disjuntor. Os eventos
+// SSE (alerta, pausa, perfil, disjuntor) só saem quando a resposta atual é um stream SSE.
+const governanca = orcamento.criarGovernanca({
+  courseScrDir: (sess) => (sess?.config?.nome || sess?.config?.pastaProjeto ? courseScrDir(sess) : null),
+  emitir: (evento) => {
+    const res = observabilidade.contexto()?.res;
+    if (res && !res.writableEnded && String(res.getHeader('Content-Type') || '').includes('text/event-stream')) send(res, evento);
+  },
+  logger
+});
+
 async function chamarOpenAI(tipo, params, options, meta = {}) {
   const inicio = Date.now();
   const ctx = observabilidade.contexto();
-  // Trava de orçamento e disjuntor (só com ORCAMENTO_USD definido): barram a
-  // chamada ANTES de gastar, com mensagem clara que vira o erro SSE da etapa.
-  if (custo.lerOrcamento() !== null) {
-    const bloqueio = disjuntorApi.verificar() ||
-      custo.verificarOrcamento({ acumulado: ctx?.sess?.custoProjetoUsd || 0, estimativa: custo.estimarCustoChamada(params) });
-    if (bloqueio) throw bloqueio;
-  }
+  const sess = ctx?.sess;
   const nome = meta.nome || `openai.${tipo}`;
+  // Papel da chamada: a variável do papel, ou o perfil de custo, escolhe o modelo.
+  if (sess && params?.model) {
+    const modelo = governanca.modeloPara(sess, nome, params.model);
+    if (modelo && modelo !== params.model) params = { ...params, model: modelo };
+  }
+  // Disjuntor da API (só com algum teto configurado) e reserva de orçamento: barram a
+  // chamada ANTES de gastar; a mensagem clara vira o erro SSE da etapa.
+  let reserva = null;
+  if (sess) {
+    if (governanca.ativo(sess)) {
+      const bloqueio = disjuntorApi.verificar();
+      if (bloqueio) throw bloqueio;
+    }
+    reserva = governanca.antes(sess, ctx.etapa, params);
+  }
   const parametros = {
     max_tokens: params?.max_tokens ?? params?.max_output_tokens,
     temperature: params?.temperature,
@@ -178,9 +201,20 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
 
   const registrar = (r) => {
     const resumo = observabilidade.registrarGeneration({
-      nome, modelo: params?.model, parametros, input: entrada, inicio, ...r, extra: { tentativa: meta.tentativa }
+      nome, modelo: params?.model, parametros, input: entrada, inicio, ...r,
+      extra: { tentativa: meta.tentativa, papel: governanca.papelDe(nome) || undefined }
     });
     if (resumo) registrarGeracaoLog(ctx, resumo);
+    if (sess) {
+      governanca.depois(sess, ctx.etapa, reserva, {
+        modelo: params?.model, custoUsd: resumo?.custoUsd, usage: r.usage, tarifaUsd: resumo?.tarifaUsd, erro: !!r.erro
+      });
+      try {
+        observabilidade.definirMetadadoTrace('perfil', governanca.perfil(sess).id);
+        const saldo = governanca.saldoRestante(sess, ctx.etapa);
+        if (saldo.restanteUsd !== null) observabilidade.definirMetadadoTrace('orcamento_restante_usd', saldo.restanteUsd);
+      } catch { /* metadado é opcional */ }
+    }
   };
 
   let resultado;
@@ -204,7 +238,10 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
   } catch (err) {
     registrar({ erro: err.message || String(err) });
     if (!options?.signal?.aborted && err?.name !== 'APIUserAbortError') disjuntorApi.falha();
-    throw err;
+    // Tentativas internas de uma chamada lógica (ex.: retentativas da pesquisa) não contam como erro
+    // repetido; quem controla o laço registra o erro uma vez, ao esgotá-lo.
+    const disparo = sess && !meta.semContagemErro ? governanca.registrarErro(sess, ctx.etapa, err) : null;
+    throw disparo || err;
   }
   disjuntorApi.sucesso();
 
@@ -218,8 +255,10 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
       if (item.type !== 'message') continue;
       for (const c of item.content || []) if (typeof c.text === 'string') texto += c.text;
     }
+    const buscas = (resultado?.output || []).filter(item => item.type === 'web_search_call').length;
     registrar({
       output: texto || resultado?.output_text || '',
+      tarifaUsd: buscas * custo.tarifaBuscaWeb(),
       usage: resultado?.usage ? {
         prompt_tokens: resultado.usage.input_tokens || 0,
         completion_tokens: resultado.usage.output_tokens || 0,
@@ -426,8 +465,8 @@ async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null, maxOutputTo
       input: skill.user,
       max_output_tokens: maxOutputTokens
     },
-    { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal },
-    { nome: 'pesquisa.web' }
+    { signal: clientCtx ? combineSignals(clientCtx.signal, timeoutSignal) : timeoutSignal },
+    { nome: 'pesquisa.web', semContagemErro: true }
   );
 
   let texto = '';
@@ -476,7 +515,9 @@ async function executarPesquisaWeb(skill, { clientCtx = null, onRetry = null, ma
       if (tentativa < PESQUISA_MAX_RETENTATIVAS && onRetry) onRetry(tentativa + 1);
     }
   }
-  throw ultimoErro;
+  const c = observabilidade.contexto();
+  const disparo = c?.sess ? governanca.registrarErro(c.sess, c.etapa, ultimoErro) : null;
+  throw disparo || ultimoErro;
 }
 
 // Aviso de inicialização: modelo de pesquisa que provavelmente não aceita a
@@ -1443,6 +1484,7 @@ function saveProject(sess, stageInfo = null) {
   try {
     fs.writeFileSync(tmpPath, JSON.stringify(projeto, null, 2), 'utf-8');
     fs.renameSync(tmpPath, projetoPath);
+    if (sess.uso) governanca.gravarUso(sess);
   } catch (err) {
     logger.error('[saveProject] Erro ao gravar projeto.json:', err.message);
     try { fs.unlinkSync(tmpPath); } catch { /* temporário já ausente */ }
@@ -2942,7 +2984,6 @@ app.get('/api/roteiro/gerar', async (req, res) => {
 // automaticamente entre aulas: o ciclo por aula é mais longo (gerar roteiro →
 // revisar fora do app → reenviar → confirmar → gerar vídeo → revisar o .mp4
 // fora do app) e o usuário escolhe manualmente qual aula trabalhar a cada vez.
-
 const DURACAO_AVATAR_MIN_SEGUNDOS = 5;
 const DURACAO_AVATAR_MAX_SEGUNDOS = 600;
 
@@ -3248,6 +3289,7 @@ app.post('/api/config', async (req, res) => {
   const conteudoMudou = camposConteudo.some(k => (req.body[k] || '') !== (sess.config[k] || ''));
 
   sess.config = req.body;
+  governanca.carregarUso(sess); // restaura scr/uso.json se o projeto já existir
 
   // pastaProjeto não entra em conteudoMudou (não deve reprocessar o pipeline),
   // mas precisa ser persistida imediatamente, sem depender da regeneração da
@@ -3841,15 +3883,40 @@ app.get('/api/estimativa', (req, res) => {
   } else {
     unidades = aulas.length;
   }
+  // Modelo de cada etapa pelo papel/perfil (redação no conteúdo, avaliação na revisão) e fator
+  // de calibração com o uso real da etapa equivalente (rota de geração).
+  const etapaRota = { revisao: 'revisao-qualidade' }[etapa] || etapa;
+  const perfilAtivo = governanca.perfil(sess);
+  const economia = etapa === 'conteudo'
+    ? modelosConfig.resolverModelo('redacao', { modeloRedacao: perfilAtivo.modeloRedacao, original: skills.modeloConteudo() })
+    : modelosConfig.modeloAvaliacao();
   const estimativa = custo.estimarEtapa(etapa, {
     unidades,
-    modelos: { pesquisa: skills.modeloPesquisa(), economia: skills.modeloEconomia() }
+    modelos: { pesquisa: skills.modeloPesquisa(), economia },
+    fator: governanca.fatorCalibracao(sess, etapaRota)
   });
+  const saldo = governanca.saldoRestante(sess, etapaRota);
   res.json({
     ...estimativa,
     custoProjetoUsd: Number((sess.custoProjetoUsd || 0).toFixed(4)),
-    orcamentoUsd: custo.lerOrcamento()
+    orcamentoUsd: custo.lerOrcamento(),
+    perfil: perfilAtivo.id,
+    saldo,
+    excedeSaldo: saldo.restanteUsd !== null && !!estimativa.custoUsd && estimativa.custoUsd.maximo > saldo.restanteUsd
   });
+});
+
+// ── GET/POST /api/orcamento — tetos, gasto, perfil e decisões (change governanca-de-custo) ──
+app.get('/api/orcamento', (req, res) => {
+  const sess = getSession(req, res);
+  res.json(governanca.estado(sess));
+});
+
+app.post('/api/orcamento', (req, res) => {
+  const sess = getSession(req, res);
+  const r = governanca.ajustar(sess, req.body || {});
+  if (r.erro) return res.status(400).json({ error: r.erro });
+  res.json({ ok: true, ...governanca.estado(sess) });
 });
 
 // ── GET /api/pesquisa-modulos (SSE) ─────────────────────────────────────────
@@ -4788,6 +4855,8 @@ app.post('/api/carregar-projeto', (req, res) => {
     sess.estadoAulas = p.estadoAulas || {};
     sess.geracoesExternas = p.geracoesExternas || {};
     sess.custoProjetoUsd = p.custoProjetoUsd || 0;
+    sess.uso = null; // não herda o gasto/perfil de outro projeto da mesma sessão
+    governanca.carregarUso(sess);
     recalcularCustoHeygen(sess);
     stages = p.stages || {};
   } else {
@@ -5550,7 +5619,7 @@ app.get('/api/aplicar-melhorias/confirmar', async (req, res) => {
                 }
               ]
             },
-            { signal: combineSignals(client.signal, makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS)) },
+            { signal: combineSignals(client.signal, makeAbortSignal(CONTEUDO_SEARCH_TIMEOUT_MS)) },
             { nome: 'aplicar-melhorias.continuar' }
           );
           addUsage(cont.usage, sess);
@@ -6193,6 +6262,7 @@ const PORT = process.env.PORT || 3000;
 if (require.main === module) {
   const avisoModelo = validarModeloPesquisa();
   if (avisoModelo) logger.warn(`[pesquisa] ${avisoModelo}`);
+  for (const aviso of orcamento.validarModelos()) logger.warn(`[modelos] ${aviso.mensagem}`);
   const HOST = hostDeBind();
   setInterval(limparSessoesInativas, 30 * 60 * 1000).unref();
   app.listen(PORT, HOST, () => {
