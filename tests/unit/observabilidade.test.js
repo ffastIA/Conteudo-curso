@@ -48,6 +48,20 @@ describe('configuração', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  test('aceita LANGFUSE_BASE_URL no lugar de LANGFUSE_HOST', () => {
+    const { LANGFUSE_HOST, ...semHost } = ENV_BASE;
+    const obs = criarObservabilidade({ env: { ...semHost, LANGFUSE_BASE_URL: `${LANGFUSE_HOST}/` }, fetchImpl: fetchOk(), logger: logger() });
+    expect(obs.enabled).toBe(true);
+    expect(obs.config.host).toBe('http://langfuse.local:3001');
+  });
+
+  test('avisa quando LANGFUSE_ENABLED=true mas faltam variáveis', () => {
+    const log = logger();
+    const { LANGFUSE_HOST, ...semHost } = ENV_BASE;
+    criarObservabilidade({ env: semHost, fetchImpl: fetchOk(), logger: log });
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('LANGFUSE_HOST'));
+  });
+
   test('padrões: captura em metadados e amostragem 100%', () => {
     const obs = criarObservabilidade({ env: ENV_BASE, fetchImpl: fetchOk(), logger: logger() });
     expect(obs.config).toMatchObject({ enabled: true, capture: 'metadados', sampleRate: 1, host: 'http://langfuse.local:3001' });

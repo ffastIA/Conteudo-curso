@@ -81,12 +81,14 @@ function atributos(obj) {
 
 function lerConfig(env) {
   const habilitada = /^(1|true|yes|sim)$/i.test(String(env.LANGFUSE_ENABLED || ''));
-  const host = String(env.LANGFUSE_HOST || '').trim().replace(/\/+$/, '');
+  // LANGFUSE_BASE_URL é o nome que o próprio Langfuse sugere ao criar as chaves de API.
+  const host = String(env.LANGFUSE_HOST || env.LANGFUSE_BASE_URL || '').trim().replace(/\/+$/, '');
   const publicKey = String(env.LANGFUSE_PUBLIC_KEY || '').trim();
   const secretKey = String(env.LANGFUSE_SECRET_KEY || '').trim();
   const taxa = Number(env.LANGFUSE_SAMPLE_RATE);
   return {
     enabled: habilitada && !!host && !!publicKey && !!secretKey,
+    habilitada,
     host,
     publicKey,
     secretKey,
@@ -104,6 +106,10 @@ function amostrado(traceId, taxa) {
 
 function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(...a), logger = console, precos } = {}) {
   const cfg = lerConfig(env);
+  if (cfg.habilitada && !cfg.enabled) {
+    const faltam = [!cfg.host && 'LANGFUSE_HOST', !cfg.publicKey && 'LANGFUSE_PUBLIC_KEY', !cfg.secretKey && 'LANGFUSE_SECRET_KEY'].filter(Boolean);
+    logger.warn(`[observabilidade] LANGFUSE_ENABLED=true, mas faltam ${faltam.join(', ')} — Langfuse desligado`);
+  }
   const tabelaPrecos = precos || carregarPrecos();
   const fila = [];
   const pendentes = new Set();
