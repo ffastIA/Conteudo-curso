@@ -85,10 +85,38 @@ pares `api_key=…`/`token=…` e caminhos de arquivo viram `[email]`, `[token]`
   tokens, ajustável) e enviado em `cost_details`. Não inclui o custo por chamada
   da ferramenta `web_search`.
 
+## Atributos de trace no Langfuse v4
+
+No v4 em modo `events_only` tudo é consultado como **observação**: um atributo que
+só existe no span raiz não aparece ao filtrar as chamadas ao LLM. Por isso cada span
+(raiz, `generation` e spans de Gamma/HeyGen) leva os mesmos atributos de trace:
+
+| Atributo OTLP | Valor |
+|---|---|
+| `langfuse.trace.name` | etapa (`metodologia`, `plano-ensino`, `search`…) |
+| `langfuse.session.id` | slug do nome do curso (ex.: `Teste_Langfuse`); antes do curso ter nome, `sessao-` + 12 hex derivados do cookie (o cookie nunca é enviado) |
+| `langfuse.trace.tags` | `etapa:<etapa>` e `captura:<metadados|completo>` (array OTLP) |
+| `langfuse.trace.metadata.etapa` | etapa |
+| `langfuse.environment` | `LANGFUSE_ENVIRONMENT` (padrão `default`); a suíte de testes usa `teste` |
+| `langfuse.release` | versão do `package.json` |
+
+Ficam **só no span raiz**, porque só se conhecem ao final e reenviar um span duplica
+observações: `tokens_total`, `custo_usd`, `custo_heygen_usd` e demais metadados
+de trace. O custo por chamada continua em cada `generation`. Nunca são enviados
+`user.id` nem `trace.input`/`output`.
+
+- Na interface do Langfuse use **Observations** (e não só a lista de Traces) e filtre
+  por sessão, ambiente ou tag. Eventos gravados antes desta change continuam no
+  ambiente `default` e sem sessão nas `generation`.
+- O link do trace usa `{host}/project/{projectId}/traces/{traceId}`; o formato
+  `{host}/trace/{traceId}` não abre o trace no v4. O `projectId` é lido uma vez de
+  `GET /api/public/projects`.
+- Os scores vão com `traceId` e `observationId` (span raiz); se o Langfuse recusar
+  o `observationId`, o app reenvia só com `traceId`.
+
 ## Status de verificação
 
 Os testes automatizados validam o formato do payload, os cabeçalhos, a
-resiliência e a privacidade com um `fetch` simulado. **Ainda não foi validado
-contra uma instância real do Langfuse** (o daemon do Docker não estava ativo ao
-implementar). Na primeira subida, confira no painel se os traces aparecem com
-tokens e custo; se algo divergir, ajuste o mapeamento em `observabilidade.js`.
+resiliência e a privacidade com um `fetch` simulado. **Validado em 2026-10-25 contra o Langfuse 4.70** (modo `events_only`): traces com
+tokens, custo, sessão, tags, ambiente e release aparecem nas observações; o link do
+trace abre com o id do projeto; scores com `observationId` são aceitos.

@@ -19,6 +19,9 @@ const attr = (span, chave) => {
   return v.stringValue ?? v.intValue ?? v.doubleValue ?? v.boolValue;
 };
 
+// Chamadas de ingestão OTLP (ignora a consulta ao projeto e os scores).
+const chamadasOtlp = (fetchImpl) => fetchImpl.mock.calls.filter(([url]) => String(url).includes('/otel/v1/traces'));
+
 function spansEnviados(fetchImpl) {
   return fetchImpl.mock.calls
     .filter(([url]) => String(url).includes('/otel/v1/traces'))
@@ -75,8 +78,8 @@ describe('envio OTLP ao Langfuse', () => {
     gerar(obs);
     await obs.flush();
 
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchImpl.mock.calls[0];
+    expect(chamadasOtlp(fetchImpl)).toHaveLength(1);
+    const [url, init] = chamadasOtlp(fetchImpl)[0];
     expect(url).toBe('http://langfuse.local:3001/api/public/otel/v1/traces');
     expect(init.method).toBe('POST');
     expect(init.headers.Authorization).toBe('Basic ' + Buffer.from('pk-lf-publica-123:sk-lf-segredo-456').toString('base64'));
@@ -156,7 +159,7 @@ describe('envio OTLP ao Langfuse', () => {
 
     const [url, init] = fetchImpl.mock.calls.find(([u]) => String(u).includes('/scores'));
     expect(url).toBe('http://langfuse.local:3001/api/public/scores');
-    expect(JSON.parse(init.body)).toEqual({ traceId: ctx.traceId, name: 'nota_aula', value: 0.82, dataType: 'NUMERIC', comment: 'Aula 1' });
+    expect(JSON.parse(init.body)).toEqual({ traceId: ctx.traceId, name: 'nota_aula', value: 0.82, dataType: 'NUMERIC', observationId: ctx.rootSpanId, comment: 'Aula 1' });
   });
 });
 
@@ -212,7 +215,7 @@ describe('privacidade', () => {
     gerar(obs, { input: entrada, output: 'resposta secreta do modelo' });
     await obs.flush();
 
-    const corpo = fetchImpl.mock.calls[0][1].body;
+    const corpo = chamadasOtlp(fetchImpl)[0][1].body;
     const [span] = spansEnviados(fetchImpl);
     expect(attr(span, 'langfuse.observation.input')).toBeUndefined();
     expect(attr(span, 'langfuse.observation.output')).toBeUndefined();
@@ -243,7 +246,7 @@ describe('privacidade', () => {
     const obs = criarObservabilidade({ env: { ...ENV_BASE, LANGFUSE_CAPTURE: 'completo' }, fetchImpl, logger: logger() });
     gerar(obs);
     await obs.flush();
-    const corpo = fetchImpl.mock.calls[0][1].body;
+    const corpo = chamadasOtlp(fetchImpl)[0][1].body;
     expect(corpo).not.toContain('sk-lf-segredo-456');
     expect(corpo).not.toContain('pk-lf-publica-123');
   });
@@ -330,5 +333,177 @@ describe('envolverStream', () => {
     const recebidos = [];
     for await (const c of obs.envolverStream(fonte(), () => { throw new Error('bug na observabilidade'); })) recebidos.push(c);
     expect(recebidos).toHaveLength(1);
+  });
+});
+
+describe('atributos de trace do Langfuse v4 (change atributos-trace-langfuse-v4)', () => {
+  const ATRIBUTOS_TRACE = [
+    'langfuse.trace.name', 'langfuse.session.id', 'langfuse.trace.tags',
+    'langfuse.trace.metadata.etapa', 'langfuse.environment', 'langfuse.release'
+  ];
+  const bruto = (span, chave) => span.attributes.find(x => x.key === chave)?.value;
+  const tags = (span) => (bruto(span, 'langfuse.trace.tags')?.arrayValue?.values || []).map(v => v.stringValue);
+  const versaoPackage = require('../../package.json').version;
+
+  // Trace completo: duas generations, um span não-LLM e o span raiz.
+  async function traceCompleto(env = ENV_BASE, opcoes = {}) {
+    const fetchImpl = fetchOk();
+    const obs = criarObservabilidade({ env, fetchImpl, logger: logger() });
+    const ctx = obs.criarContexto({ etapa: 'pesquisa', sessionId: 'curso-teste', ...opcoes });
+    obs.executar(ctx, () => {
+      for (let i = 0; i < 2; i++) {
+        obs.registrarGeneration({
+          nome: 'pesquisa.web', modelo: 'gpt-4o', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          finishReason: 'stop', inicio: Date.now() - 10
+        });
+      }
+      obs.registrarSpan({ nome: 'heygen.saldo', inicio: Date.now() - 5, status: 200 });
+      obs.definirMetadadoTrace('custo_heygen_usd', 0.42);
+    });
+    obs.finalizarContexto(ctx);
+    await obs.flush();
+    return { spans: spansEnviados(fetchImpl), ctx, obs, fetchImpl };
+  }
+
+  test('todo span (raiz, generation e span filho) leva os seis atributos de trace, com os mesmos valores', async () => {
+    const { spans } = await traceCompleto();
+    expect(spans).toHaveLength(4);
+    const raiz = spans.find(s => !s.parentSpanId);
+    for (const s of spans) {
+      for (const chave of ATRIBUTOS_TRACE) expect(bruto(s, chave)).toBeDefined();
+      for (const chave of ATRIBUTOS_TRACE) expect(bruto(s, chave)).toEqual(bruto(raiz, chave));
+    }
+    expect(attr(spans[0], 'langfuse.session.id')).toBe('curso-teste');
+    expect(attr(spans[0], 'langfuse.trace.name')).toBe('pesquisa');
+    expect(attr(spans[0], 'langfuse.trace.metadata.etapa')).toBe('pesquisa');
+  });
+
+  test('tags vão como array OTLP; objetos continuam como JSON', async () => {
+    const { spans } = await traceCompleto();
+    expect(tags(spans[0])).toEqual(['etapa:pesquisa', 'captura:metadados']);
+    expect(bruto(spans[0], 'langfuse.trace.tags').stringValue).toBeUndefined();
+    const generation = spans.find(s => attr(s, 'langfuse.observation.type') === 'generation');
+    expect(typeof bruto(generation, 'langfuse.observation.model.parameters')?.stringValue).toBe('string');
+  });
+
+  test('captura completa muda a tag de captura', async () => {
+    const { spans } = await traceCompleto({ ...ENV_BASE, LANGFUSE_CAPTURE: 'completo' });
+    expect(tags(spans[0])).toContain('captura:completo');
+  });
+
+  test('valores finais ficam só no span raiz e nenhum spanId se repete', async () => {
+    const { spans } = await traceCompleto();
+    const filhos = spans.filter(s => s.parentSpanId);
+    const raiz = spans.find(s => !s.parentSpanId);
+    expect(attr(raiz, 'langfuse.trace.metadata.custo_heygen_usd')).toBe(0.42);
+    expect(Number(attr(raiz, 'langfuse.trace.metadata.tokens_total'))).toBe(30);
+    for (const f of filhos) {
+      expect(attr(f, 'langfuse.trace.metadata.custo_heygen_usd')).toBeUndefined();
+      expect(attr(f, 'langfuse.trace.metadata.tokens_total')).toBeUndefined();
+    }
+    expect(new Set(spans.map(s => s.spanId)).size).toBe(spans.length);
+  });
+
+  test('nunca envia user.id nem trace.input/output', async () => {
+    const { spans } = await traceCompleto();
+    const proibidas = ['langfuse.user.id', 'user.id', 'langfuse.trace.input', 'langfuse.trace.output'];
+    for (const s of spans) for (const chave of proibidas) expect(bruto(s, chave)).toBeUndefined();
+  });
+
+  test('sem sessão, nenhum span leva langfuse.session.id', async () => {
+    const { spans } = await traceCompleto(ENV_BASE, { sessionId: null });
+    for (const s of spans) expect(bruto(s, 'langfuse.session.id')).toBeUndefined();
+  });
+
+  test('a sessão passa pelo mascaramento (e-mail e caminho não saem)', async () => {
+    const { spans } = await traceCompleto(ENV_BASE, { sessionId: 'aluno@exemplo.com C:\\Users\\fulano\\curso' });
+    const sessao = attr(spans[0], 'langfuse.session.id');
+    expect(sessao).not.toMatch(/@exemplo\.com/);
+    expect(sessao).not.toMatch(/Users/);
+  });
+
+  test('ambiente: configurado, ausente e inválido (aviso uma única vez)', async () => {
+    const valido = await traceCompleto({ ...ENV_BASE, LANGFUSE_ENVIRONMENT: 'desenvolvimento' });
+    for (const s of valido.spans) expect(attr(s, 'langfuse.environment')).toBe('desenvolvimento');
+
+    const ausente = await traceCompleto();
+    expect(attr(ausente.spans[0], 'langfuse.environment')).toBe('default');
+
+    const log = logger();
+    const obs = criarObservabilidade({ env: { ...ENV_BASE, LANGFUSE_ENVIRONMENT: 'Langfuse Prod' }, fetchImpl: fetchOk(), logger: log });
+    expect(obs.config.environment).toBe('default');
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('LANGFUSE_ENVIRONMENT'));
+    for (const invalido of ['langfuse-x', 'A', 'a b', 'x'.repeat(41)]) {
+      expect(criarObservabilidade({ env: { ...ENV_BASE, LANGFUSE_ENVIRONMENT: invalido }, fetchImpl: fetchOk(), logger: logger() }).config.environment).toBe('default');
+    }
+  });
+
+  test('release é a versão do package.json', async () => {
+    const { spans } = await traceCompleto();
+    expect(versaoPackage).toBeTruthy();
+    for (const s of spans) expect(attr(s, 'langfuse.release')).toBe(versaoPackage);
+  });
+
+  test('exceção ao montar os atributos não afeta a chamada nem derruba o envio', () => {
+    const log = logger();
+    const obs = criarObservabilidade({ env: ENV_BASE, fetchImpl: fetchOk(), logger: log });
+    const ctx = obs.criarContexto({ etapa: 'conteudo', sessionId: () => { throw new Error('sessão quebrada'); } });
+    let resumo;
+    expect(() => {
+      resumo = obs.executar(ctx, () => obs.registrarGeneration({
+        nome: 'openai.chat', modelo: 'gpt-4o-mini', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        finishReason: 'stop', inicio: Date.now()
+      }));
+    }).not.toThrow();
+    expect(resumo.traceId).toBe(ctx.traceId);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('atributos de trace'));
+  });
+});
+
+describe('scores e link do trace no v4', () => {
+  test('score recusado com observationId (4xx) é reenviado só com traceId', async () => {
+    const respostas = [{ ok: false, status: 400 }, { ok: true, status: 200 }];
+    const fetchImpl = jest.fn(async (url) => (String(url).includes('/scores') ? respostas.shift() : { ok: true, status: 200 }));
+    const log = logger();
+    const obs = criarObservabilidade({ env: ENV_BASE, fetchImpl, logger: log });
+    const ctx = obs.criarContexto({ etapa: 'revisao-qualidade' });
+    obs.executar(ctx, () => obs.registrarScore('nota_aula', 0.5));
+    await obs.flush();
+    const scores = fetchImpl.mock.calls.filter(([u]) => String(u).includes('/scores')).map(([, init]) => JSON.parse(init.body));
+    expect(scores).toHaveLength(2);
+    expect(scores[0].observationId).toBe(ctx.rootSpanId);
+    expect(scores[1].observationId).toBeUndefined();
+    expect(scores[1].traceId).toBe(ctx.traceId);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('observationId'));
+  });
+
+  test('link do trace usa o id do projeto quando o Langfuse o informa', async () => {
+    const fetchImpl = jest.fn(async (url) => (String(url).endsWith('/api/public/projects')
+      ? { ok: true, status: 200, json: async () => ({ data: [{ id: 'proj-abc123' }] }) }
+      : { ok: true, status: 200 }));
+    const obs = criarObservabilidade({ env: ENV_BASE, fetchImpl, logger: logger() });
+    obs.criarContexto({ etapa: 'conteudo' }); // dispara a descoberta do projeto
+    await obs.flush();
+    expect(obs.urlTrace('abc')).toBe('http://langfuse.local:3001/project/proj-abc123/traces/abc');
+    expect(fetchImpl.mock.calls.filter(([u]) => String(u).endsWith('/api/public/projects'))).toHaveLength(1);
+  });
+
+  test('falha ao consultar o projeto cai no formato antigo, sem bloquear', async () => {
+    for (const falha of [async () => { throw new Error('timeout'); }, async () => ({ ok: false, status: 401 })]) {
+      const fetchImpl = jest.fn(async (url) => (String(url).endsWith('/api/public/projects') ? falha() : { ok: true, status: 200 }));
+      const obs = criarObservabilidade({ env: ENV_BASE, fetchImpl, logger: logger() });
+      obs.criarContexto({ etapa: 'conteudo' });
+      await obs.flush();
+      expect(obs.urlTrace('abc')).toBe('http://langfuse.local:3001/trace/abc');
+    }
+  });
+
+  test('desligado, não há link nem consulta ao projeto', () => {
+    const fetchImpl = fetchOk();
+    const obs = criarObservabilidade({ env: {}, fetchImpl, logger: logger() });
+    obs.criarContexto({ etapa: 'conteudo' });
+    expect(obs.urlTrace('abc')).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

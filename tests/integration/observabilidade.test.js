@@ -56,6 +56,7 @@ beforeEach(() => {
     const u = String(url);
     if (u.startsWith('http://langfuse.test:3001')) {
       if (langfuseFora) throw new Error('ECONNREFUSED langfuse');
+      if (u.endsWith('/api/public/projects')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'proj-teste' }] }) };
       envios.push({ url: u, headers: init.headers, body: JSON.parse(init.body) });
       return { ok: true, status: 200 };
     }
@@ -148,7 +149,7 @@ describe('toda chamada à OpenAI vira generation com tokens, custo e finish_reas
 
     const done = eventos.find(e => e.type === 'done');
     const spans = spansOtlp();
-    const raiz = spans.find(s => attr(s, 'langfuse.trace.name'));
+    const raiz = spans.find(s => !s.parentSpanId && attr(s, 'langfuse.trace.name'));
     expect(raiz.traceId).toBe(done.traceId);
     expect(attr(raiz, 'langfuse.trace.name')).toBe('plano-ensino');
     expect(attr(raiz, 'langfuse.session.id')).toBe('Curso_de_Observabilidade');
@@ -165,7 +166,7 @@ describe('toda chamada à OpenAI vira generation com tokens, custo e finish_reas
     expect(done.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(done.tokens).toBeGreaterThan(0);
     expect(done.custoUsd).toBeGreaterThan(0);
-    expect(done.traceUrl).toBe(`http://langfuse.test:3001/trace/${done.traceId}`);
+    expect(done.traceUrl).toBe(`http://langfuse.test:3001/project/proj-teste/traces/${done.traceId}`);
 
     const log = JSON.parse(fs.readFileSync(GERACAO_LOG, 'utf-8'));
     expect(log.some(l => l.traceId === done.traceId && l.etapa === 'plano-ensino' && l.tokens.total === 30)).toBe(true);
@@ -217,5 +218,30 @@ describe('Langfuse fora do ar não afeta a geração', () => {
     expect(types).not.toContain('error');
     expect(eventos.find(e => e.type === 'done').fullText).toContain('plano resiliente');
     expect(decorrido).toBeLessThan(5000);
+  });
+});
+
+describe('sessão do trace', () => {
+  test('com o curso nomeado, a sessão é o slug do curso em todos os spans do trace', async () => {
+    OpenAI.__setResponse('plano de ensino gerado pelo mock');
+    const ag = await sessao();
+    await sse(ag, '/api/plano-ensino');
+    await app.obs.flush();
+    const spans = spansOtlp();
+    expect(spans.length).toBeGreaterThanOrEqual(2);
+    for (const s of spans) expect(attr(s, 'langfuse.session.id')).toBe('Curso_de_Observabilidade');
+  });
+
+  test('sem curso nomeado, a sessão é um identificador derivado e nunca o cookie', async () => {
+    OpenAI.__setResponse('plano de ensino gerado pelo mock');
+    const ag = request.agent(app);
+    await ag.post('/api/config').send({}); // só abre a sessão (cookie), sem nomear o curso
+    await sse(ag, '/api/plano-ensino');
+    await app.obs.flush();
+    const spans = spansOtlp();
+    expect(spans.length).toBeGreaterThanOrEqual(2);
+    for (const s of spans) {
+      expect(attr(s, 'langfuse.session.id')).toMatch(/^sessao-[0-9a-f]{12}$/);
+    }
   });
 });

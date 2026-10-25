@@ -114,7 +114,7 @@ bncc-data.js       — 400+ competências/habilidades BNCC (EF1, EF2, EM)
 conteudo-secoes.js — geração do conteúdo por seções (roteiro da aula, seções, estado completa/curta/incompleta)
 fundamentacao.js   — dossiê de fontes por aula, citações [F#] e referências montadas pelo sistema
 avaliacao.js       — orçamento de tokens e map-reduce da avaliação sobre o conteúdo integral
-observabilidade.js — traces e scores das chamadas ao LLM (Langfuse via OTLP, opcional)
+observabilidade.js — traces e scores das chamadas ao LLM (Langfuse via OTLP, opcional); atributos de trace do v4 (sessão, nome, tags, ambiente, release) em todo span (`langfuse-trace-attributes`)
 custo.js           — estimativa de custo, trava de orçamento e disjuntor
 logger.js          — logs JSON estruturados (LOG_LEVEL) com reqId e sem segredos
 docx-markdown.js   — Markdown → elementos docx (listas, tabelas, código, links)

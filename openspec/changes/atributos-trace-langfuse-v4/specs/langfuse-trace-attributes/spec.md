@@ -5,7 +5,7 @@ Com o Langfuse habilitado, o sistema SHALL incluir em **cada** span OTLP enviado
 
 #### Scenario: Generation filha com sessão e nome do trace
 - **WHEN** a ementa é gerada em `POST /api/metodologia/confirmar` com o curso "Teste Langfuse" e a observabilidade habilitada
-- **THEN** a `generation` `ementa.gerar` enviada leva `langfuse.session.id = "teste-langfuse"`, `langfuse.trace.name = "metodologia_confirmar"` e `langfuse.trace.metadata.etapa = "metodologia_confirmar"`
+- **THEN** a `generation` `ementa.gerar` enviada leva `langfuse.session.id = "Teste_Langfuse"` (o slug do nome do curso), `langfuse.trace.name = "metodologia_confirmar"` e `langfuse.trace.metadata.etapa = "metodologia_confirmar"`
 
 #### Scenario: Span não-LLM com os mesmos atributos
 - **WHEN** uma chamada ao HeyGen ou ao Gamma gera um span filho
@@ -18,6 +18,10 @@ Com o Langfuse habilitado, o sistema SHALL incluir em **cada** span OTLP enviado
 #### Scenario: Sem sessão
 - **WHEN** a requisição não tem cookie de sessão nem curso nomeado
 - **THEN** nenhum span do trace leva `langfuse.session.id`, e o envio continua normalmente
+
+#### Scenario: Curso ainda sem nome
+- **WHEN** a sessão já existe (há cookie) mas o curso ainda não tem nome
+- **THEN** `langfuse.session.id` é um identificador derivado do cookie por hash (`sessao-` seguido de 12 hexadecimais) e nunca o valor do cookie
 
 ### Requirement: Tags como array
 O sistema SHALL enviar `langfuse.trace.tags` como array OTLP de strings (`arrayValue`), e não como texto serializado. As tags SHALL ser `etapa:<etapa>` e `captura:<metadados|completo>`. Objetos continuam sendo serializados como JSON, e arrays vazios SHALL ser omitidos.
@@ -66,6 +70,10 @@ O sistema SHALL NOT enviar `langfuse.user.id` nem `user.id`, `langfuse.trace.inp
 #### Scenario: Nome do curso com caminho
 - **WHEN** o nome do curso contém um caminho de pasta ou um e-mail
 - **THEN** `langfuse.session.id` é o slug do nome sem esses trechos, e o valor mascarado nunca contém caminho ou e-mail
+
+#### Scenario: Cookie de sessão não sai da máquina
+- **WHEN** qualquer span é enviado
+- **THEN** nenhum atributo contém o valor do cookie `sessionId`
 
 #### Scenario: Sem identificação de usuário
 - **WHEN** qualquer span é enviado

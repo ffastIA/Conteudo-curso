@@ -34,6 +34,8 @@ Consequência aceita e documentada: filtrar por `custo_heygen_usd` na tabela de 
 
 O getter preguiçoso de `ctx.sessionId` é lido ao montar cada span, não no fim da requisição. Se a sessão ainda não tiver curso nomeado, vale o id da sessão HTTP, como hoje. Se não houver sessão alguma (`null`), o atributo é omitido, nunca enviado vazio.
 
+O identificador de sessão **nunca é o cookie `sessionId`**: com o curso nomeado vale o slug do nome; antes disso vale `sessao-` mais os 12 primeiros hexadecimais do SHA-256 do cookie. (Antes desta change o cookie era enviado como sessão enquanto o curso não tinha nome.)
+
 *Risco:* o mesmo trace pode ter spans com `session.id` diferentes se o nome do curso mudar no meio da requisição (por exemplo `/api/config`). Aceito: a rota de configuração não chama o LLM.
 
 ### D4. Tags como array OTLP
@@ -51,6 +53,8 @@ O getter preguiçoso de `ctx.sessionId` é lido ao montar cada span, não no fim
 `registrarScore` envia `traceId` e passa a enviar `observationId` = `ctx.rootSpanId`. O Langfuse v4 trabalha com avaliação por observação; ancorar o score na observação raiz mantém a leitura por trace e habilita a leitura por observação. O span raiz é exportado depois dos filhos e, em alguns fluxos, o score é enviado antes dele; não se sabe se o Langfuse aceita um score que referencia uma observação ainda não ingerida. Isso é **verificado com o Langfuse real** na tarefa 4.2, com plano B: se houver rejeição, reenviar só com `traceId`.
 
 ### D7. Link do trace
+
+**Verificado em 2026-10-25 no Langfuse 4.70:** `{host}/trace/{id}` abre a página "Rastreamento não encontrado", e `{host}/project/{projectId}/traces/{id}` abre o trace com árvore, custo e scores. A troca é, portanto, necessária. A consulta ao projeto é disparada na abertura do contexto da requisição, para o primeiro link depois de reiniciar o servidor já sair no formato novo.
 
 `urlTrace` hoje devolve `{host}/trace/{traceId}`. Na tarefa 4.3 abre-se esse link no Langfuse 4.70. Se não resolver para o trace, passa a usar `{host}/project/{projectId}/traces/{traceId}`, com o `projectId` obtido uma única vez por `GET /api/public/projects` e guardado em memória; falha nessa consulta cai de volta para o formato atual. Nada disso bloqueia a resposta ao usuário.
 

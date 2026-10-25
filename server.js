@@ -580,7 +580,10 @@ app.use('/api', (req, res, next) => {
     etapa,
     sessionId: () => {
       const s = sessions[req.cookies?.sessionId];
-      return s?.config?.nome ? slugify(s.config.nome) : (req.cookies?.sessionId || null);
+      // Antes do curso ter nome, usa um identificador derivado: o cookie nunca sai da máquina.
+      const cookie = req.cookies?.sessionId;
+      return s?.config?.nome ? slugify(s.config.nome)
+        : (cookie ? 'sessao-' + require('node:crypto').createHash('sha256').update(String(cookie)).digest('hex').slice(0, 12) : null);
     }
   });
   Object.defineProperty(ctx, 'sess', { enumerable: false, get: () => sessions[req.cookies?.sessionId] });

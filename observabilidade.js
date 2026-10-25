@@ -71,12 +71,28 @@ function atributo(chave, valor) {
       ? { key: chave, value: { intValue: String(valor) } }
       : { key: chave, value: { doubleValue: valor } };
   }
+  if (Array.isArray(valor)) {
+    // OTLP: array de escalares (ex.: langfuse.trace.tags); array vazio é omitido.
+    const values = valor.map(v => atributo('', v)?.value).filter(Boolean);
+    return values.length ? { key: chave, value: { arrayValue: { values } } } : null;
+  }
   if (typeof valor === 'object') return { key: chave, value: { stringValue: JSON.stringify(valor) } };
   return { key: chave, value: { stringValue: String(valor) } };
 }
 
 function atributos(obj) {
   return Object.entries(obj).map(([k, v]) => atributo(k, v)).filter(Boolean);
+}
+
+// Formato aceito pelo Langfuse para `langfuse.environment`.
+const AMBIENTE_RE = /^(?!langfuse)[a-z0-9_-]{1,40}$/;
+
+function versaoDoApp() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8')).version || null;
+  } catch {
+    return null;
+  }
 }
 
 function lerConfig(env) {
@@ -86,9 +102,14 @@ function lerConfig(env) {
   const publicKey = String(env.LANGFUSE_PUBLIC_KEY || '').trim();
   const secretKey = String(env.LANGFUSE_SECRET_KEY || '').trim();
   const taxa = Number(env.LANGFUSE_SAMPLE_RATE);
+  const ambienteBruto = String(env.LANGFUSE_ENVIRONMENT || '').trim();
+  const ambienteInvalido = !!ambienteBruto && !AMBIENTE_RE.test(ambienteBruto);
   return {
     enabled: habilitada && !!host && !!publicKey && !!secretKey,
     habilitada,
+    environment: ambienteBruto && !ambienteInvalido ? ambienteBruto : 'default',
+    ambienteInvalido,
+    release: versaoDoApp(),
     host,
     publicKey,
     secretKey,
@@ -109,6 +130,9 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
   if (cfg.habilitada && !cfg.enabled) {
     const faltam = [!cfg.host && 'LANGFUSE_HOST', !cfg.publicKey && 'LANGFUSE_PUBLIC_KEY', !cfg.secretKey && 'LANGFUSE_SECRET_KEY'].filter(Boolean);
     logger.warn(`[observabilidade] LANGFUSE_ENABLED=true, mas faltam ${faltam.join(', ')} — Langfuse desligado`);
+  }
+  if (cfg.enabled && cfg.ambienteInvalido) {
+    logger.warn('[observabilidade] LANGFUSE_ENVIRONMENT inválido (use minúsculas, dígitos, "-" ou "_", até 40 caracteres, sem começar por "langfuse") — usando "default"');
   }
   const tabelaPrecos = precos || carregarPrecos();
   const fila = [];
@@ -144,6 +168,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
     }
     fila.push(span);
     iniciarTimer();
+    descobrirProjeto();
     if (fila.length >= LOTE_MAX) setImmediate(() => { flush(); });
   }
 
@@ -186,6 +211,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
 
   // ── Contexto por operação (trace) ─────────────────────────────────────────
   function criarContexto({ etapa, sessionId = null, traceId = crypto.randomUUID().replace(/-/g, ''), props = {} }) {
+    descobrirProjeto();
     const ctx = {
       traceId,
       rootSpanId: novoSpanId(),
@@ -232,6 +258,27 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
       if (v !== undefined && v !== null && v !== '') out[`langfuse.observation.metadata.${k}`] = v;
     }
     return out;
+  }
+
+  // Atributos de TRACE copiados para cada span (Langfuse v4 consulta por observação e
+  // não herda do span raiz). Só entra o que já se conhece na criação do span; valores
+  // finais (tokens_total, custo_usd, traceMeta) ficam só no raiz, porque reexportar um
+  // span já enviado duplicaria observações. Nunca leva user.id nem trace.input/output.
+  function atributosDeTrace(ctx) {
+    try {
+      const sessao = ctx.sessionId ? mascarar(String(ctx.sessionId)) : undefined;
+      return {
+        'langfuse.trace.name': ctx.etapa,
+        'langfuse.session.id': sessao || undefined,
+        'langfuse.trace.tags': [`etapa:${ctx.etapa}`, `captura:${cfg.capture}`],
+        'langfuse.trace.metadata.etapa': ctx.etapa,
+        'langfuse.environment': cfg.environment,
+        'langfuse.release': cfg.release || undefined
+      };
+    } catch (err) {
+      avisar(`falha ao montar atributos de trace: ${err.message}`);
+      return {};
+    }
   }
 
   function span({ ctx, nome, inicio, fim, attrs, erro = null, root = false }) {
@@ -286,6 +333,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
         : undefined,
       'langfuse.observation.cost_details': custo === null ? undefined : { total: custo },
       'langfuse.observation.level': erro ? 'ERROR' : (incompleta ? 'WARNING' : 'DEFAULT'),
+      ...atributosDeTrace(ctx),
       ...atributosComuns(ctx, { finish_reason: finishReason, latencia_ms: fim - inicio, custo_usd: custo ?? undefined, ...extra })
     };
     const tamEntrada = typeof input === 'string' ? input.length : JSON.stringify(input ?? '').length;
@@ -309,6 +357,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
     const attrs = {
       'langfuse.observation.type': 'span',
       'langfuse.observation.level': erro ? 'ERROR' : 'DEFAULT',
+      ...atributosDeTrace(ctx),
       ...atributosComuns(ctx, { http_status: status ?? undefined, duracao_ms: fim - inicio, ...extra })
     };
     enfileirar(span({ ctx, nome, inicio, fim, attrs, erro }));
@@ -318,11 +367,9 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
   function finalizarContexto(ctx, { erro = null } = {}) {
     if (!ctx || !cfg.enabled || !ctx.filhos || !(ctx.amostrado || ctx.forcado)) return;
     const attrs = {
-      'langfuse.trace.name': ctx.etapa,
-      'langfuse.session.id': ctx.sessionId || undefined,
+      ...atributosDeTrace(ctx),
       'langfuse.observation.type': 'span',
       'langfuse.observation.metadata.etapa': ctx.etapa,
-      'langfuse.trace.metadata.etapa': ctx.etapa,
       'langfuse.trace.metadata.tokens_total': ctx.tokens.total,
       'langfuse.trace.metadata.custo_usd': ctx.custoUsd
     };
@@ -336,15 +383,22 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
     if (!(ctx.amostrado || ctx.forcado)) return;
     const p = Promise.resolve().then(async () => {
       try {
-        const resp = await fetchImpl(`${cfg.host}/api/public/scores`, {
+        const enviar = (comObservacao) => fetchImpl(`${cfg.host}/api/public/scores`, {
           method: 'POST',
           headers: cabecalhos(),
           body: JSON.stringify({
             traceId: ctx.traceId, name: nome, value: valor, dataType: 'NUMERIC',
+            ...(comObservacao ? { observationId: ctx.rootSpanId } : {}),
             ...(comentario ? { comment: mascarar(String(comentario)) } : {})
           }),
           signal: AbortSignal.timeout(TIMEOUT_ENVIO_MS)
         });
+        // Ancora o score no span raiz; se o Langfuse recusar (4xx), reenvia só com traceId.
+        let resp = await enviar(true);
+        if (resp.status >= 400 && resp.status < 500) {
+          avisar(`Langfuse recusou o score "${nome}" com observationId (${resp.status}) — reenviando só com traceId`);
+          resp = await enviar(false);
+        }
         if (!resp.ok) avisar(`Langfuse respondeu ${resp.status} ao registrar o score "${nome}"`);
       } catch (err) {
         avisar(`falha ao registrar o score "${nome}": ${err.message}`);
@@ -376,7 +430,32 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
     })();
   }
 
-  const urlTrace = (traceId) => (cfg.enabled ? `${cfg.host}/trace/${traceId}` : null);
+  // No Langfuse v4 o link `{host}/trace/{id}` não resolve ("Rastreamento não encontrado");
+  // o que abre o trace é `{host}/project/{projectId}/traces/{id}`. O projectId vem de
+  // GET /api/public/projects (a chave pertence a um único projeto) e é guardado em memória.
+  let projetoId = null;
+  let descobrindoProjeto = false;
+  function descobrirProjeto() {
+    if (projetoId || descobrindoProjeto || !cfg.enabled) return;
+    descobrindoProjeto = true;
+    const p = Promise.resolve().then(async () => {
+      try {
+        const resp = await fetchImpl(`${cfg.host}/api/public/projects`, {
+          headers: cabecalhos(),
+          signal: AbortSignal.timeout(TIMEOUT_ENVIO_MS)
+        });
+        if (!resp.ok) return;
+        const id = (await resp.json())?.data?.[0]?.id;
+        if (typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id)) projetoId = id;
+      } catch { /* sem o id do projeto o link usa o formato antigo */ }
+    }).finally(() => { descobrindoProjeto = false; pendentes.delete(p); });
+    pendentes.add(p);
+  }
+
+  const urlTrace = (traceId) => {
+    if (!cfg.enabled) return null;
+    return projetoId ? `${cfg.host}/project/${projetoId}/traces/${traceId}` : `${cfg.host}/trace/${traceId}`;
+  };
 
   return {
     config: cfg,

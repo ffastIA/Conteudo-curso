@@ -28,3 +28,6 @@ process.env.HEYGEN_SALDO_ESPERA_MS = '0';
 // A suíte nunca envia spans ao Langfuse real do desenvolvedor (o .env pode ter LANGFUSE_ENABLED=true).
 // Os testes de observabilidade ligam a flag no próprio arquivo, sempre com fetch simulado.
 process.env.LANGFUSE_ENABLED = 'false';
+
+// Ambiente do Langfuse separado do uso real: a suíte nunca mistura dados com o ambiente de desenvolvimento.
+process.env.LANGFUSE_ENVIRONMENT = 'teste';

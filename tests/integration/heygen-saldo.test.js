@@ -288,7 +288,7 @@ describe('Langfuse', () => {
     // chamadas HTTP ao HeyGen continuam como spans automáticos; o saldo também
     expect(spans.some(s => s.name === 'heygen.get.v3/users/me')).toBe(true);
 
-    const raiz = spans.find(s => attr(s, 'langfuse.trace.name') === 'video-avatar_gerar');
+    const raiz = spans.find(s => !s.parentSpanId && attr(s, 'langfuse.trace.name') === 'video-avatar_gerar');
     expect(attr(raiz, 'langfuse.trace.metadata.custo_heygen_usd')).toBe(0.5);
     expect(Number(attr(raiz, 'langfuse.trace.metadata.custo_usd'))).toBe(0); // LLM separado do HeyGen
 
