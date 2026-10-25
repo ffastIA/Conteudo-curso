@@ -2,19 +2,7 @@
   {
     "numero": 1,
     "titulo": "Introdução ao CapCut",
-    "nota": 0.83,
-    "criterios": {
-      "planoAula": 8,
-      "planoEnsinoEmenta": 8,
-      "nivelPublicoModalidade": 7,
-      "qualidadeDidatica": 6,
-      "clarezaEstrutura": 8
-    }
-  },
-  {
-    "numero": 2,
-    "titulo": "Edição de Vídeos",
-    "nota": 0.84,
+    "nota": 0.87,
     "criterios": {
       "planoAula": 8,
       "planoEnsinoEmenta": 9,
@@ -24,9 +12,21 @@
     }
   },
   {
+    "numero": 2,
+    "titulo": "Edição Básica de Vídeos",
+    "nota": 0.81,
+    "criterios": {
+      "planoAula": 8,
+      "planoEnsinoEmenta": 7,
+      "nivelPublicoModalidade": 8,
+      "qualidadeDidatica": 6,
+      "clarezaEstrutura": 7
+    }
+  },
+  {
     "numero": 3,
-    "titulo": "Finalização e Exportação do Vídeo",
-    "nota": 0.86,
+    "titulo": "Adicionando Música e Finalizando o Vídeo",
+    "nota": 0.87,
     "criterios": {
       "planoAula": 8,
       "planoEnsinoEmenta": 9,

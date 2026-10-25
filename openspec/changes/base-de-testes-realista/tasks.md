@@ -16,5 +16,5 @@
 
 ## 4. Verificação final
 
-- [ ] 4.1 Reexecutar a linha de base (2 cursos) ao fim de cada fase
+- [x] 4.1 Reexecutar a linha de base (2 cursos) ao fim de cada fase
 - [x] 4.2 `npm test` verde e `openspec validate --all`

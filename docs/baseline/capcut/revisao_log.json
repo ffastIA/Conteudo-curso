@@ -1,5 +1,5 @@
 {
-  "geradoEm": "2026-10-24T20:34:10.630Z",
+  "geradoEm": "2026-10-24T23:57:52.330Z",
   "formulaVersao": "2",
   "limiteTokensEntrada": 24000,
   "aulas": [
@@ -7,136 +7,116 @@
       "aula": 1,
       "titulo": "Introdução ao CapCut",
       "modo": "unica",
-      "tokensEstimados": 21066,
+      "tokensEstimados": 20380,
       "secoes": [
         {
-          "titulo": "Apresentação do CapCut e suas funcionalidades",
-          "palavras": 486,
+          "titulo": "Definindo o CapCut",
+          "palavras": 663,
           "lida": true
         },
         {
-          "titulo": "Navegando na interface do CapCut",
-          "palavras": 637,
+          "titulo": "Abrindo o aplicativo e criando um projeto",
+          "palavras": 682,
           "lida": true
         },
         {
-          "titulo": "Atividade prática: Criar Conta e Navegar",
-          "palavras": 531,
+          "titulo": "Navegando pela interface do CapCut",
+          "palavras": 629,
           "lida": true
         },
         {
-          "titulo": "Atividade prática: Cortar e Dividir Clipes",
-          "palavras": 601,
-          "lida": true
-        },
-        {
-          "titulo": "Síntese",
-          "palavras": 414,
+          "titulo": "Síntese da aula",
+          "palavras": 368,
           "lida": true
         }
       ],
-      "secoesLidas": 5,
-      "totalSecoes": 5
+      "secoesLidas": 4,
+      "totalSecoes": 4
     },
     {
       "aula": 2,
-      "titulo": "Edição de Vídeos",
+      "titulo": "Edição Básica de Vídeos",
       "modo": "unica",
-      "tokensEstimados": 20532,
+      "tokensEstimados": 21199,
       "secoes": [
         {
-          "titulo": "Adicionando Texto aos Vídeos",
-          "palavras": 475,
+          "titulo": "Cortando e Unindo Clipes",
+          "palavras": 404,
           "lida": true
         },
         {
-          "titulo": "Escolhendo Músicas para Vídeos",
-          "palavras": 415,
+          "titulo": "Atividade Prática: Cortar e Unir",
+          "palavras": 406,
           "lida": true
         },
         {
-          "titulo": "Aplicando Efeitos Visuais",
-          "palavras": 553,
+          "titulo": "Adicionando e Editando Texto",
+          "palavras": 429,
           "lida": true
         },
         {
-          "titulo": "Atividade Prática: Edição de Vídeo",
-          "palavras": 466,
+          "titulo": "Atividade Prática: Texto no Vídeo",
+          "palavras": 481,
           "lida": true
         },
         {
-          "titulo": "Compartilhando e Recebendo Feedback",
-          "palavras": 364,
+          "titulo": "Explorando Efeitos Visuais Simples",
+          "palavras": 338,
+          "lida": true
+        },
+        {
+          "titulo": "Atividade Prática: Efeitos Visuais",
+          "palavras": 373,
           "lida": true
         },
         {
           "titulo": "Síntese da Aula",
-          "palavras": 339,
+          "palavras": 265,
+          "lida": true
+        }
+      ],
+      "secoesLidas": 7,
+      "totalSecoes": 7
+    },
+    {
+      "aula": 3,
+      "titulo": "Adicionando Música e Finalizando o Vídeo",
+      "modo": "unica",
+      "tokensEstimados": 21232,
+      "secoes": [
+        {
+          "titulo": "Objetivos da Aula",
+          "palavras": 418,
+          "lida": true
+        },
+        {
+          "titulo": "Ajustando o Volume e Sincronizando",
+          "palavras": 494,
+          "lida": true
+        },
+        {
+          "titulo": "Exportando e Compartilhando o Vídeo",
+          "palavras": 470,
+          "lida": true
+        },
+        {
+          "titulo": "Inserindo Música",
+          "palavras": 430,
+          "lida": true
+        },
+        {
+          "titulo": "Ajustando Volume e Sincronizando",
+          "palavras": 513,
+          "lida": true
+        },
+        {
+          "titulo": "Síntese",
+          "palavras": 350,
           "lida": true
         }
       ],
       "secoesLidas": 6,
       "totalSecoes": 6
-    },
-    {
-      "aula": 3,
-      "titulo": "Finalização e Exportação do Vídeo",
-      "modo": "unica",
-      "tokensEstimados": 22580,
-      "secoes": [
-        {
-          "titulo": "Abertura e Relembrar Aulas Anteriores",
-          "palavras": 300,
-          "lida": true
-        },
-        {
-          "titulo": "Objetivos da Aula",
-          "palavras": 357,
-          "lida": true
-        },
-        {
-          "titulo": "Importância da Revisão",
-          "palavras": 392,
-          "lida": true
-        },
-        {
-          "titulo": "Passo a Passo para Exportação",
-          "palavras": 272,
-          "lida": true
-        },
-        {
-          "titulo": "Atividade Prática de Revisão",
-          "palavras": 312,
-          "lida": true
-        },
-        {
-          "titulo": "Exportação de Vídeos",
-          "palavras": 418,
-          "lida": true
-        },
-        {
-          "titulo": "Apresentação dos Vídeos",
-          "palavras": 333,
-          "lida": true
-        },
-        {
-          "titulo": "Discussão em Grupo",
-          "palavras": 377,
-          "lida": true
-        },
-        {
-          "titulo": "Reflexão Final e Encaminhamentos",
-          "palavras": 414,
-          "lida": true
-        },
-        {
-          "titulo": "Síntese",
-          "palavras": 443,
-          "lida": true
-        }
-      ],
-      "secoesLidas": 10,
-      "totalSecoes": 10
     }
   ]
 }

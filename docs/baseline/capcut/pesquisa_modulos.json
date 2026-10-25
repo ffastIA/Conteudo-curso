@@ -2,7 +2,7 @@
   "status": "web",
   "fonte": "ia",
   "modelo": "gpt-4o",
-  "geradoEm": "2026-10-24T20:30:40.651Z",
+  "geradoEm": "2026-10-24T23:54:59.887Z",
   "completo": true,
   "pulada": false,
   "modulos": [
@@ -16,7 +16,7 @@
     },
     {
       "id": "m2",
-      "titulo": "Módulo 2: Edição de Vídeos",
+      "titulo": "Módulo 2: Edição Básica de Vídeos",
       "aulas": [
         1
       ],
@@ -24,7 +24,7 @@
     },
     {
       "id": "m3",
-      "titulo": "Módulo 3: Finalização e Exportação do Vídeo",
+      "titulo": "Módulo 3: Adicionando Música e Finalizando o Vídeo",
       "aulas": [
         2
       ],
@@ -35,24 +35,24 @@
     {
       "id": "c1",
       "moduloId": "m1",
-      "texto": "Módulo \"Módulo 1: Introdução ao CapCut\": Aula 1 (Introdução ao CapCut): Apresentar o CapCut e suas funcionalidades; Familiarizar os alunos com a navegação na interface do CapCut; Realizar atividade de cortar e dividir clipes."
+      "texto": "Módulo \"Módulo 1: Introdução ao CapCut\": Aula 1 (Introdução ao CapCut): Definir o CapCut; Apresentar as funções principais do aplicativo; Ensinar a abrir o aplicativo e criar um novo projeto; Navegar pela interface do CapCut"
     },
     {
       "id": "c2",
       "moduloId": "m2",
-      "texto": "Módulo \"Módulo 2: Edição de Vídeos\": Aula 2 (Edição de Vídeos): Ensinar como adicionar textos, músicas e efeitos aos vídeos; Realizar atividades práticas de corte, adição de texto e música aos vídeos dos alunos."
+      "texto": "Módulo \"Módulo 2: Edição Básica de Vídeos\": Aula 2 (Edição Básica de Vídeos): Ensinar a cortar e unir clipes; Mostrar como adicionar e editar texto; Explorar efeitos visuais simples"
     },
     {
       "id": "c3",
       "moduloId": "m3",
-      "texto": "Módulo \"Módulo 3: Finalização e Exportação do Vídeo\": Aula 3 (Finalização e Exportação do Vídeo): Instruir sobre como revisar e exportar o vídeo finalizado; Realizar a apresentação dos vídeos e discussão em grupo sobre o aprendizado."
+      "texto": "Módulo \"Módulo 3: Adicionando Música e Finalizando o Vídeo\": Aula 3 (Adicionando Música e Finalizando o Vídeo): Ensinar como escolher e adicionar música ao vídeo; Ajustar volume e sincronização; Mostrar como salvar e compartilhar o vídeo finalizado"
     }
   ],
   "achados": [
     {
       "moduloId": "m1",
       "tema": "Módulo 1: Introdução ao CapCut",
-      "resumo": "Segue a fundamentação atualizada (2026) para o **Módulo 1 – Introdução ao CapCut**, nível básico para crianças de 8 a 12 anos, modalidade online. O conteúdo está organizado conforme os objetivos da aula 1 (Apresentação, Interface e Atividade de cortar/dividir clipes), com abordagem acessível, vocabulário simples, analogias, atividades e estrutura guiada por Aprendizagem por Projetos.\n\n---\n\n## 1. Conceitos-chave e funcionalidade básica\n\n- **CapCut** é um editor de vídeo gratuito, intuitivo e visual, ideal para criar vídeos curtos como os usados em redes sociais. É bem recomendado para iniciantes por ter uma interface fácil de navegar, arrastar e soltar clipes, e dicas visuais que ajudam muito ([techradar.com](https://www.techradar.com/best/free-video-editing-software?utm_source=openai)).\n\n- A **divisão ou corte de clipes** (em inglês, *split*) é uma das ações mais simples e importantes: ela permite que a criança separe um vídeo em duas partes, como se estivesse usando uma tesoura para cortar uma fita. Isso serve para remover trechos que não quer no vídeo ou preparar partes para editar separadamente ([capcut.com](https://www.capcut.com/features/how-to-split-a-video-capcut-workflow-comparison?utm_source=openai)).\n\n- A interface típica tem três áreas principais, como se fosse uma sala de trabalho que se divide em:\n  1. **Visualizador (preview)** — mostra como o vídeo está ficando, em tempo real.\n  2. **Linha do tempo (timeline)** — onde aparecem os clipes, como peças de um quebra‑cabeça que a gente pode mover e organizar.\n  3. **Barra de ferramentas (ferramentas abaixo ou nas laterais)** — são botões e opções para cortar, adicionar texto, som, filtros, etc. ([tutotech.net](https://tutotech.net/como-usar-capcut-paso-a-paso-para-principiantes/?utm_source=openai)).\n\n---\n\n## 2. Navegar na interface do CapCut (foco infantil)\n\n**Vocabulário simples e analogias:**\n\n- **Visualizador** = \"telinha que mostra o vídeo\".\n- **Linha do tempo** = \"prateleira onde colocamos os pedaços do vídeo na ordem\".\n- **Cortar/Dividir** = \"tesoura digital\".\n- **Ferramentas** = \"caixa de mágica com botões para brincar\".\n\n**Boas práticas para aula online:**\n\n- Mostrar a interface com fotos ou compartilhamento de tela (seja app ou versão do navegador). Explique a funcionalidade de cada área com analogia simples.\n- Use clipes curtos que as crianças conheçam — como trechos de desenho, cena de brincadeira, etc.\n- Oriente que sempre se deve clicar no clipe **na linha do tempo**, posicionar a \"linha do tempo invisível\" (playhead) no lugar certo e clicar em **Dividir** para cortar ([ads.tiktok.com](https://ads.tiktok.com/help/article/about-capcut?lang=pt&utm_source=openai)).\n\n---\n\n## 3. Atalhos e comandos simples (opcional para desktops)\n\nPara estimular leve familiaridade com atalhos (um “atalho de teclado” é como um truque que economiza cliques):\n\n- No **CapCut Desktop**, o comando para dividir clipe é **Ctrl + B** (Windows) ou **Cmd + B** (macOS), o que faz um corte rápido no ponto onde está a linha do tempo ([news.avatix.com.br](https://news.avatix.com.br/guias/atalhos-capcut-51-comandos-avatix/?utm_source=openai)).\n\nEssa parte é opcional, para estimular reconhecimento de teclas e fluidez, mas pode ser apresentada apenas como curiosidade (“um truque para cortar mais rápido, quando usar no computador”).\n\n---\n\n## 4. Atividade guiada: “Cortar e dividir clipes”\n\n**Passo a passo voltado ao público infantil:**\n\n1. **Abrir um projeto novo** — clique em “Novo projeto” e escolha um vídeo divertido (como um pulo, risada, cena de algo que gostam) ([oabsaopedrodaaldeia.org.br](https://oabsaopedrodaaldeia.org.br/wp-content/uploads/2025/12/Curso-de-CapCut.pdf?utm_source=openai)).\n2. **Ver e entender a tela** — explique a telinha (preview), a prateleira de clipes (timeline) e os botões (barra de ferramentas), usando vocabulário simples e alguma analogia.\n3. **Selecionar o clipe** — clique no vídeo na prateleira (linha do tempo).\n4. **Encontrar o ponto de corte** — assistir até onde quer cortar (como o momento engraçado) e posicionar a “linha imaginária”.\n5. **Cortar** — clicar no botão **Dividir** (ou usar Ctrl/Cmd+B no computador).\n6. **Separar e eliminar** — clicar na parte que não quer (como um erro ou silêncio) e apertar o ícone de lixeira.\n7. **Verificar resultado** — assistir como ficou, arrastar os pedacinhos para reorganizar, repetir se quiser.\n8. **Salvar ou exportar** — baixar o vídeo final ou compartilhar com os colegas.\n\n**Objetivo de Bloom: lembrar e aplicar, pois a criança lembrará o que cada botão faz e aplicará os passos para cortar seu vídeo.**\n\n**Exemplo prático**: \"Vamos cortar o momento em que o personagem faz uma careta — clipe na prateleira, pausar na careta, clicar em Dividir, eliminar a parte antes/ depois e ver só a careta final\".\n\n---\n\n## 5. Boas práticas pedagógicas e progressão\n\n- **Aprendizagem por Projetos**: desde a primeira aula, incentive que a criança esteja editando seu próprio vídeo — ainda que simples — em cada passo.\n- **Atividade visual e feedback**: ao final do corte, incentive que mostrem seu vídeo a alguém (colega, familiar ou professor) para celebrar o progresso.\n- **Progressão suave**: se inicialmente cortam um clipe, depois podem repetir com outro e reorganizar dois clipes, sempre com tarefa pequena e verificável.\n- **Reflexão rápida**: “O que aprendeu hoje? Foi fácil? Onde você clicou? O que acontece se cortar em outro lugar?” — reforça entendimento.\n\n---\n\n## 6. Fontes e atualidade (2026)\n\n- Interface amigável e funcionalidades essenciais como *split*, multitrack, arrastar e soltar são destacadas em lista de melhores softwares de edição de vídeo em 2026 ([creativebloq.com](https://www.creativebloq.com/buying-guides/best-software-for-editing-videos-for-youtube?utm_source=openai)).\n\n- A função de **Dividir/ Split** está disponível em todas as plataformas (celular, web, desktop) com fluxo intuitivo: clicar no clipe, posicionar o ponto e clicar em Dividir ([ads.tiktok.com](https://ads.tiktok.com/help/article/about-capcut?lang=pt&utm_source=openai)).\n\n- Atalhos úteis para a versão Desktop estão atualizados até agosto de 2026, incluindo **Ctrl+B / Cmd+B** para dividir clipes ([news.avatix.com.br](https://news.avatix.com.br/guias/atalhos-capcut-51-comandos-avatix/?utm_source=openai)).\n\n---\n\n## 7. Resumo em tabela (linguagem simples)\n\n- Abrir o CapCut → Nova sequência (\"fazer um novo vídeo\").\n- Conhecer a **prtela**: telinha, prateleira, caixinha de botões.\n- Clicar no clipe, encontrar ponto de corte, usar **Dividir** (ou Ctrl/Cmd+B).\n- Escolher o pedaço indesejado e excluir.\n- Ver como ficou, reorganizar se quiser.\n- Salvar/baixar e mostrar.\n\n---\n\nCom esta base técnica atualizada (2026) você pode construir um módulo inicial claro, leve e eficaz, alinhado à metodologia de **Aprendizagem por Projetos**, adequado ao público infantil, com vocabulário acessível, atividades passo a passo, bons exemplos reais e respaldo em fontes primárias oficiais. Se desejar expandir com imagens, vídeos ou planilhas de atividades, posso ajudar!",
+      "resumo": "Aqui está uma síntese atualizada (2026) para fundamentar o **Módulo 1: Introdução ao CapCut** do curso \"Edição de vídeo com CapCut para crianças\" (nível básico, público de 8 a 12 anos, modalidade online).\n\n---\n\n## 1. Conceitos-chave e terminologia (linguagem simples, analogias)\n\n- **CapCut**: é um programa para editar vídeos de forma fácil e divertida. É como um caderno de desenhos, mas onde se “recorta” cenas, junta partes, coloca música, letras e efeitos, tudo em imagens em movimento. Está disponível para celular, computador e navegador de internet ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Projeto**: é como um caderno em branco onde você monta seu vídeo. Você abre o CapCut e clica em “Novo projeto” para começar ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Linha do tempo (timeline)**: imagine uma régua onde as imagens e sons ficam alinhados como peças de um quebra-cabeça. Você coloca os vídeos ali para editar ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Importar (upload)**: é trazer seus vídeos, fotos ou músicas para dentro do CapCut — é como pegar os papéis antes de colar no caderno ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n\n---\n\n## 2. Funções principais do aplicativo\n\nFunções essenciais para crianças de 8 a 12 anos:\n\n- **Criar novo projeto**: abre um espaço para fazer o vídeo ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Importar mídia**: pegar vídeos, fotos ou músicas de seu dispositivo ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Linha do tempo**: onde você organiza os clipes pela ordem que quiser ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Cortar/dividir (split)**: permite tirar parte que não quer ou dividir para mudar a ordem ([zolotube.com](https://zolotube.com/watch?v=GD6tD1zf2eY&utm_source=openai)).\n- **Texto e animações**: colocar palavras sobre o vídeo, com letras que aparecem de forma divertida ([zolotube.com](https://zolotube.com/watch?v=GD6tD1zf2eY&utm_source=openai)).\n- **Transições simples**: efeitos para ligar os clipes de forma suave, como um “fade” ou “passagem” legal ([javieravila.es](https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso?utm_source=openai)).\n- **Filtros e música**: mudar o visual e adicionar trilha sonora ([capcut.com](https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Salvar (exportar)**: finalizar o vídeo para ver e compartilhar com os amigos ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n\n---\n\n## 3. Abrir o aplicativo e criar um novo projeto\n\n**Passo a passo básico**:\n\n1. **Baixar e abrir o CapCut**  \n   - No celular: baixe pela App Store ou Google Play.  \n   - No computador: acesse o site oficial e faça o download ou use a versão web ([ads.tiktok.com](https://ads.tiktok.com/help/article/about-capcut?lang=pt&utm_source=openai)).\n\n2. **Criar novo projeto**  \n   - Clique em “Novo projeto” ou “Criar projeto” para começar ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n\n3. **Importar vídeos ou fotos**  \n   - Escolha arquivos do celular/computador ou arraste para dentro do CapCut ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n\n---\n\n## 4. Navegar pela interface do CapCut\n\nA interface tem partes que as crianças precisam conhecer:\n\n- **Painel de mídia**: onde ficam os vídeos, fotos e músicas que importou ([javieravila.es](https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso?utm_source=openai)).\n- **Player (pré-visualização)**: janela onde se vê o vídeo enquanto edita ([javieravila.es](https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso?utm_source=openai)).\n- **Linha do tempo (timeline)**: onde se organiza e edita os clipes ([javieravila.es](https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso?utm_source=openai)).\n- **Painel de efeitos e texto**: serve para escolher transições, textos, música, filtros ([javieravila.es](https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso?utm_source=openai)).\n\n---\n\n## 5. Boas práticas para crianças\n\n- **Salvar ou exportar sempre**: para não perder o trabalho ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Ver antes de exportar**: assistir até o final para ver se está do jeitinho certo ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n- **Interface limpa e simples**: CapCut é feito para ser fácil de usar, ideal para crianças ([techradar.com](https://www.techradar.com/best/free-video-editing-software?utm_source=openai)).\n\n---\n\n## 6. Exemplos reais e contexto atual (2026)\n\n- **Integração com redes sociais**: muitos usam CapCut para fazer vídeos para TikTok, Reels ou Shorts de maneira rápida e intuitiva ([creativebloq.com](https://www.creativebloq.com/buying-guides/best-software-for-editing-videos-for-youtube?utm_source=openai)).\n- **Versão CapCut Pad (tablet)**: lançada em 2026, permite editar vídeos em tablets com multitrilhas, ideal para crianças mexerem com mais liberdade ([cincodias.elpais.com](https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html?utm_source=openai)).\n- **Recursos de inteligência artificial (IA)**: algumas versões têm cortes automáticos (Auto Cut) que combinam clipes com música ou falas; mas isso é mais avançado — pode ser mencionado como “se quiser” ([capcut.com](https://www.capcut.com/help?utm_source=openai)).\n\n---\n\n## 7. Estrutura recomendada para o módulo (integrando ABP)\n\nAbaixo, uma sugestão de como organizar o conteúdo:\n\n- **Aula 1: Início com o CapCut**  \n  - Objetivo: Que a criança saiba o que é o CapCut, como abrir e criar um novo projeto.  \n  - Conteúdo: Definição, abertura do app, criação de projeto e importação.\n\n- **Aula 2: Interface e primeiros passos**  \n  - Objetivo: Mostrar onde estão as funções principais e como navegar.  \n  - Conteúdo: Explicação da linha do tempo, painel de mídia, player e painel de efeitos.\n\n- **Atividade guiada (com ABP)**: Fazer um vídeo curto (por exemplo, colagem de 3 fotos com música e texto):  \n  - Passo a passo: importar, colocar na linha do tempo, adicionar texto simples e salvar.\n\n- **Feedback e reflexão**:  \n  - Mostrar os vídeos, perguntar o que cada um aprendeu sobre onde clicar e como organizar.\n\n---\n\n##  Conclusão\n\nO **Módulo 1** deve transmitir claramente:\n\n- O que é o CapCut (editor de vídeo divertido e simples).\n- Como abrir e criar projeto, importar arquivos, conhecer os principais elementos da interface.\n- Termos principais definidos (projeto, importação, linha do tempo etc.).\n- Boas práticas de salvamento e visualização.\n- Exemplos atuais (usos com redes sociais, versão para tablet).\n- Atividade prática inicial, seguindo ABP, com uma tarefa rápida e concreta.\n\n Esse módulo fornece a base necessária para que as crianças aprendam a “lembrar”, “entender” e “aplicar” (Taxonomia de Bloom) os conceitos básicos da edição de vídeo no CapCut.\n\n---\n\nSe desejar, posso ajudar a elaborar roteiros de aula, slides ou guias visuais para crianças.",
       "fonteIds": [
         "f1",
         "f2",
@@ -60,78 +60,82 @@
         "f4",
         "f5",
         "f6",
-        "f7"
+        "f7",
+        "f8",
+        "f9"
       ]
     },
     {
       "moduloId": "m2",
-      "tema": "Módulo 2: Edição de Vídeos",
-      "resumo": "Aqui está a fundamentação atualizada (2026) para o **Módulo 2: Edição de Vídeos**, focando em como ensinar crianças de 8 a 12 anos a adicionar textos, músicas e efeitos no CapCut — com base em fontes primárias (documentação oficial e guias técnicos), linguagem simples e analogias adequadas ao público.\n\n---\n\n###  1. Versões e ferramentas atuais do CapCut\n\n- **Disponibilidade**: O CapCut está disponível nas versões para dispositivos móveis (iOS, Android), desktop (Windows, macOS) e também online (navegador) ([capcut.com](https://www.capcut.com/pt-br/resource/how-to-use-capcut?utm_source=openai)).\n- **Recursos atuais para crianças iniciantes**:\n  - *Texto*: inserir títulos, legendas, efeitos animados e modelos prontos. Aparece em “Texto” ou “Text Template” ([ads.tiktok.com](https://ads.tiktok.com/resources/help/article/about-capcut?lang=en&utm_source=openai)).\n  - *Música e áudio*: adicionar trilha sonora, efeitos sonoros, aplicar efeitos como fade in/fade out e ajustar volume ([canaltech.com.br](https://canaltech.com.br/apps/como-colocar-musica-no-capcut/?utm_source=openai)).\n  - *Efeitos visuais*: filtros, efeitos corporais e animações para deixar o vídeo mais divertido ([capcut.com](https://www.capcut.com/pt-br/resource/how-to-use-capcut?utm_source=openai)).\n  - *Outros recursos úteis*: adesivos, transições, legendas automáticas (auto captions), e texto que se transforma em voz (text-to-speech) ([capcut.com](https://www.capcut.com/pt-br/resource/how-to-add-capcut-overlays?utm_source=openai)).\n\n---\n\n### 2. Conceitos-chave explicados com simplicidade\n\n**Texto**  \n- O que é: palavras, frases ou títulos que aparecem sobre o vídeo. É como escrever um bilhete colorido que aparece enquanto você assiste o vídeo.  \n- Como usar: vá no menu “Texto”, toque em “Adicionar texto” ou escolha um modelo. Depois, você pode mudar a letra, a cor, o tamanho, e até fazer o texto dançar (animar)! ([capcut.com](https://www.capcut.com/pt-br/resource/how-to-add-capcut-overlays?utm_source=openai)).\n\n**Música e efeitos sonoros**  \n- O que é: sons de fundo que deixam o vídeo animado, como a trilha de uma história.  \n- Como usar: na versão online ou desktop, abra o menu “Áudio”, escolha “Música”, procure por estilos (como alegre, calmo), depois arraste a música para a linha do tempo. Você pode também ajustar o volume ou fazer o som entrar devagar (fade in) ou sair devagar (fade out) ([canaltech.com.br](https://canaltech.com.br/apps/como-colocar-musica-no-capcut/?utm_source=openai)).\n\n**Efeitos visuais**  \n- O que é: detalhes que deixam o vídeo mais legal — como filtros que mudam a cor ou luz, ou movimentos que fazem as imagens brilharem ou tremer um pouco.  \n- Como usar: no menu “Efeitos” você escolhe o que quer, como “retro” ou “brilho”, e clica para aplicar no vídeo. É como escolher um adesivo mágico que deixa tudo mais bonito ([capcut.com](https://www.capcut.com/resource/how-to-use-capcut?utm_source=openai)).\n\n**Legendas automáticas e texto para voz (text-to-speech)**  \n- Legendas automáticas: o CapCut mostra as palavras faladas no vídeo como se fosse uma fala em balões — tudo sozinho! ([capcut.com](https://www.capcut.com/pt-br/resource/how-to-add-capcut-overlays?utm_source=openai)).  \n- Texto para voz: você escreve algo e o app transforma em voz falada — como um robô lendo o seu texto. ([ads.tiktok.com](https://ads.tiktok.com/resources/help/article/about-capcut?lang=en&utm_source=openai)).\n\n---\n\n### 3. Boas práticas para ensinar às crianças\n\n- **Fonte gratuita e adequada**: Use apenas ferramentas que não precisam pagar (evitar marcas de coroa ou diamante) para manter tudo acessível a todos ([tiffin.edu](https://www.tiffin.edu/wp-content/uploads/CapCut-Basics.pdf?utm_source=openai)).\n- **Explique cada termo na primeira vez**: ex.: “linha do tempo” é onde você “cola” os vídeos, como se fosse uma régua com partes de história.  \n- **Exemplos do cotidiano**: mostrar como colocar música em um vídeo de desenho animado, ou escrever o nome da escola no início do vídeo como se fosse um cartaz.\n- **Passo a passo visual**:\n  1. Importar (colocar) o vídeo no CapCut.\n  2. Clicar em “Texto”, “Áudio” ou “Efeitos”.\n  3. Escolher, ajustar e arrastar para a linha do tempo.\n  4. Reproduzir para ver o resultado.\n- **Atividades progressivas**:\n  - Primeiro: fazer um vídeo e só colocar texto.\n  - Depois: adicionar música.\n  - Depois: colocar efeitos visuais.\n- **Feedback contínuo**: mostrar como melhorar os pequenos detalhes e deixar o vídeo mais divertido e fácil de entender.\n\n---\n\n### 4. Integração com a Aprendizagem por Projetos\n\n- **Mini-projeto prático**: criar um vídeo sobre “meu animal de estimação favorito”.  \n  - Etapas:  \n    1. **Importar** o vídeo ou tirar uma foto do animal.  \n    2. **Texto**: escrever o nome do animal e uma frase sobre ele.  \n    3. **Música**: escolher uma música calma ou divertida.  \n    4. **Efeitos**: aplicar um filtro colorido.  \n    5. **Exportar** o vídeo final.\n- **Revisão em sala**: cada aluno mostra seu vídeo, os colegas e o professor dão sugestões simples e positivas.\n- **Reflexão final**: cada criança fala “o que eu aprendi que foi legal” e “o que eu quero tentar da próxima vez”.\n\n---\n\n### Resumo dos principais conceitos e ações\n\n| Conceito           | O que é (analogia)                         | Como fazer (passo simples)                    |\n|--------------------|--------------------------------------------|----------------------------------------------|\n| Texto              | Título escrito, como um bilhete colorido   | Texto → Adicionar → arrastar → editar        |\n| Música/Áudio       | Trilhas sonoras como fundo de filme        | Áudio → Música → escolha → linha do tempo    |\n| Efeitos visuais    | Filtros como óculos divertidos             | Efeitos → escolher → aplicar no vídeo        |\n| Legenda automática | Balões de fala que aparecem sozinhos       | Texto → Legendas automáticas → gerar          |\n| Texto-voz          | Robô lendo o que você escreveu             | Texto → Text-to-speech → escolher voz → aplicar |\n\n---\n\nCom essas orientações e explicações simples e visuais, o **Módulo 2** ficará bem fundamentado, acessível e engajador para crianças de 8 a 12 anos no nível básico. A abordagem respeita os objetivos de lembrar, entender e aplicar, usando linguagem clara e muito apoio visual. Se precisar de outros exemplos ou termos explicados, posso ajudar!",
+      "tema": "Módulo 2: Edição Básica de Vídeos",
+      "resumo": "Aqui está uma síntese atualizada (2026) em português, com base em fontes confiáveis, para fundamentar o “Módulo 2: Edição Básica de Vídeos” do curso “Edição de vídeo com CapCut para crianças” (nível básico, crianças de 8 a 12 anos, online), com foco nos objetivos: cortar e unir clipes; adicionar e editar texto; explorar efeitos visuais simples.\n\n---\n\n##  1. Visão geral e adequação do CapCut para crianças\n\n- **CapCut é um editor de vídeo gratuito**, disponível para dispositivos móveis, computador (desktop/PC) e versão online, com interface intuitiva baseada em arrastar e soltar, ideal para iniciantes ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).  \n- Embora a política de uso recomende que crianças menores de 13 anos utilizem o aplicativo com supervisão de um adulto, muitos especialistas consideram o CapCut apropriado quando usado de forma segura e assistida ([capcut.com](https://www.capcut.com/help/is-capcut-appropriate-for-kids?utm_source=openai)).  \n- Por ser amplamente integrado a redes sociais como TikTok e YouTube, o CapCut estimula a criatividade e permite produção rápida de vídeos curtos — recursos motivadores para crianças nessa faixa etária ([techradar.com](https://www.techradar.com/best/best-video-editing-software-beginners?utm_source=openai)).\n\n---\n\n##  2. Funções básicas ensinado na aula 2\n\n###  a) Cortar e unir clipes (split e juntar)\n- No CapCut (versões desktop, web e mobile), usar o recurso **Split (Dividir)** permite cortar um clipe em partes no ponto desejado; então, é possível **deletar segmentos indesejados** e unir os restantes arrastando-os na linha do tempo ([capcut.com](https://www.capcut.com/resource/how-to-use-capcut?utm_source=openai)).  \n- É possível reorganizar os clipes na linha do tempo para formar a sequência desejada para o vídeo ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).\n\n###  b) Adicionar e editar texto\n- Basta selecionar o clipe, acessar a opção “Texto” ou “Add Text” e inserir títulos, legendas ou palavras — é possível escolher fonte, estilo e duração ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).  \n- No caso de dificuldade em visualizar o texto editado, verificar se ele não está transparente, muito pequeno ou oculto por outra camada — um problema documentado no suporte oficial ([capcut.com](https://www.capcut.com/help?utm_source=openai)).\n\n###  c) Efeitos visuais simples\n- CapCut oferece efeitos fáceis como filtros, transições, animações, adesivos (stickers) e até emojis ([capcut.com](https://www.capcut.com/resource/capcut-tutorial-for-beginners?utm_source=openai)).  \n- Nas versões mais recentes, recursos como **Auto reframe** (recentralizar automaticamente o conteúdo conforme proporções) e ferramentas básicas de vídeo, como girar, inverter (flip), congelar quadro (freeze) e reversão de vídeo, enriquecem os efeitos visuais simples ([capcut.com](https://www.capcut.com/resource/how-to-use-capcut?utm_source=openai)).\n\n---\n\n##  3. Versões atuais e boas práticas\n\n- Recursos como **Auto Cut (recorte automático)** com base em batidas de música ou pausas de fala e **novos templates visuais** estão disponíveis em 2026, conforme documentação oficial recente ([capcut.com](https://www.capcut.com/help?utm_source=openai)).  \n- Recomenda-se manter o CapCut atualizado para ter acesso à interface mais estável e aos recursos mais recentes ([capcut.com](https://www.capcut.com/help?utm_source=openai)).  \n- Antes de exportar o vídeo, é importante verificar configurações como proporção (aspect ratio), resolução, taxa de quadros (frame rate) e destino (download ou compartilhamento) para garantir boa qualidade ([tools.capcut.com](https://tools.capcut.com/tools/tutorials?utm_source=openai)).\n\n---\n\n##  4. Boas práticas pedagógicas para o público infantil (8–12 anos)\n\n1. **Definir termos na primeira ocorrência**  \n   - Linha do tempo (onde se organizam os clipes); dividir (split = cortar o clipe no ponto escolhido); texto (adicionar palavras no vídeo, com fontes e efeitos visuais).\n2. **Linguagem simples e analogias**  \n   - Comparar a linha do tempo a uma fita de papel quadriculado onde cortamos e colamos pedaços; texto como “etiquetas” que explicam o vídeo; efeitos como “adesivos animados” que deixam o vídeo mais divertido.\n3. **Atividades passo a passo com resultado verificável**  \n   - Exemplo guiado:  \n     a) Importar clipe (como uma foto) → clicar na linha do tempo → escolher **split** e cortar;  \n     b) Apagar parte indesejada → arrastar clipes para unir;  \n     c) Adicionar texto: escolher “Texto”, digitar “Olá!”, escolher fonte grande e colorida, definir a duração;  \n     d) Aplicar um efeito simples (filtro ou transição) entre as cenas;  \n     e) Exportar e assistir para conferir se apareceu tudo direitinho.\n4. **Usar tutoriais visuais oficiais**  \n   - O centro de ajuda da CapCut fornece guias passo a passo que indicam o objetivo da atividade, os materiais necessários e checkpoints para comparar o resultado ([tools.capcut.com](https://tools.capcut.com/tools/tutorials?utm_source=openai)).\n5. **Segurança e supervisão**  \n   - Para crianças menores de 13, é recomendável que um adulto esteja presente, revisando o conteúdo e evitando informações pessoais nos vídeos ([capcut.com](https://www.capcut.com/help/is-capcut-appropriate-for-kids?utm_source=openai)).\n\n---\n\n##  5. Exemplos reais e dados atualizados\n\n- Em ambientes educacionais (bootcamps tecnológicos), crianças de 9 a 12 anos conseguem criar edições completas de vídeos em aproximadamente 20 minutos usando apenas o CapCut, evidenciando sua acessibilidade ([buildjam.co](https://www.buildjam.co/tools/capcut-for-kids?utm_source=openai)).  \n- Em análises de software em 2026, o CapCut é destacado como o editor móvel mais prático e intuitivo para iniciantes, com interface limpa e integração direta com plataformas sociais ([techradar.com](https://www.techradar.com/best/free-video-editing-software?utm_source=openai)).\n\n---\n\n###  Conclusão: Fundamentação técnica para o Módulo 2\n\n- **Ferramentas fundamentais**: corte (split), organização de clipes, adição de texto, efeitos visuais simples, exportação.  \n- **Versionamento atual**: CapCut atualizado oferece Auto Cut, novos templates; sempre revisar versão antes de ensinar.  \n- **Práticas pedagógicas**: analogias cotidianas, atividades curtas com resultado visível imediato, uso de tutoriais visuais, supervisão responsável.  \n- **Contexto real**: comprovada eficácia em aprendizado rápido por crianças nessa faixa etária; reconhecido como uma ferramenta amigável e moderna.\n\nSe desejar, posso também sugerir exemplos de atividades específicas e roteiros detalhados para cada etapa da aula.",
       "fonteIds": [
-        "f8",
-        "f9",
+        "f1",
         "f10",
         "f11",
         "f12",
-        "f13"
+        "f9",
+        "f13",
+        "f14",
+        "f6"
       ]
     },
     {
       "moduloId": "m3",
-      "tema": "Módulo 3: Finalização e Exportação do Vídeo",
-      "resumo": "A seguir, apresento uma síntese de conteúdos técnicos e práticos atualizados (2026), fundamentados em fontes oficiais e confiáveis, para embasar o “Módulo 3: Finalização e Exportação do Vídeo” de um curso básico de CapCut voltado para crianças de 8 a 12 anos em formato online.\n\n---\n\n##  Parte 1: Conceitos-chave e terminologia\n\n- **Exportar vídeo**: transformar o projeto final em um arquivo de vídeo que pode ser salvo no dispositivo e exibido fora do CapCut.([capcut.com](https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow?utm_source=openai))  \n- **Resolução**: número de pixels exibidos (largura × altura). Comum em 720p (baixo), 1080p (boa qualidade), até 4K (altíssima qualidade).([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai))  \n- **Frame rate (taxa de quadros)**: quantas imagens aparecem por segundo (por ex., 30 fps ou 60 fps). Mais quadros = movimento mais suave.([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai))  \n- **Formato de arquivo**: tipo de arquivo final produzido, como MP4 ou MOV, que determina compatibilidade com players e redes sociais.([capcut.com](https://www.capcut.com/es-es/resource/how-to-use-capcut-on-pc?utm_source=openai))  \n\nEsses conceitos devem ser apresentados com explicações simples. Por exemplo: “Resolução é como a quantidade de quadradinhos que formam a imagem — quanto mais, mais nítida ela é, como os mosaicos de uma parede”.\n\n---\n\n## Parte 2: Ferramentas e versões (2026)\n\n- **CapCut Desktop (Windows/macOS)**: oferece suporte a exportação em 2K e 4K, frame rate até 60 fps, escolhas de bitrate, codec e formatos como MP4 ou MOV.([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai))  \n- **CapCut Web (navegador)**: permite exportar em 1080p, 2K ou 4K (dependendo do navegador, dispositivo e conexão). Visar navegador como Chrome em PC costuma funcionar melhor.([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai))  \n- **CapCut Mobile (iOS/Android)**: resolução na exportação varia conforme o dispositivo. Pode oferecer opções como 720p, 1080p, algumas vezes 2K ou 4K em aparelhos mais potentes (S22, Pixel 8 Pro, iPhone 12+).([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai))  \n- **CapCut Pad (Android tablets)**: nova versão em 2026, suporta exportação até 4K a 60 fps com HDR inteligente — ideal para tablets mais robustos.([cincodias.elpais.com](https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html?utm_source=openai))  \n\nEssas informações ajudam o professor a orientar as crianças de acordo com o dispositivo que estão usando.\n\n---\n\n## Parte 3: Boas práticas para finalização e exportação (passo a passo)\n\n###  Revisão antes da exportação\n- Assistir o vídeo até o final para checar se está completo, com som no volume correto e sem falhas. Isso ajuda a “lembrar” do que foi feito.([capcut.com](https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow?utm_source=openai))  \n- Conferir legendas, transições ou elementos visuais, olhando cena por cena.([capcut.com](https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow?utm_source=openai))  \n\n###  Configuração de exportação (passo a passo para crianças)\n\n**Checklist simplificado (adaptado para 8–12 anos)**:\n\n1. Tocar no botão “Exportar” (normalmente no canto superior direito).  \n2. Escolher resolução — 1080p para boa qualidade, 720p se quiser o vídeo mais leve.  \n3. Se houver opção, selecionar frame rate (usar 30 fps é suficiente e fácil de entender).  \n4. Dar um nome divertido para o vídeo (ex.: “Meu vídeo final”) e começar a exportação.([canaltech.com.br](https://canaltech.com.br/apps/como-postar-videos-no-capcut-guia-pratico/?utm_source=openai))  \n\n###  Exportar trecho específico  \n- Usar os marcadores *entrada* e *saída* (ou teclas I e O no desktop) para exportar apenas uma parte do vídeo — ideal se quiser mostrar só o começo ou final para revisão.([capcut.com](https://www.capcut.com/pt-br/help/export-clip-of-video?utm_source=openai))  \n\n###  Checagem final após exportar  \n- Abrir o arquivo fora do CapCut e assistir desde o início, verificando se o vídeo está completo, com som e imagem claros.([capcut.com](https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow?utm_source=openai))  \n\n---\n\n## Parte 4: Atividades práticas para crianças (nível básico, APP estilo)\n\n1. **Assistir até o final**  \n   - Tarefa guiada: “Toque play e assista até o fim. Diga se algo está diferente — som falha, imagem sumiu, termina no meio?”\n\n2. **Exportar em 1080p**  \n   - Passo a passo:  \n     1. Clique no botão Exportar.  \n     2. Selecione 1080p.  \n     3. Dê um nome ao vídeo (ex.: “Meu vídeo final”).  \n     4. Toque em Exportar.  \n   - Resultado esperado: arquivo .MP4 salvo no dispositivo.([ecala.org](https://www.ecala.org/wp-content/uploads/2026/04/April-22-2026-HANDOUT-9-CapCut-Edit-Checklist-1.pdf?utm_source=openai))  \n\n3. **Exportar só o início (interface web)**  \n   - Guia: “Coloque o marcador de entrada no meio do vídeo e índice o de saída dois segundos depois. Agora exporte só esse pedacinho.”([capcut.com](https://www.capcut.com/pt-br/help/export-clip-of-video?utm_source=openai))  \n\n4. **Validar o vídeo exportado**  \n   - Depois de exportar, abra o arquivo para confirmar: “O vídeo começou legal? O som está claro? Acabou direitinho?”([capcut.com](https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow?utm_source=openai))  \n\n---\n\n## Parte 5: Exemplos e justificativas pedagógicas\n\n- **Resolução como mosaico**: explicar que cada vídeo é feito de pequenos quadradinhos (pixels). Em 720p tem menos quadrados, em 1080p tem mais e sai mais bonito.  \n- **Exportar trecho é como cortar parte de um desenho**: você escolhe só uma parte para mostrar.  \n- **Verificar o vídeo final é como revisar um desenho antes de mostrar aos amigos**: garante que tudo esteja certo.  \n\nEssas analogias ajudam a **entender** e **aplicar**, adequadas à Taxonomia de Bloom.\n\n---\n\nResumo de fontes utilizadas:\n\n- Exportação em várias resoluções e plataformas: CapCut oficial (desktop, web, mobile)([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai))  \n- Processo de revisão e exportação (passo a passo): CapCut oficial([capcut.com](https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow?utm_source=openai))  \n- Exportar trecho com marcadores: CapCut oficial([capcut.com](https://www.capcut.com/pt-br/help/export-clip-of-video?utm_source=openai))  \n- Checklist de verificação antes e depois da exportação: recurso educacional (2026)([ecala.org](https://www.ecala.org/wp-content/uploads/2026/04/April-22-2026-HANDOUT-9-CapCut-Edit-Checklist-1.pdf?utm_source=openai))  \n- CapCut Pad, nova versão com exportação 4K 60 fps com HDR: notícia 2026([cincodias.elpais.com](https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html?utm_source=openai))  \n\n---\n\nSe desejar, posso também estruturar esse conteúdo em um roteiro de aula com duração aproximada, slides ou materiais visuais amigáveis para crianças.",
+      "tema": "Módulo 3: Adicionando Música e Finalizando o Vídeo",
+      "resumo": "A seguir, em português, apresento uma síntese atualizada (2026) de conteúdos técnicos para fundamentar o “Módulo 3: Adicionando Música e Finalizando o Vídeo” do curso *Edição de vídeo com CapCut para crianças* (nível básico, 8–12 anos, online).\n\n---\n\n## 1. Fontes primárias sobre CapCut: funcionalidades relevantes para o módulo\n\n- A documentação oficial de CapCut explica que é possível escolher e adicionar música da extensa **biblioteca de músicas** do editor, organizada por gêneros, estilos e finalidades, sem custo e livre de royalties, acessível online, no desktop ou em aparelhos móveis ([capcut.com](https://www.capcut.com/tools/add-music-to-video?utm_source=openai)). \n- Também é possível **importar sua própria música** (arquivo de áudio) através da opção “Media” (Mídia), arrastando-a para a linha do tempo; depois, ajusta-se a sincronização e o volume antes de exportar ([capcut.com](https://www.capcut.com/features/how-do-i-make-a-video-with-my-music?utm_source=openai)).\n- Sobre exportação: desde janeiro de 2026, é permitido salvar vídeos em **2K (1440p)** ou **4K (2160p)**, dependendo do dispositivo (web, desktop ou móvel), com recomendações de configuração e limitações conforme hardware e versão do CapCut ([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai)).\n\n---\n\n## 2. Metodologia pedagógica para crianças (8–12 anos, básico, online)\n\n###  Vocabulário simples e analogias\n- Explique **“biblioteca de música”** como um “armário com músicas que você pode escolher e colocar no seu vídeo”.\n- Defina **“linha do tempo”** como uma “fita de vídeo onde a gente manda as imagens e a música para brincar juntas”.\n- Use analogias como “ajustar o volume é como girar a chave do som: mais alto ou mais baixo”.\n\n### Etapas práticas e linguagem acessível\n- **Como escolher música**:\n  1. Clique no botão “Áudio” (“Audio”) — é como abrir o armário de músicas.  \n  2. Explore os gêneros (por exemplo, música feliz, música calma).  \n  3. Clique no símbolo de “+” ou arraste até a linha do tempo — assim você colocou a música no vídeo.  \n  (As opções “+” são mostradas nos tutoriais oficiais ([canaltech.com.br](https://canaltech.com.br/apps/como-colocar-musica-no-capcut/?utm_source=openai)).)\n\n- **Importar sua música**:\n  1. Vá em “Mídia” ou “Media”.  \n  2. Selecione o arquivo de áudio do seu computador ou celular.  \n  3. Arraste para a linha do tempo e ajuste o começo e o fim — como cortar uma fita até caber direitinho ([capcut.com](https://www.capcut.com/features/how-do-i-make-a-video-with-my-music?utm_source=openai)).\n\n- **Ajustar volume e sincronização**:\n  - Para volume: clique na faixa de música e mova o controle de volume para cima ou para baixo — como ajustar o som da TV.  \n  - Para sincronizar: arraste a música para que comece no momento certo do vídeo — imagine que você quer que a música toque exatamente quando aparece algo engraçado.\n\n- **Salvar e compartilhar (exportar)**:\n  1. Clique no botão “Exportar” ou “Export”.  \n  2. Escolha a resolução (por exemplo, “1080p”) — para crianças, a recomendação pode ser manter o padrão (1080p) para facilitar.  \n  3. Clique em “Salvar no dispositivo” ou “Download” — é como guardar um arquivo novo que você fez.\n\n  Se quiser compartilhar, pode mandar para o YouTube ou TikTok diretamente do CapCut, ou salvar e depois enviar manualmente ([capcut.com](https://www.capcut.com/help/share-edited-video-on-capcut?utm_source=openai)). Note que a capacidade de exportar em 4K depende do dispositivo da criança e da versão do app, o que pode ser simplificado dizendo que “alguns dispositivos deixam salvar com mais qualidade, mas todos podem salvar em boa qualidade para assistir depois” ([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai)).\n\n---\n\n## 3. Boas práticas para crianças e exemplos reais\n\n- **Uso de música livre de royalties** garante que não haverá problemas de direitos autorais — explicar que “essas músicas são amigas, podemos usar sem pedir permissão” ([capcut.com](https://www.capcut.com/resource/how-to-add-music-to-video?utm_source=openai)).\n- **Pré-visualização** antes de salvar: incentive as crianças a assistir de novo o vídeo finalizado para verificar se a música está no momento certo e o volume está bom — isso ajuda a desenvolver a atenção ao detalhe ([capcut.com](https://www.capcut.com/features/how-do-i-make-a-video-with-my-music?utm_source=openai)).\n- **Resolução recomendada**: sugira 1080p (bom equilíbrio entre qualidade e tamanho de arquivo), mas mencione que 2K ou 4K estão disponíveis para computadores ou celulares potentes ([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai)).\n\n---\n\n## 4. Aplicação no contexto da ABP e da Taxonomia de Bloom\n\nA aprendizagem baseada em projetos (ABP) se encaixa bem aqui: cada criança criará um vídeo curto com:\n\n- Escolha de um tema ou situação (por exemplo, um passeio no parque, a história de um animal favorito),\n- Adição de música que combine com o tema,\n- Ajustes básicos (volume, sincronização),\n- Exportação do vídeo finalizado.\n\nEssas tarefas envolvem lembrar (onde está o botão “Áudio”?), entender (para que serve a biblioteca de músicas, o volume), e aplicar (colocar música, salvar o vídeo). Isso respeita a Taxonomia de Bloom no nível “lembrar, entender e aplicar”.\n\n---\n\n## 5. Estrutura sugerida para a aula do módulo (3h online)\n\n1. **Intro (15 min)**: Mostrar rapidamente como abrir o CapCut, iniciar um projeto, o que é a biblioteca de músicas e a linha do tempo.\n2. **Demonstração guiada (30 min)**: Passo a passo ao vivo—escolher música, arrastar para a linha do tempo, ajustar o volume, sincronizar com um trecho do vídeo.\n3. **Atividade prática (50 min)**: Cada criança escolhe uma curta cena (fornecida ou gravada), adiciona música, ajusta e exporta.\n4. **Pausa interativa (10 min)**: Perguntas rápidas e troca de telas (quem quer mostrar como ficou?).\n5. **Revisão e exportação (30 min)**: Revisar os vídeos — se a música combina, volume está ok — e exportar.\n6. **Compartilhar e celebrar (45 min)**: Cada criança mostra seu vídeo final e recebe feedback positivo. Atividades rápidas de reflexão: “O que você mais gostou de fazer hoje?”.\n7. **Resumo (10 min)**: Relembrar os passos principais (“botão Áudio, arrastar música, ajustar volume, exportar”).\n\n---\n\n## 6. Citações resumidas por afirmação\n\n- Biblioteca de músicas gratuita, categorizações e sem royalties: ([capcut.com](https://www.capcut.com/tools/add-music-to-video?utm_source=openai))  \n- Importação de música própria e ajustes básicos (volume, sincronização): ([capcut.com](https://www.capcut.com/features/how-do-i-make-a-video-with-my-music?utm_source=openai))  \n- Exportação em 2K/4K conforme dispositivo e plataforma: ([capcut.com](https://www.capcut.com/help/export-videos-in-capcut?utm_source=openai))  \n- Compartilhamento direto e manual com boas práticas para salvar: ([capcut.com](https://www.capcut.com/help/share-edited-video-on-capcut?utm_source=openai))  \n- Importância de pré-visualizar e revisar antes de exportar: ([ecala.org](https://www.ecala.org/wp-content/uploads/2026/04/April-22-2026-HANDOUT-9-CapCut-Edit-Checklist-1.pdf?utm_source=openai))\n\n---\n\nSe quiser, posso também elaborar roteiros detalhados para cada atividade, textos explicativos para o material didático, ou sugestões de vídeos tutoriais com base nesses mesmos princípios.",
       "fonteIds": [
-        "f14",
         "f15",
         "f16",
         "f17",
         "f18",
         "f19",
-        "f20"
+        "f20",
+        "f21"
       ]
     }
   ],
   "fontes": [
     {
       "id": "f1",
-      "url": "https://www.techradar.com/best/free-video-editing-software",
-      "titulo": "Best free video editing software of 2026",
-      "dominio": "techradar.com",
-      "moduloId": "m1"
-    },
-    {
-      "id": "f2",
-      "url": "https://www.capcut.com/features/how-to-split-a-video-capcut-workflow-comparison",
-      "titulo": "How to Split a Video in CapCut for Precise Timeline Edits",
+      "url": "https://www.capcut.com/resource/capcut-tutorial-for-beginners",
+      "titulo": "CapCut Tutorial for Beginners | A Simple Guide To Making Quality Content",
       "dominio": "capcut.com",
       "moduloId": "m1"
     },
     {
+      "id": "f2",
+      "url": "https://zolotube.com/watch?v=GD6tD1zf2eY",
+      "titulo": "Cómo EDITAR en CapCut PC desde CERO 2026 (Tutorial para Principiantes) - Zolotube.com",
+      "dominio": "zolotube.com",
+      "moduloId": "m1"
+    },
+    {
       "id": "f3",
-      "url": "https://tutotech.net/como-usar-capcut-paso-a-paso-para-principiantes/",
-      "titulo": "Cómo usar CapCut paso a paso para principiantes - TutoTech",
-      "dominio": "tutotech.net",
+      "url": "https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso",
+      "titulo": "Tutorial CapCut PC: edita reels virales en 30 minutos | Javier Ávila",
+      "dominio": "javieravila.es",
       "moduloId": "m1"
     },
     {
       "id": "f4",
+      "url": "https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners",
+      "titulo": "Tutorial CapCut para iniciantes | Um guia simples para criar conteúdo de qualidade",
+      "dominio": "capcut.com",
+      "moduloId": "m1"
+    },
+    {
+      "id": "f5",
       "url": "https://ads.tiktok.com/help/article/about-capcut?lang=pt",
       "titulo": "About CapCut | TikTok Video Editor",
       "dominio": "ads.tiktok.com",
       "moduloId": "m1"
     },
     {
-      "id": "f5",
-      "url": "https://news.avatix.com.br/guias/atalhos-capcut-51-comandos-avatix/",
-      "titulo": "Atalhos do CapCut: 51 comandos para editar mais rápido | AVATIX News",
-      "dominio": "news.avatix.com.br",
-      "moduloId": "m1"
-    },
-    {
       "id": "f6",
-      "url": "https://oabsaopedrodaaldeia.org.br/wp-content/uploads/2025/12/Curso-de-CapCut.pdf",
-      "titulo": "Curso de CapCut",
-      "dominio": "oabsaopedrodaaldeia.org.br",
+      "url": "https://www.techradar.com/best/free-video-editing-software",
+      "titulo": "Best free video editing software of 2026",
+      "dominio": "techradar.com",
       "moduloId": "m1"
     },
     {
@@ -143,30 +147,30 @@
     },
     {
       "id": "f8",
-      "url": "https://www.capcut.com/pt-br/resource/how-to-use-capcut",
-      "titulo": "Como usar o CapCut: seja mais criativo com edições de vídeo",
-      "dominio": "capcut.com",
-      "moduloId": "m2"
+      "url": "https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html",
+      "titulo": "CapCut Pad para Android ya es oficial para que uses tu tablet para editar vídeos de forma cómoda",
+      "dominio": "cincodias.elpais.com",
+      "moduloId": "m1"
     },
     {
       "id": "f9",
-      "url": "https://ads.tiktok.com/resources/help/article/about-capcut?lang=en",
-      "titulo": "About CapCut | TikTok Video Editor",
-      "dominio": "ads.tiktok.com",
-      "moduloId": "m2"
+      "url": "https://www.capcut.com/help",
+      "titulo": "CapCut Help Center | FAQs, Tutorials & Troubleshooting",
+      "dominio": "capcut.com",
+      "moduloId": "m1"
     },
     {
       "id": "f10",
-      "url": "https://canaltech.com.br/apps/como-colocar-musica-no-capcut/",
-      "titulo": "Como colocar música no CapCut | Guia Prático - Canaltech",
-      "dominio": "canaltech.com.br",
+      "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
+      "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
+      "dominio": "capcut.com",
       "moduloId": "m2"
     },
     {
       "id": "f11",
-      "url": "https://www.capcut.com/pt-br/resource/how-to-add-capcut-overlays",
-      "titulo": "Como adicionar sobreposições no CapCut: Introdução e Guia de Sobreposição",
-      "dominio": "capcut.com",
+      "url": "https://www.techradar.com/best/best-video-editing-software-beginners",
+      "titulo": "Best video editing software for beginners in 2026: Easy-to-use video editors for when you're just starting out",
+      "dominio": "techradar.com",
       "moduloId": "m2"
     },
     {
@@ -178,55 +182,62 @@
     },
     {
       "id": "f13",
-      "url": "https://www.tiffin.edu/wp-content/uploads/CapCut-Basics.pdf",
-      "titulo": "CapCut Basics",
-      "dominio": "tiffin.edu",
+      "url": "https://tools.capcut.com/tools/tutorials",
+      "titulo": "Creative Tutorials For Step By Step Learning | CapCut",
+      "dominio": "tools.capcut.com",
       "moduloId": "m2"
     },
     {
       "id": "f14",
-      "url": "https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow",
-      "titulo": "How to Export a Video From CapCut and Verify the Saved File",
+      "url": "https://www.buildjam.co/tools/capcut-for-kids",
+      "titulo": "CapCut for Kids — A Parent's Guide | Build Jam",
+      "dominio": "buildjam.co",
+      "moduloId": "m2"
+    },
+    {
+      "id": "f15",
+      "url": "https://www.capcut.com/tools/add-music-to-video",
+      "titulo": "How to Add Music to a Video for Free - CapCut",
       "dominio": "capcut.com",
       "moduloId": "m3"
     },
     {
-      "id": "f15",
+      "id": "f16",
+      "url": "https://www.capcut.com/features/how-do-i-make-a-video-with-my-music",
+      "titulo": "How do I make a video with my music? | CapCut",
+      "dominio": "capcut.com",
+      "moduloId": "m3"
+    },
+    {
+      "id": "f17",
       "url": "https://www.capcut.com/help/export-videos-in-capcut",
       "titulo": "How Do I Export 2K/4K Videos in CapCut?",
       "dominio": "capcut.com",
       "moduloId": "m3"
     },
     {
-      "id": "f16",
-      "url": "https://www.capcut.com/es-es/resource/how-to-use-capcut-on-pc",
-      "titulo": "Cómo Usar CapCut en Diferentes Dispositivos: Dominar Ediciones Excepcionales",
-      "dominio": "capcut.com",
-      "moduloId": "m3"
-    },
-    {
-      "id": "f17",
-      "url": "https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html",
-      "titulo": "CapCut Pad para Android ya es oficial para que uses tu tablet para editar vídeos de forma cómoda",
-      "dominio": "cincodias.elpais.com",
-      "moduloId": "m3"
-    },
-    {
       "id": "f18",
-      "url": "https://canaltech.com.br/apps/como-postar-videos-no-capcut-guia-pratico/",
-      "titulo": "Como postar vídeos no CapCut | Guia Prático - Canaltech",
+      "url": "https://canaltech.com.br/apps/como-colocar-musica-no-capcut/",
+      "titulo": "Como colocar música no CapCut | Guia Prático - Canaltech",
       "dominio": "canaltech.com.br",
       "moduloId": "m3"
     },
     {
       "id": "f19",
-      "url": "https://www.capcut.com/pt-br/help/export-clip-of-video",
-      "titulo": "Como faço para exportar uma peça ou clipe de um vídeo no CapCut?",
+      "url": "https://www.capcut.com/help/share-edited-video-on-capcut",
+      "titulo": "Why Can't I Share the Edited Video on CapCut?",
       "dominio": "capcut.com",
       "moduloId": "m3"
     },
     {
       "id": "f20",
+      "url": "https://www.capcut.com/resource/how-to-add-music-to-video",
+      "titulo": "How to Add Music to Video Online for Better Engagement Rate",
+      "dominio": "capcut.com",
+      "moduloId": "m3"
+    },
+    {
+      "id": "f21",
       "url": "https://www.ecala.org/wp-content/uploads/2026/04/April-22-2026-HANDOUT-9-CapCut-Edit-Checklist-1.pdf",
       "titulo": "April 22, 2026 - HANDOUT 9: CapCut Edit Checklist",
       "dominio": "ecala.org",

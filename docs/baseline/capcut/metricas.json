@@ -1,6 +1,6 @@
 {
-  "geradoEm": "2026-10-24T20:34:10.838Z",
-  "commit": "b70dc80",
+  "geradoEm": "2026-10-24T23:57:52.512Z",
+  "commit": "1638c6c",
   "curso": {
     "nome": "Edição de vídeo com CapCut para crianças",
     "publico": "Crianças de 8 a 12 anos",
@@ -19,28 +19,28 @@
   "etapas": {
     "pesquisa": {
       "status": "web",
-      "fontes": 26,
+      "fontes": 18,
       "consultas": 4
     },
     "pesquisaModulos": {
       "completo": true,
       "pulada": false,
       "modulos": 3,
-      "fontes": 20
+      "fontes": 21
     }
   },
   "aulas": [
     {
       "numero": 1,
       "titulo": "Introdução ao CapCut",
-      "palavras": 2669,
-      "kb": 17.4,
+      "palavras": 2342,
+      "kb": 15,
       "estado": "completa",
       "modo": "secoes",
       "finishReason": "stop",
       "continuacoes": 0,
       "citacoes": {
-        "fontesDistintas": 12,
+        "fontesDistintas": 6,
         "idsInvalidos": 0,
         "dadosSemCitacao": 0
       },
@@ -48,31 +48,31 @@
     },
     {
       "numero": 2,
-      "titulo": "Edição de Vídeos",
-      "palavras": 2612,
-      "kb": 17.1,
+      "titulo": "Edição Básica de Vídeos",
+      "palavras": 2696,
+      "kb": 17.6,
       "estado": "completa",
       "modo": "secoes",
       "finishReason": "stop",
       "continuacoes": 0,
       "citacoes": {
-        "fontesDistintas": 9,
+        "fontesDistintas": 6,
         "idsInvalidos": 0,
-        "dadosSemCitacao": 1
+        "dadosSemCitacao": 0
       },
       "gravadaComoOficial": true
     },
     {
       "numero": 3,
-      "titulo": "Finalização e Exportação do Vídeo",
-      "palavras": 3618,
-      "kb": 23.7,
+      "titulo": "Adicionando Música e Finalizando o Vídeo",
+      "palavras": 2675,
+      "kb": 17.2,
       "estado": "completa",
       "modo": "secoes",
       "finishReason": "stop",
       "continuacoes": 0,
       "citacoes": {
-        "fontesDistintas": 14,
+        "fontesDistintas": 8,
         "idsInvalidos": 0,
         "dadosSemCitacao": 0
       },
@@ -81,30 +81,19 @@
   ],
   "resumo": {
     "aulas": 3,
-    "palavrasMedia": 2966.33,
-    "kbMedio": 19.4,
+    "palavrasMedia": 2571,
+    "kbMedio": 16.6,
     "aulasTruncadas": 0,
     "aulasIncompletas": 0,
     "aulasCurtas": 0,
-    "fontesDistintas": 45,
-    "dominiosDistintos": 27,
-    "notaMediaRevisao": 0.84
+    "fontesDistintas": 35,
+    "dominiosDistintos": 22,
+    "notaMediaRevisao": 0.85
   },
   "notasPorAula": [
     {
       "numero": 1,
-      "nota": 0.83,
-      "criterios": {
-        "planoAula": 8,
-        "planoEnsinoEmenta": 8,
-        "nivelPublicoModalidade": 7,
-        "qualidadeDidatica": 6,
-        "clarezaEstrutura": 8
-      }
-    },
-    {
-      "numero": 2,
-      "nota": 0.84,
+      "nota": 0.87,
       "criterios": {
         "planoAula": 8,
         "planoEnsinoEmenta": 9,
@@ -114,8 +103,19 @@
       }
     },
     {
+      "numero": 2,
+      "nota": 0.81,
+      "criterios": {
+        "planoAula": 8,
+        "planoEnsinoEmenta": 7,
+        "nivelPublicoModalidade": 8,
+        "qualidadeDidatica": 6,
+        "clarezaEstrutura": 7
+      }
+    },
+    {
       "numero": 3,
-      "nota": 0.86,
+      "nota": 0.87,
       "criterios": {
         "planoAula": 8,
         "planoEnsinoEmenta": 9,
@@ -126,8 +126,8 @@
     }
   ],
   "custo": {
-    "tokensTotais": 580619,
-    "usdEstimado": 0.5044
+    "tokensTotais": 544227,
+    "usdEstimado": 0.4969
   },
   "referenciaAntes": {
     "fonte": "PDF Implementacoes231016 (análise de 23/10/2026)",

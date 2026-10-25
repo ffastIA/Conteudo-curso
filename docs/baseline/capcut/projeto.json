@@ -17,22 +17,22 @@
     "nivel": null,
     "itens": []
   },
-  "metodologia": "1. **Metodologia recomendada**: Aprendizagem por Projetos\n\n2. **Justificativa pedagógica**: A Aprendizagem por Projetos (APP) é uma abordagem que se encaixa perfeitamente no perfil deste curso, pois estimula o engajamento das crianças por meio de atividades práticas e significativas, promovendo a construção de conhecimentos de forma colaborativa. Como o curso terá uma proporção de 70% de atividades práticas, os alunos poderão aplicar imediatamente o que aprenderam de forma teórica em um projeto concreto, como a edição de um vídeo. Essa metodologia é ideal para o público infantil, pois problematiza situações do cotidiano e possibilita a participação ativa dos alunos, além de respeitar o objetivo de trabalhar com um vocabulário acessível e orientações claras.\n\n3. **Como aplicar**:\n   - **Divisão do projeto**: Inicie o curso apresentando um projeto simples de edição de vídeo, como um vídeo de \"como fazer\" ou um pequeno boletim informativo. Divida o projeto em etapas (ex: planejamento, gravação e edição) e apresente uma tarefa para cada etapa.\n   - **Atividades guiadas**: Forneça tutoriais passo a passo para cada função do CapCut que será utilizada. Certifique-se de usar uma linguagem simples e ilustrações visuais que ajudem a entender os conceitos.\n   - **Feedback e revisão constantes**: Ao longo do curso, promova momentos onde os alunos possam apresentar suas edições e receber feedback, tanto do professor quanto dos colegas, incentivando um ambiente colaborativo.\n   - **Exemplos específicos**: Utilize exemplos de vídeos que as crianças possam achar interessantes e também conectados ao cotidiano, promovendo discussões sobre o que faz um vídeo ser atrativo.\n   - **Reflexão final**: Ao final do projeto, incentive cada aluno a refletir sobre o que aprendeu durante o processo e o que poderia ser aprimorado em suas edições.\n\n4. **Nível de Bloom predominante**: O foco será no nível de \"lembrar\", \"entender\" e \"aplicar\". A proposta é que ao final do curso as crianças consigam lembrar as funções básicas do CapCut, entender como essas funções se inter-relacionam e aplicar esse conhecimento na criação e edição de um vídeo simples.\n\n5. **Atenção especial**: **Complexidade dos projetos**: É crucial garantir que os projetos sejam descomplicados e adequados ao nível básico, evitando sobrecarregar as crianças com expectativas que superem suas capacidades. O professor deve estar sempre preparado para adaptar as tarefas de acordo com o ritmo e a compreensão de cada aluno, garantindo que todos possam acompanhar sem frustrações.",
+  "metodologia": "1. **Metodologia recomendada**: Aprendizagem Baseada em Projetos (ABP)\n\n2. **Justificativa pedagógica**: A escolha da Aprendizagem Baseada em Projetos é fundamentada na capacidade dessa metodologia de estimular a curiosidade, a criatividade e a cooperação entre as crianças. Com foco em um projeto prático e tangível, as crianças podem integrar teoria e prática de maneira significativa, o que é essencial para o aprendizado de habilidades técnicas como a edição de vídeo. Além disso, a ABP permite que os jovens aprendizes vejam resultados concretos de seu trabalho, promovendo o engajamento. A estrutura da ABP se alinha com os objetivos da Taxonomia de Bloom, pois permite que os alunos lembrem, entendam e apliquem os conceitos de edição de vídeo de forma prática.\n\n3. **Como aplicar**:\n   - **Definir um projeto claro**: Propor às crianças a criação de um vídeo curto (como uma apresentação sobre um tema do interesse delas), garantindo que todos os elementos de edição (corte, adição de trilha sonora, efeitos) sejam claramente delineados nas etapas do projeto.\n   - **Dividir o aprendizado em etapas**: Apresentar os conceitos teóricos essenciais (como cortar, juntar clipes) de forma breve, seguidos por atividades práticas que permitam a aplicação imediata desses conceitos, com feedback durante cada fase.\n   - **Utilizar tutoriais visuais**: Fornecer vídeos curtos que demonstrem cada função do CapCut, permitindo que as crianças vejam os passos sendo realizados. Isso facilita a memorização e compreensão do \"como fazer\".\n   - **Estabelecer um espaço para feedback**: Criar momentos para que as crianças compartilhem seu progresso e façam perguntas, promovendo uma comunidade de aprendizagem onde se sintam à vontade para colaborar e aprender uns com os outros.\n   - **Incluir celebração dos resultados**: Ao final do curso, promover uma pequena exibição dos vídeos produzidos, permitindo que as crianças mostrem suas criações, o que estimula a autoestima e a motivação pelo aprendizado.\n\n4. **Nível de Bloom predominante** esperado ao final do curso: Lembrar, entender e aplicar. O foco estará em assegurar que as crianças consigam recordar os conceitos básicos de edição, compreendê-los e utilizá-los em um projeto prático.\n\n5. **Atenção especial**: É crucial considerar a atenção e a interação das crianças durante as aulas online. Com uma carga horária de 3 horas e um público jovem, que pode ter dificuldades em manter a concentração, é fundamental intercalar períodos de instrução teórica com atividades práticas dinâmicas e interativas. Isso mantém o engajamento elevado e ajuda na fixação dos conhecimentos abordados.",
   "aulas": [
     {
       "titulo": "Introdução ao CapCut",
       "modulo": "Módulo 1: Introdução ao CapCut",
-      "objetivos": "Apresentar o CapCut e suas funcionalidades; Familiarizar os alunos com a navegação na interface do CapCut; Realizar atividade de cortar e dividir clipes."
+      "objetivos": "Definir o CapCut; Apresentar as funções principais do aplicativo; Ensinar a abrir o aplicativo e criar um novo projeto; Navegar pela interface do CapCut"
     },
     {
-      "titulo": "Edição de Vídeos",
-      "modulo": "Módulo 2: Edição de Vídeos",
-      "objetivos": "Ensinar como adicionar textos, músicas e efeitos aos vídeos; Realizar atividades práticas de corte, adição de texto e música aos vídeos dos alunos."
+      "titulo": "Edição Básica de Vídeos",
+      "modulo": "Módulo 2: Edição Básica de Vídeos",
+      "objetivos": "Ensinar a cortar e unir clipes; Mostrar como adicionar e editar texto; Explorar efeitos visuais simples"
     },
     {
-      "titulo": "Finalização e Exportação do Vídeo",
-      "modulo": "Módulo 3: Finalização e Exportação do Vídeo",
-      "objetivos": "Instruir sobre como revisar e exportar o vídeo finalizado; Realizar a apresentação dos vídeos e discussão em grupo sobre o aprendizado."
+      "titulo": "Adicionando Música e Finalizando o Vídeo",
+      "modulo": "Módulo 3: Adicionando Música e Finalizando o Vídeo",
+      "objetivos": "Ensinar como escolher e adicionar música ao vídeo; Ajustar volume e sincronização; Mostrar como salvar e compartilhar o vídeo finalizado"
     }
   ],
   "inputs": {
@@ -52,83 +52,79 @@
   "roteirosAvatarGerados": [],
   "duracaoAvatarDefault": null,
   "videosAvatarGerados": [],
-  "ultimaModificacao": "2026-10-24T20:34:10.645Z",
+  "ultimaModificacao": "2026-10-24T23:57:52.350Z",
   "stages": {
     "ementa": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:28:38.793Z"
+      "geradoEm": "2026-10-24T23:53:02.860Z"
     },
     "metodologia": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:28:38.810Z"
+      "geradoEm": "2026-10-24T23:53:02.873Z"
     },
     "pesquisa": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:29:26.158Z"
+      "geradoEm": "2026-10-24T23:53:52.695Z"
     },
     "plano_de_ensino": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:29:35.624Z"
+      "geradoEm": "2026-10-24T23:54:00.544Z"
     },
     "plano_de_aula": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:30:03.466Z"
+      "geradoEm": "2026-10-24T23:54:27.052Z"
     },
     "pesquisa_modulos": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:30:40.671Z"
+      "geradoEm": "2026-10-24T23:54:59.924Z"
     },
     "aula01_conteudo": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:31:29.168Z"
+      "geradoEm": "2026-10-24T23:55:43.512Z"
     },
     "aula02_conteudo": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:32:26.010Z"
+      "geradoEm": "2026-10-24T23:56:33.095Z"
     },
     "aula03_conteudo": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:33:42.579Z"
+      "geradoEm": "2026-10-24T23:57:25.817Z"
     },
     "revisao_qualidade": {
       "fonte": "ia",
-      "geradoEm": "2026-10-24T20:34:10.645Z"
+      "geradoEm": "2026-10-24T23:57:52.350Z"
     }
   },
+  "custoProjetoUsd": 0.49693,
   "estadoAulas": {
     "01": {
       "estado": "completa",
       "modo": "secoes",
-      "palavras": 2498,
+      "palavras": 2362,
       "finishReason": "stop",
-      "completionTokens": 3401,
+      "completionTokens": 3238,
       "continuacoes": 0,
       "motivos": [],
       "secoes": [
         {
-          "titulo": "Apresentação do CapCut e suas funcionalidades",
-          "palavras": 486,
-          "meta": 360
+          "titulo": "Definindo o CapCut",
+          "palavras": 734,
+          "meta": 463
         },
         {
-          "titulo": "Navegando na interface do CapCut",
-          "palavras": 637,
-          "meta": 360
+          "titulo": "Abrindo o aplicativo e criando um projeto",
+          "palavras": 682,
+          "meta": 463
         },
         {
-          "titulo": "Atividade prática: Criar Conta e Navegar",
-          "palavras": 531,
-          "meta": 360
+          "titulo": "Navegando pela interface do CapCut",
+          "palavras": 672,
+          "meta": 463
         },
         {
-          "titulo": "Atividade prática: Cortar e Dividir Clipes",
-          "palavras": 601,
-          "meta": 360
-        },
-        {
-          "titulo": "Síntese",
-          "palavras": 243,
-          "meta": 180
+          "titulo": "Síntese da aula",
+          "palavras": 274,
+          "meta": 231
         }
       ],
       "dossie": {
@@ -136,39 +132,39 @@
         "fontes": [
           {
             "id": "F1",
-            "url": "https://www.techradar.com/best/free-video-editing-software",
-            "titulo": "Best free video editing software of 2026",
-            "dominio": "techradar.com"
-          },
-          {
-            "id": "F2",
-            "url": "https://www.capcut.com/features/how-to-split-a-video-capcut-workflow-comparison",
-            "titulo": "How to Split a Video in CapCut for Precise Timeline Edits",
+            "url": "https://www.capcut.com/resource/capcut-tutorial-for-beginners",
+            "titulo": "CapCut Tutorial for Beginners | A Simple Guide To Making Quality Content",
             "dominio": "capcut.com"
           },
           {
+            "id": "F2",
+            "url": "https://zolotube.com/watch?v=GD6tD1zf2eY",
+            "titulo": "Cómo EDITAR en CapCut PC desde CERO 2026 (Tutorial para Principiantes) - Zolotube.com",
+            "dominio": "zolotube.com"
+          },
+          {
             "id": "F3",
-            "url": "https://tutotech.net/como-usar-capcut-paso-a-paso-para-principiantes/",
-            "titulo": "Cómo usar CapCut paso a paso para principiantes - TutoTech",
-            "dominio": "tutotech.net"
+            "url": "https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso",
+            "titulo": "Tutorial CapCut PC: edita reels virales en 30 minutos | Javier Ávila",
+            "dominio": "javieravila.es"
           },
           {
             "id": "F4",
+            "url": "https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners",
+            "titulo": "Tutorial CapCut para iniciantes | Um guia simples para criar conteúdo de qualidade",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F5",
             "url": "https://ads.tiktok.com/help/article/about-capcut?lang=pt",
             "titulo": "About CapCut | TikTok Video Editor",
             "dominio": "ads.tiktok.com"
           },
           {
-            "id": "F5",
-            "url": "https://news.avatix.com.br/guias/atalhos-capcut-51-comandos-avatix/",
-            "titulo": "Atalhos do CapCut: 51 comandos para editar mais rápido | AVATIX News",
-            "dominio": "news.avatix.com.br"
-          },
-          {
             "id": "F6",
-            "url": "https://oabsaopedrodaaldeia.org.br/wp-content/uploads/2025/12/Curso-de-CapCut.pdf",
-            "titulo": "Curso de CapCut",
-            "dominio": "oabsaopedrodaaldeia.org.br"
+            "url": "https://www.techradar.com/best/free-video-editing-software",
+            "titulo": "Best free video editing software of 2026",
+            "dominio": "techradar.com"
           },
           {
             "id": "F7",
@@ -178,50 +174,50 @@
           },
           {
             "id": "F8",
-            "url": "https://www.capcut.com/resource/capcut-video-editor-guide",
-            "titulo": "CapCut: Best Free Online Video Editor for Creators",
-            "dominio": "capcut.com"
+            "url": "https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html",
+            "titulo": "CapCut Pad para Android ya es oficial para que uses tu tablet para editar vídeos de forma cómoda",
+            "dominio": "cincodias.elpais.com"
           },
           {
             "id": "F9",
-            "url": "https://www.capcut.com/resource/how-to-use-capcut",
-            "titulo": "How to Use CapCut: Get More Creative with Video Edits",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F10",
-            "url": "https://www.capcut.com/pt-br/help",
-            "titulo": "Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F11",
-            "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
-            "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F12",
             "url": "https://www.capcut.com/help",
             "titulo": "CapCut Help Center | FAQs, Tutorials & Troubleshooting",
             "dominio": "capcut.com"
           },
           {
+            "id": "F10",
+            "url": "https://yoofy.com.br/cursos/curso-de-capcut/",
+            "titulo": "Curso de CapCut e Edição de Vídeo — Curso Grátis | YOOFY",
+            "dominio": "yoofy.com.br"
+          },
+          {
+            "id": "F11",
+            "url": "https://www.udemy.com/course/edicao-de-video-com-capcut-no-computador-basico-ao-avancado/",
+            "titulo": "Edição de Vídeo com Capcut no Computador: Básico ao Avançado",
+            "dominio": "udemy.com"
+          },
+          {
+            "id": "F12",
+            "url": "https://www.cgd.com.br/curso/capcut",
+            "titulo": "https://www.cgd.com.br/curso/capcut?utm_source=openai",
+            "dominio": "cgd.com.br"
+          },
+          {
             "id": "F13",
-            "url": "https://capcutguide.com/capcut-tutorial/",
-            "titulo": "CapCut Tutorial: Beginner Path from First Cut to Export",
-            "dominio": "capcutguide.com"
+            "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
+            "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
+            "dominio": "capcut.com"
           },
           {
             "id": "F14",
-            "url": "https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners",
-            "titulo": "Tutorial CapCut para iniciantes | Um guia simples para criar conteúdo de qualidade",
+            "url": "https://www.capcut.com/pt-br/help",
+            "titulo": "Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas",
             "dominio": "capcut.com"
           },
           {
             "id": "F15",
-            "url": "https://www.capcut.com/pt-br/resource/capcut-video-editor-guide",
-            "titulo": "CapCut: Melhor Editor de Vídeo Online Grátis para Criadores",
+            "url": "https://www.capcut.com/es-es/help/is-capcut-appropriate-for-kids",
+            "titulo": "¿Es CapCut apropiado para niños? Guía de seguridad para padres | CapCut",
             "dominio": "capcut.com"
           },
           {
@@ -232,147 +228,352 @@
           },
           {
             "id": "F17",
-            "url": "https://www.capcut.com/pt-br/help/is-capcut-appropriate-for-kids",
-            "titulo": "CapCut é adequado para crianças? Guia de Segurança dos Pais | CapCut",
-            "dominio": "capcut.com"
+            "url": "https://repositorios.dainf.ct.utfpr.edu.br/s/aid/item/194",
+            "titulo": "Cine Academy – Tutorial de CapCut · Acessibilidade e Inclusão Digital · Repositórios DAINF",
+            "dominio": "repositorios.dainf.ct.utfpr.edu.br"
           },
           {
             "id": "F18",
-            "url": "https://apva.africa/turn-screen-time-into-a-creative-skill-with-capcut-1-on-1-training/",
-            "titulo": "Turn Screen Time into a Creative Skill with CapCut 1-on-1 Training – APVA",
-            "dominio": "apva.africa"
+            "url": "https://www.techradar.com/best/best-video-editing-software-beginners",
+            "titulo": "Best video editing software for beginners in 2026: Easy-to-use video editors for when you're just starting out",
+            "dominio": "techradar.com"
           },
           {
             "id": "F19",
-            "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=pro-brands",
-            "titulo": "CapCut: search popularity worldwide | Brandwave",
-            "dominio": "gobrandwave.com"
+            "url": "https://www.capcut.com/resource/how-to-use-capcut",
+            "titulo": "How to Use CapCut: Get More Creative with Video Edits",
+            "dominio": "capcut.com"
           },
           {
             "id": "F20",
-            "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=ai-faceless-video-tools",
-            "titulo": "CapCut: search popularity worldwide | Brandwave",
-            "dominio": "gobrandwave.com"
+            "url": "https://tools.capcut.com/tools/tutorials",
+            "titulo": "Creative Tutorials For Step By Step Learning | CapCut",
+            "dominio": "tools.capcut.com"
           },
           {
             "id": "F21",
-            "url": "https://industriahoje.com.br/profissoes-digitais-que-mais-crescem-em-2026",
-            "titulo": "Profissões digitais que mais crescem em 2026: social media, editor de vídeo curto e gestor de tráfego",
-            "dominio": "industriahoje.com.br"
+            "url": "https://www.buildjam.co/tools/capcut-for-kids",
+            "titulo": "CapCut for Kids — A Parent's Guide | Build Jam",
+            "dominio": "buildjam.co"
           },
           {
             "id": "F22",
-            "url": "https://cursarnet.com.br/profissao/editor-de-video",
-            "titulo": "O que faz um Editor de Vídeo? Salário, Mercado e Como Trabalhar com CapCut | Cursarnet",
-            "dominio": "cursarnet.com.br"
+            "url": "https://www.edunecursos.com.br/curso/edicao-de-video-com-capcut",
+            "titulo": "Curso: Edição de Vídeo com CapCut - Online e Gratuito",
+            "dominio": "edunecursos.com.br"
           },
           {
             "id": "F23",
-            "url": "https://desvelar.org/wp-content/uploads/2026/03/ABREU-D.-CULTURA-DE-ENTRETENIMENTO-INFANTIL.pdf",
-            "titulo": "O conteúdo digital voltado ao público infantil tem se expandido de forma expressiva, impulsionado, principalmente, pelo fácil acesso às tecnologias audiovisuais e pela crescente presença das crianças em plataformas como YouTube, TikTok e serviços de streaming. Nesses espaços, concentram-se produções que vão desde desenhos animados e jogos interativos até canais em que crianças atuam como protagonistas, evidenciando um cenário em que a infância se insere cada vez mais na lógica de produção e consumo de conteúdos digitais.",
-            "dominio": "desvelar.org"
+            "url": "https://www.useidfacil.com.br/cursos/edicao-de-video-no-capcut",
+            "titulo": "Curso de CapCut online para iniciantes | IDFácil",
+            "dominio": "useidfacil.com.br"
           },
           {
             "id": "F24",
-            "url": "https://www.uol.com.br/splash/colunas/na-sua-tela/2026/04/24/crise-producao-infantil-tiktok-youtube-dominam.htm?iap=1&uol_app=",
-            "titulo": "Como TikTok e YouTube mudam o consumo infantil e afetam a produção",
-            "dominio": "uol.com.br"
+            "url": "https://academiaconcursos.com.br/curso-gratuito-edicao-video-certificado-online/",
+            "titulo": "Curso gratuito de edição de vídeo: plataformas liberam aulas online com certificado - Academia Concursos",
+            "dominio": "academiaconcursos.com.br"
           },
           {
             "id": "F25",
-            "url": "https://www.prensario.net/MIPJunior-2026-navegando-por-la-proxima-generacion-de-contenido-infantil-54525.note.aspx",
-            "titulo": "MIPJunior 2026: navegando por la próxima generación de contenido infantil - English",
-            "dominio": "prensario.net"
+            "url": "https://ms.senac.br/Curso/Detalhe/116507",
+            "titulo": "Edição de Áudio e Vídeo no Capcut",
+            "dominio": "ms.senac.br"
           },
           {
             "id": "F26",
-            "url": "https://www.todotvnews.com/innovacion-diversidad-y-edutainment-las-nuevas-reglas-del-contenido-infantil/",
-            "titulo": "Innovación, diversidad y edutainment: las nuevas reglas del contenido infantil - TTV News",
-            "dominio": "todotvnews.com"
+            "url": "https://credenciamentosenai.fiepb.com.br/edital/cursos/219",
+            "titulo": "Credenciamento SENAI-PB",
+            "dominio": "credenciamentosenai.fiepb.com.br"
           },
           {
             "id": "F27",
-            "url": "https://www.capcut.com/help/latest-capcut-editing-trends",
-            "titulo": "What Are the Latest CapCut Editing Trends in 2026?",
+            "url": "https://www.capcut.com/tools/add-music-to-video",
+            "titulo": "How to Add Music to a Video for Free - CapCut",
             "dominio": "capcut.com"
           },
           {
             "id": "F28",
-            "url": "https://ramp.com/vendors/capcut/",
-            "titulo": "CapCut Ramp Rate: A Data-Backed Look",
-            "dominio": "ramp.com"
-          },
-          {
-            "id": "F29",
-            "url": "https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow",
-            "titulo": "How to Export a Video From CapCut and Verify the Saved File",
+            "url": "https://www.capcut.com/features/how-do-i-make-a-video-with-my-music",
+            "titulo": "How do I make a video with my music? | CapCut",
             "dominio": "capcut.com"
           },
           {
-            "id": "F30",
+            "id": "F29",
             "url": "https://www.capcut.com/help/export-videos-in-capcut",
             "titulo": "How Do I Export 2K/4K Videos in CapCut?",
             "dominio": "capcut.com"
           },
           {
+            "id": "F30",
+            "url": "https://canaltech.com.br/apps/como-colocar-musica-no-capcut/",
+            "titulo": "Como colocar música no CapCut | Guia Prático - Canaltech",
+            "dominio": "canaltech.com.br"
+          },
+          {
             "id": "F31",
-            "url": "https://www.capcut.com/es-es/resource/how-to-use-capcut-on-pc",
-            "titulo": "Cómo Usar CapCut en Diferentes Dispositivos: Dominar Ediciones Excepcionales",
+            "url": "https://www.capcut.com/help/share-edited-video-on-capcut",
+            "titulo": "Why Can't I Share the Edited Video on CapCut?",
             "dominio": "capcut.com"
           },
           {
             "id": "F32",
+            "url": "https://www.capcut.com/resource/how-to-add-music-to-video",
+            "titulo": "How to Add Music to Video Online for Better Engagement Rate",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F33",
+            "url": "https://www.ecala.org/wp-content/uploads/2026/04/April-22-2026-HANDOUT-9-CapCut-Edit-Checklist-1.pdf",
+            "titulo": "April 22, 2026 - HANDOUT 9: CapCut Edit Checklist",
+            "dominio": "ecala.org"
+          }
+        ]
+      },
+      "citacoes": {
+        "idsInvalidos": [],
+        "usadas": [
+          "F1",
+          "F5",
+          "F4",
+          "F2",
+          "F3",
+          "F19"
+        ],
+        "distintas": 6,
+        "numerosSemCitacao": 0,
+        "minimoAtingido": true
+      },
+      "assinatura": "74f935d56c5b",
+      "geradoEm": "2026-10-24T23:55:43.477Z"
+    },
+    "02": {
+      "estado": "completa",
+      "modo": "secoes",
+      "palavras": 2657,
+      "finishReason": "stop",
+      "completionTokens": 3755,
+      "continuacoes": 0,
+      "motivos": [],
+      "secoes": [
+        {
+          "titulo": "Cortando e Unindo Clipes",
+          "palavras": 404,
+          "meta": 249
+        },
+        {
+          "titulo": "Atividade Prática: Cortar e Unir",
+          "palavras": 406,
+          "meta": 249
+        },
+        {
+          "titulo": "Adicionando e Editando Texto",
+          "palavras": 429,
+          "meta": 249
+        },
+        {
+          "titulo": "Atividade Prática: Texto no Vídeo",
+          "palavras": 481,
+          "meta": 249
+        },
+        {
+          "titulo": "Explorando Efeitos Visuais Simples",
+          "palavras": 398,
+          "meta": 249
+        },
+        {
+          "titulo": "Atividade Prática: Efeitos Visuais",
+          "palavras": 373,
+          "meta": 249
+        },
+        {
+          "titulo": "Síntese da Aula",
+          "palavras": 166,
+          "meta": 125
+        }
+      ],
+      "dossie": {
+        "modo": "web",
+        "fontes": [
+          {
+            "id": "F1",
+            "url": "https://www.capcut.com/resource/capcut-tutorial-for-beginners",
+            "titulo": "CapCut Tutorial for Beginners | A Simple Guide To Making Quality Content",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F2",
+            "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
+            "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F3",
+            "url": "https://www.techradar.com/best/best-video-editing-software-beginners",
+            "titulo": "Best video editing software for beginners in 2026: Easy-to-use video editors for when you're just starting out",
+            "dominio": "techradar.com"
+          },
+          {
+            "id": "F4",
+            "url": "https://www.capcut.com/resource/how-to-use-capcut",
+            "titulo": "How to Use CapCut: Get More Creative with Video Edits",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F5",
+            "url": "https://www.capcut.com/help",
+            "titulo": "CapCut Help Center | FAQs, Tutorials & Troubleshooting",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F6",
+            "url": "https://tools.capcut.com/tools/tutorials",
+            "titulo": "Creative Tutorials For Step By Step Learning | CapCut",
+            "dominio": "tools.capcut.com"
+          },
+          {
+            "id": "F7",
+            "url": "https://www.buildjam.co/tools/capcut-for-kids",
+            "titulo": "CapCut for Kids — A Parent's Guide | Build Jam",
+            "dominio": "buildjam.co"
+          },
+          {
+            "id": "F8",
+            "url": "https://www.techradar.com/best/free-video-editing-software",
+            "titulo": "Best free video editing software of 2026",
+            "dominio": "techradar.com"
+          },
+          {
+            "id": "F9",
+            "url": "https://zolotube.com/watch?v=GD6tD1zf2eY",
+            "titulo": "Cómo EDITAR en CapCut PC desde CERO 2026 (Tutorial para Principiantes) - Zolotube.com",
+            "dominio": "zolotube.com"
+          },
+          {
+            "id": "F10",
+            "url": "https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso",
+            "titulo": "Tutorial CapCut PC: edita reels virales en 30 minutos | Javier Ávila",
+            "dominio": "javieravila.es"
+          },
+          {
+            "id": "F11",
+            "url": "https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners",
+            "titulo": "Tutorial CapCut para iniciantes | Um guia simples para criar conteúdo de qualidade",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F12",
+            "url": "https://ads.tiktok.com/help/article/about-capcut?lang=pt",
+            "titulo": "About CapCut | TikTok Video Editor",
+            "dominio": "ads.tiktok.com"
+          },
+          {
+            "id": "F13",
+            "url": "https://www.creativebloq.com/buying-guides/best-software-for-editing-videos-for-youtube",
+            "titulo": "The best software for editing videos for YouTube",
+            "dominio": "creativebloq.com"
+          },
+          {
+            "id": "F14",
             "url": "https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html",
             "titulo": "CapCut Pad para Android ya es oficial para que uses tu tablet para editar vídeos de forma cómoda",
             "dominio": "cincodias.elpais.com"
           },
           {
-            "id": "F33",
-            "url": "https://canaltech.com.br/apps/como-postar-videos-no-capcut-guia-pratico/",
-            "titulo": "Como postar vídeos no CapCut | Guia Prático - Canaltech",
-            "dominio": "canaltech.com.br"
+            "id": "F15",
+            "url": "https://yoofy.com.br/cursos/curso-de-capcut/",
+            "titulo": "Curso de CapCut e Edição de Vídeo — Curso Grátis | YOOFY",
+            "dominio": "yoofy.com.br"
           },
           {
-            "id": "F34",
-            "url": "https://www.capcut.com/pt-br/help/export-clip-of-video",
-            "titulo": "Como faço para exportar uma peça ou clipe de um vídeo no CapCut?",
+            "id": "F16",
+            "url": "https://www.udemy.com/course/edicao-de-video-com-capcut-no-computador-basico-ao-avancado/",
+            "titulo": "Edição de Vídeo com Capcut no Computador: Básico ao Avançado",
+            "dominio": "udemy.com"
+          },
+          {
+            "id": "F17",
+            "url": "https://www.cgd.com.br/curso/capcut",
+            "titulo": "https://www.cgd.com.br/curso/capcut?utm_source=openai",
+            "dominio": "cgd.com.br"
+          },
+          {
+            "id": "F18",
+            "url": "https://www.capcut.com/pt-br/help",
+            "titulo": "Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas",
             "dominio": "capcut.com"
           },
           {
-            "id": "F35",
+            "id": "F19",
+            "url": "https://www.capcut.com/es-es/help/is-capcut-appropriate-for-kids",
+            "titulo": "¿Es CapCut apropiado para niños? Guía de seguridad para padres | CapCut",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F20",
+            "url": "https://tools.capcut.com/pt-br/tools/tutorials",
+            "titulo": "Tutoriais criativos para aprendizado passo a passo | CapCut",
+            "dominio": "tools.capcut.com"
+          },
+          {
+            "id": "F21",
+            "url": "https://repositorios.dainf.ct.utfpr.edu.br/s/aid/item/194",
+            "titulo": "Cine Academy – Tutorial de CapCut · Acessibilidade e Inclusão Digital · Repositórios DAINF",
+            "dominio": "repositorios.dainf.ct.utfpr.edu.br"
+          },
+          {
+            "id": "F22",
+            "url": "https://www.capcut.com/tools/add-music-to-video",
+            "titulo": "How to Add Music to a Video for Free - CapCut",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F23",
+            "url": "https://www.capcut.com/features/how-do-i-make-a-video-with-my-music",
+            "titulo": "How do I make a video with my music? | CapCut",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F24",
+            "url": "https://www.capcut.com/help/export-videos-in-capcut",
+            "titulo": "How Do I Export 2K/4K Videos in CapCut?",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F25",
+            "url": "https://canaltech.com.br/apps/como-colocar-musica-no-capcut/",
+            "titulo": "Como colocar música no CapCut | Guia Prático - Canaltech",
+            "dominio": "canaltech.com.br"
+          },
+          {
+            "id": "F26",
+            "url": "https://www.capcut.com/help/share-edited-video-on-capcut",
+            "titulo": "Why Can't I Share the Edited Video on CapCut?",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F27",
+            "url": "https://www.capcut.com/resource/how-to-add-music-to-video",
+            "titulo": "How to Add Music to Video Online for Better Engagement Rate",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F28",
             "url": "https://www.ecala.org/wp-content/uploads/2026/04/April-22-2026-HANDOUT-9-CapCut-Edit-Checklist-1.pdf",
             "titulo": "April 22, 2026 - HANDOUT 9: CapCut Edit Checklist",
             "dominio": "ecala.org"
           },
           {
-            "id": "F36",
-            "url": "https://www.miracamp.com/learn/capcut/certificate",
-            "titulo": "CapCut Certification",
-            "dominio": "miracamp.com"
+            "id": "F29",
+            "url": "https://www.uol.com.br/splash/colunas/na-sua-tela/2026/04/24/crise-producao-infantil-tiktok-youtube-dominam.htm?iap=1&uol_app=",
+            "titulo": "Como TikTok e YouTube mudam o consumo infantil e afetam a produção",
+            "dominio": "uol.com.br"
           },
           {
-            "id": "F37",
-            "url": "https://www.equinetacademy.com/course/mobile-video-editing-with-capcut-course/",
-            "titulo": "Mobile Video Editing with CapCut Course - Equinet Academy",
-            "dominio": "equinetacademy.com"
-          },
-          {
-            "id": "F38",
-            "url": "https://register.cpttm.org.mo/en/courses/CM678-01-2026-C",
-            "titulo": "CPTTM Professional Training | Making Short Videos with CapCut",
-            "dominio": "register.cpttm.org.mo"
-          },
-          {
-            "id": "F39",
-            "url": "https://www.ziprecruiter.com/hiring/how-to-hire/capcut",
-            "titulo": "Capcut Hiring Guide: Find and Hire Top Video Editors Fast",
-            "dominio": "ziprecruiter.com"
-          },
-          {
-            "id": "F40",
-            "url": "https://www.camara.leg.br/noticias/1237337-NOVA-LEI-RECONHECE-A-PROFISSAO-DE-MULTIMIDIA",
-            "titulo": "Nova lei reconhece a profissão de multimídia - Portal da Câmara dos Deputados",
-            "dominio": "camara.leg.br"
+            "id": "F30",
+            "url": "https://www.voxbooster.com/pt-BR/blog/short-form-video-editing-statistics-2026/",
+            "titulo": "Estatísticas de Edição de Vídeos Curtos (2026): 48 Dados sobre CapCut, IA e Legendas — VoxBooster",
+            "dominio": "voxbooster.com"
           }
         ]
       },
@@ -380,61 +581,56 @@
         "idsInvalidos": [],
         "usadas": [
           "F4",
-          "F5",
+          "F6",
+          "F1",
           "F2",
           "F3",
-          "F8",
-          "F11",
-          "F12",
-          "F17",
-          "F18",
-          "F9",
-          "F1",
-          "F10"
+          "F11"
         ],
-        "distintas": 12,
+        "distintas": 6,
         "numerosSemCitacao": 0,
         "minimoAtingido": true
       },
-      "geradoEm": "2026-10-24T20:31:29.153Z"
+      "assinatura": "68f6467545a2",
+      "geradoEm": "2026-10-24T23:56:33.063Z"
     },
-    "02": {
+    "03": {
       "estado": "completa",
       "modo": "secoes",
-      "palavras": 2554,
+      "palavras": 2607,
       "finishReason": "stop",
-      "completionTokens": 3455,
+      "completionTokens": 3457,
       "continuacoes": 0,
       "motivos": [],
       "secoes": [
         {
-          "titulo": "Adicionando Texto aos Vídeos",
-          "palavras": 475,
+          "titulo": "Objetivos da Aula",
+          "palavras": 418,
           "meta": 295
         },
         {
-          "titulo": "Escolhendo Músicas para Vídeos",
-          "palavras": 415,
+          "titulo": "Ajustando o Volume e Sincronizando",
+          "palavras": 494,
           "meta": 295
         },
         {
-          "titulo": "Aplicando Efeitos Visuais",
-          "palavras": 553,
+          "titulo": "Exportando e Compartilhando o Vídeo",
+          "palavras": 470,
           "meta": 295
         },
         {
-          "titulo": "Atividade Prática: Edição de Vídeo",
-          "palavras": 466,
+          "titulo": "Inserindo Música",
+          "palavras": 478,
           "meta": 295
         },
         {
-          "titulo": "Compartilhando e Recebendo Feedback",
-          "palavras": 424,
+          "titulo": "Ajustando Volume e Sincronizando",
+          "palavras": 513,
           "meta": 295
         },
         {
-          "titulo": "Síntese da Aula",
-          "palavras": 221,
+          "titulo": "Síntese",
+          "palavras": 234,
           "meta": 147
         }
       ],
@@ -443,350 +639,38 @@
         "fontes": [
           {
             "id": "F1",
-            "url": "https://www.capcut.com/pt-br/resource/how-to-use-capcut",
-            "titulo": "Como usar o CapCut: seja mais criativo com edições de vídeo",
+            "url": "https://www.capcut.com/tools/add-music-to-video",
+            "titulo": "How to Add Music to a Video for Free - CapCut",
             "dominio": "capcut.com"
           },
           {
             "id": "F2",
-            "url": "https://ads.tiktok.com/resources/help/article/about-capcut?lang=en",
-            "titulo": "About CapCut | TikTok Video Editor",
-            "dominio": "ads.tiktok.com"
+            "url": "https://www.capcut.com/features/how-do-i-make-a-video-with-my-music",
+            "titulo": "How do I make a video with my music? | CapCut",
+            "dominio": "capcut.com"
           },
           {
             "id": "F3",
-            "url": "https://canaltech.com.br/apps/como-colocar-musica-no-capcut/",
-            "titulo": "Como colocar música no CapCut | Guia Prático - Canaltech",
-            "dominio": "canaltech.com.br"
-          },
-          {
-            "id": "F4",
-            "url": "https://www.capcut.com/pt-br/resource/how-to-add-capcut-overlays",
-            "titulo": "Como adicionar sobreposições no CapCut: Introdução e Guia de Sobreposição",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F5",
-            "url": "https://www.capcut.com/resource/how-to-use-capcut",
-            "titulo": "How to Use CapCut: Get More Creative with Video Edits",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F6",
-            "url": "https://www.tiffin.edu/wp-content/uploads/CapCut-Basics.pdf",
-            "titulo": "CapCut Basics",
-            "dominio": "tiffin.edu"
-          },
-          {
-            "id": "F7",
-            "url": "https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners",
-            "titulo": "Tutorial CapCut para iniciantes | Um guia simples para criar conteúdo de qualidade",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F8",
-            "url": "https://www.capcut.com/pt-br/resource/capcut-video-editor-guide",
-            "titulo": "CapCut: Melhor Editor de Vídeo Online Grátis para Criadores",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F9",
-            "url": "https://tools.capcut.com/pt-br/tools/tutorials",
-            "titulo": "Tutoriais criativos para aprendizado passo a passo | CapCut",
-            "dominio": "tools.capcut.com"
-          },
-          {
-            "id": "F10",
-            "url": "https://www.capcut.com/pt-br/help/is-capcut-appropriate-for-kids",
-            "titulo": "CapCut é adequado para crianças? Guia de Segurança dos Pais | CapCut",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F11",
-            "url": "https://apva.africa/turn-screen-time-into-a-creative-skill-with-capcut-1-on-1-training/",
-            "titulo": "Turn Screen Time into a Creative Skill with CapCut 1-on-1 Training – APVA",
-            "dominio": "apva.africa"
-          },
-          {
-            "id": "F12",
-            "url": "https://www.capcut.com/resource/capcut-video-editor-guide",
-            "titulo": "CapCut: Best Free Online Video Editor for Creators",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F13",
-            "url": "https://www.capcut.com/pt-br/help",
-            "titulo": "Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F14",
-            "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
-            "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F15",
-            "url": "https://www.capcut.com/help",
-            "titulo": "CapCut Help Center | FAQs, Tutorials & Troubleshooting",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F16",
-            "url": "https://capcutguide.com/capcut-tutorial/",
-            "titulo": "CapCut Tutorial: Beginner Path from First Cut to Export",
-            "dominio": "capcutguide.com"
-          },
-          {
-            "id": "F17",
-            "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=pro-brands",
-            "titulo": "CapCut: search popularity worldwide | Brandwave",
-            "dominio": "gobrandwave.com"
-          },
-          {
-            "id": "F18",
-            "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=ai-faceless-video-tools",
-            "titulo": "CapCut: search popularity worldwide | Brandwave",
-            "dominio": "gobrandwave.com"
-          },
-          {
-            "id": "F19",
-            "url": "https://industriahoje.com.br/profissoes-digitais-que-mais-crescem-em-2026",
-            "titulo": "Profissões digitais que mais crescem em 2026: social media, editor de vídeo curto e gestor de tráfego",
-            "dominio": "industriahoje.com.br"
-          },
-          {
-            "id": "F20",
-            "url": "https://cursarnet.com.br/profissao/editor-de-video",
-            "titulo": "O que faz um Editor de Vídeo? Salário, Mercado e Como Trabalhar com CapCut | Cursarnet",
-            "dominio": "cursarnet.com.br"
-          },
-          {
-            "id": "F21",
-            "url": "https://desvelar.org/wp-content/uploads/2026/03/ABREU-D.-CULTURA-DE-ENTRETENIMENTO-INFANTIL.pdf",
-            "titulo": "O conteúdo digital voltado ao público infantil tem se expandido de forma expressiva, impulsionado, principalmente, pelo fácil acesso às tecnologias audiovisuais e pela crescente presença das crianças em plataformas como YouTube, TikTok e serviços de streaming. Nesses espaços, concentram-se produções que vão desde desenhos animados e jogos interativos até canais em que crianças atuam como protagonistas, evidenciando um cenário em que a infância se insere cada vez mais na lógica de produção e consumo de conteúdos digitais.",
-            "dominio": "desvelar.org"
-          },
-          {
-            "id": "F22",
-            "url": "https://www.uol.com.br/splash/colunas/na-sua-tela/2026/04/24/crise-producao-infantil-tiktok-youtube-dominam.htm?iap=1&uol_app=",
-            "titulo": "Como TikTok e YouTube mudam o consumo infantil e afetam a produção",
-            "dominio": "uol.com.br"
-          },
-          {
-            "id": "F23",
-            "url": "https://www.prensario.net/MIPJunior-2026-navegando-por-la-proxima-generacion-de-contenido-infantil-54525.note.aspx",
-            "titulo": "MIPJunior 2026: navegando por la próxima generación de contenido infantil - English",
-            "dominio": "prensario.net"
-          },
-          {
-            "id": "F24",
-            "url": "https://www.todotvnews.com/innovacion-diversidad-y-edutainment-las-nuevas-reglas-del-contenido-infantil/",
-            "titulo": "Innovación, diversidad y edutainment: las nuevas reglas del contenido infantil - TTV News",
-            "dominio": "todotvnews.com"
-          },
-          {
-            "id": "F25",
-            "url": "https://www.capcut.com/help/latest-capcut-editing-trends",
-            "titulo": "What Are the Latest CapCut Editing Trends in 2026?",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F26",
-            "url": "https://ramp.com/vendors/capcut/",
-            "titulo": "CapCut Ramp Rate: A Data-Backed Look",
-            "dominio": "ramp.com"
-          },
-          {
-            "id": "F27",
-            "url": "https://www.techradar.com/best/free-video-editing-software",
-            "titulo": "Best free video editing software of 2026",
-            "dominio": "techradar.com"
-          },
-          {
-            "id": "F28",
-            "url": "https://www.capcut.com/features/how-to-split-a-video-capcut-workflow-comparison",
-            "titulo": "How to Split a Video in CapCut for Precise Timeline Edits",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F29",
-            "url": "https://tutotech.net/como-usar-capcut-paso-a-paso-para-principiantes/",
-            "titulo": "Cómo usar CapCut paso a paso para principiantes - TutoTech",
-            "dominio": "tutotech.net"
-          },
-          {
-            "id": "F30",
-            "url": "https://ads.tiktok.com/help/article/about-capcut?lang=pt",
-            "titulo": "About CapCut | TikTok Video Editor",
-            "dominio": "ads.tiktok.com"
-          },
-          {
-            "id": "F31",
-            "url": "https://news.avatix.com.br/guias/atalhos-capcut-51-comandos-avatix/",
-            "titulo": "Atalhos do CapCut: 51 comandos para editar mais rápido | AVATIX News",
-            "dominio": "news.avatix.com.br"
-          },
-          {
-            "id": "F32",
-            "url": "https://oabsaopedrodaaldeia.org.br/wp-content/uploads/2025/12/Curso-de-CapCut.pdf",
-            "titulo": "Curso de CapCut",
-            "dominio": "oabsaopedrodaaldeia.org.br"
-          },
-          {
-            "id": "F33",
-            "url": "https://www.creativebloq.com/buying-guides/best-software-for-editing-videos-for-youtube",
-            "titulo": "The best software for editing videos for YouTube",
-            "dominio": "creativebloq.com"
-          },
-          {
-            "id": "F34",
-            "url": "https://www.miracamp.com/learn/capcut/certificate",
-            "titulo": "CapCut Certification",
-            "dominio": "miracamp.com"
-          },
-          {
-            "id": "F35",
-            "url": "https://www.equinetacademy.com/course/mobile-video-editing-with-capcut-course/",
-            "titulo": "Mobile Video Editing with CapCut Course - Equinet Academy",
-            "dominio": "equinetacademy.com"
-          },
-          {
-            "id": "F36",
-            "url": "https://register.cpttm.org.mo/en/courses/CM678-01-2026-C",
-            "titulo": "CPTTM Professional Training | Making Short Videos with CapCut",
-            "dominio": "register.cpttm.org.mo"
-          },
-          {
-            "id": "F37",
-            "url": "https://www.ziprecruiter.com/hiring/how-to-hire/capcut",
-            "titulo": "Capcut Hiring Guide: Find and Hire Top Video Editors Fast",
-            "dominio": "ziprecruiter.com"
-          },
-          {
-            "id": "F38",
-            "url": "https://www.camara.leg.br/noticias/1237337-NOVA-LEI-RECONHECE-A-PROFISSAO-DE-MULTIMIDIA",
-            "titulo": "Nova lei reconhece a profissão de multimídia - Portal da Câmara dos Deputados",
-            "dominio": "camara.leg.br"
-          }
-        ]
-      },
-      "citacoes": {
-        "idsInvalidos": [],
-        "usadas": [
-          "F1",
-          "F4",
-          "F2",
-          "F5",
-          "F3",
-          "F6",
-          "F12",
-          "F8",
-          "F10"
-        ],
-        "distintas": 9,
-        "numerosSemCitacao": 1,
-        "minimoAtingido": true
-      },
-      "geradoEm": "2026-10-24T20:32:25.995Z"
-    },
-    "03": {
-      "estado": "completa",
-      "modo": "secoes",
-      "palavras": 3374,
-      "finishReason": "stop",
-      "completionTokens": 4526,
-      "continuacoes": 0,
-      "motivos": [],
-      "secoes": [
-        {
-          "titulo": "Abertura e Relembrar Aulas Anteriores",
-          "palavras": 300,
-          "meta": 171
-        },
-        {
-          "titulo": "Objetivos da Aula",
-          "palavras": 357,
-          "meta": 171
-        },
-        {
-          "titulo": "Importância da Revisão",
-          "palavras": 392,
-          "meta": 171
-        },
-        {
-          "titulo": "Passo a Passo para Exportação",
-          "palavras": 272,
-          "meta": 171
-        },
-        {
-          "titulo": "Atividade Prática de Revisão",
-          "palavras": 312,
-          "meta": 171
-        },
-        {
-          "titulo": "Exportação de Vídeos",
-          "palavras": 418,
-          "meta": 171
-        },
-        {
-          "titulo": "Apresentação dos Vídeos",
-          "palavras": 333,
-          "meta": 171
-        },
-        {
-          "titulo": "Discussão em Grupo",
-          "palavras": 377,
-          "meta": 171
-        },
-        {
-          "titulo": "Reflexão Final e Encaminhamentos",
-          "palavras": 414,
-          "meta": 171
-        },
-        {
-          "titulo": "Síntese",
-          "palavras": 199,
-          "meta": 85
-        }
-      ],
-      "dossie": {
-        "modo": "web",
-        "fontes": [
-          {
-            "id": "F1",
-            "url": "https://www.capcut.com/features/how-to-export-video-from-capcut-capcut-workflow",
-            "titulo": "How to Export a Video From CapCut and Verify the Saved File",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F2",
             "url": "https://www.capcut.com/help/export-videos-in-capcut",
             "titulo": "How Do I Export 2K/4K Videos in CapCut?",
             "dominio": "capcut.com"
           },
           {
-            "id": "F3",
-            "url": "https://www.capcut.com/es-es/resource/how-to-use-capcut-on-pc",
-            "titulo": "Cómo Usar CapCut en Diferentes Dispositivos: Dominar Ediciones Excepcionales",
-            "dominio": "capcut.com"
-          },
-          {
             "id": "F4",
-            "url": "https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html",
-            "titulo": "CapCut Pad para Android ya es oficial para que uses tu tablet para editar vídeos de forma cómoda",
-            "dominio": "cincodias.elpais.com"
-          },
-          {
-            "id": "F5",
-            "url": "https://canaltech.com.br/apps/como-postar-videos-no-capcut-guia-pratico/",
-            "titulo": "Como postar vídeos no CapCut | Guia Prático - Canaltech",
+            "url": "https://canaltech.com.br/apps/como-colocar-musica-no-capcut/",
+            "titulo": "Como colocar música no CapCut | Guia Prático - Canaltech",
             "dominio": "canaltech.com.br"
           },
           {
+            "id": "F5",
+            "url": "https://www.capcut.com/help/share-edited-video-on-capcut",
+            "titulo": "Why Can't I Share the Edited Video on CapCut?",
+            "dominio": "capcut.com"
+          },
+          {
             "id": "F6",
-            "url": "https://www.capcut.com/pt-br/help/export-clip-of-video",
-            "titulo": "Como faço para exportar uma peça ou clipe de um vídeo no CapCut?",
+            "url": "https://www.capcut.com/resource/how-to-add-music-to-video",
+            "titulo": "How to Add Music to Video Online for Better Engagement Rate",
             "dominio": "capcut.com"
           },
           {
@@ -797,189 +681,141 @@
           },
           {
             "id": "F8",
+            "url": "https://www.capcut.com/resource/capcut-tutorial-for-beginners",
+            "titulo": "CapCut Tutorial for Beginners | A Simple Guide To Making Quality Content",
+            "dominio": "capcut.com"
+          },
+          {
+            "id": "F9",
+            "url": "https://zolotube.com/watch?v=GD6tD1zf2eY",
+            "titulo": "Cómo EDITAR en CapCut PC desde CERO 2026 (Tutorial para Principiantes) - Zolotube.com",
+            "dominio": "zolotube.com"
+          },
+          {
+            "id": "F10",
+            "url": "https://javieravila.es/blog/tutorial-capcut-pc-paso-a-paso",
+            "titulo": "Tutorial CapCut PC: edita reels virales en 30 minutos | Javier Ávila",
+            "dominio": "javieravila.es"
+          },
+          {
+            "id": "F11",
             "url": "https://www.capcut.com/pt-br/resource/capcut-tutorial-for-beginners",
             "titulo": "Tutorial CapCut para iniciantes | Um guia simples para criar conteúdo de qualidade",
             "dominio": "capcut.com"
           },
           {
-            "id": "F9",
-            "url": "https://www.capcut.com/pt-br/resource/capcut-video-editor-guide",
-            "titulo": "CapCut: Melhor Editor de Vídeo Online Grátis para Criadores",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F10",
-            "url": "https://tools.capcut.com/pt-br/tools/tutorials",
-            "titulo": "Tutoriais criativos para aprendizado passo a passo | CapCut",
-            "dominio": "tools.capcut.com"
-          },
-          {
-            "id": "F11",
-            "url": "https://www.capcut.com/pt-br/help/is-capcut-appropriate-for-kids",
-            "titulo": "CapCut é adequado para crianças? Guia de Segurança dos Pais | CapCut",
-            "dominio": "capcut.com"
-          },
-          {
             "id": "F12",
-            "url": "https://apva.africa/turn-screen-time-into-a-creative-skill-with-capcut-1-on-1-training/",
-            "titulo": "Turn Screen Time into a Creative Skill with CapCut 1-on-1 Training – APVA",
-            "dominio": "apva.africa"
+            "url": "https://ads.tiktok.com/help/article/about-capcut?lang=pt",
+            "titulo": "About CapCut | TikTok Video Editor",
+            "dominio": "ads.tiktok.com"
           },
           {
             "id": "F13",
-            "url": "https://www.capcut.com/resource/capcut-video-editor-guide",
-            "titulo": "CapCut: Best Free Online Video Editor for Creators",
-            "dominio": "capcut.com"
+            "url": "https://www.techradar.com/best/free-video-editing-software",
+            "titulo": "Best free video editing software of 2026",
+            "dominio": "techradar.com"
           },
           {
             "id": "F14",
-            "url": "https://www.capcut.com/resource/how-to-use-capcut",
-            "titulo": "How to Use CapCut: Get More Creative with Video Edits",
-            "dominio": "capcut.com"
+            "url": "https://www.creativebloq.com/buying-guides/best-software-for-editing-videos-for-youtube",
+            "titulo": "The best software for editing videos for YouTube",
+            "dominio": "creativebloq.com"
           },
           {
             "id": "F15",
-            "url": "https://www.capcut.com/pt-br/help",
-            "titulo": "Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas",
-            "dominio": "capcut.com"
+            "url": "https://cincodias.elpais.com/smartlife/tablets/2026-05-30/capcut-pad-para-android-ya-es-oficial-para-que-uses-tu-tablet-para-editar-videos-de-forma-comoda.html",
+            "titulo": "CapCut Pad para Android ya es oficial para que uses tu tablet para editar vídeos de forma cómoda",
+            "dominio": "cincodias.elpais.com"
           },
           {
             "id": "F16",
-            "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
-            "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F17",
             "url": "https://www.capcut.com/help",
             "titulo": "CapCut Help Center | FAQs, Tutorials & Troubleshooting",
             "dominio": "capcut.com"
           },
           {
+            "id": "F17",
+            "url": "https://www.capcut.com/help/is-capcut-appropriate-for-kids",
+            "titulo": "Is CapCut Appropriate for Kids? Parent Safety Guide | CapCut",
+            "dominio": "capcut.com"
+          },
+          {
             "id": "F18",
-            "url": "https://capcutguide.com/capcut-tutorial/",
-            "titulo": "CapCut Tutorial: Beginner Path from First Cut to Export",
-            "dominio": "capcutguide.com"
+            "url": "https://www.techradar.com/best/best-video-editing-software-beginners",
+            "titulo": "Best video editing software for beginners in 2026: Easy-to-use video editors for when you're just starting out",
+            "dominio": "techradar.com"
           },
           {
             "id": "F19",
-            "url": "https://www.capcut.com/pt-br/resource/how-to-use-capcut",
-            "titulo": "Como usar o CapCut: seja mais criativo com edições de vídeo",
+            "url": "https://www.capcut.com/resource/how-to-use-capcut",
+            "titulo": "How to Use CapCut: Get More Creative with Video Edits",
             "dominio": "capcut.com"
           },
           {
             "id": "F20",
-            "url": "https://ads.tiktok.com/resources/help/article/about-capcut?lang=en",
-            "titulo": "About CapCut | TikTok Video Editor",
-            "dominio": "ads.tiktok.com"
+            "url": "https://tools.capcut.com/tools/tutorials",
+            "titulo": "Creative Tutorials For Step By Step Learning | CapCut",
+            "dominio": "tools.capcut.com"
           },
           {
             "id": "F21",
-            "url": "https://canaltech.com.br/apps/como-colocar-musica-no-capcut/",
-            "titulo": "Como colocar música no CapCut | Guia Prático - Canaltech",
-            "dominio": "canaltech.com.br"
+            "url": "https://www.buildjam.co/tools/capcut-for-kids",
+            "titulo": "CapCut for Kids — A Parent's Guide | Build Jam",
+            "dominio": "buildjam.co"
           },
           {
             "id": "F22",
-            "url": "https://www.capcut.com/pt-br/resource/how-to-add-capcut-overlays",
-            "titulo": "Como adicionar sobreposições no CapCut: Introdução e Guia de Sobreposição",
-            "dominio": "capcut.com"
-          },
-          {
-            "id": "F23",
-            "url": "https://www.tiffin.edu/wp-content/uploads/CapCut-Basics.pdf",
-            "titulo": "CapCut Basics",
-            "dominio": "tiffin.edu"
-          },
-          {
-            "id": "F24",
-            "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=pro-brands",
-            "titulo": "CapCut: search popularity worldwide | Brandwave",
-            "dominio": "gobrandwave.com"
-          },
-          {
-            "id": "F25",
-            "url": "https://gobrandwave.com/demand/global-en/brands/capcut?set=ai-faceless-video-tools",
-            "titulo": "CapCut: search popularity worldwide | Brandwave",
-            "dominio": "gobrandwave.com"
-          },
-          {
-            "id": "F26",
-            "url": "https://industriahoje.com.br/profissoes-digitais-que-mais-crescem-em-2026",
-            "titulo": "Profissões digitais que mais crescem em 2026: social media, editor de vídeo curto e gestor de tráfego",
-            "dominio": "industriahoje.com.br"
-          },
-          {
-            "id": "F27",
-            "url": "https://cursarnet.com.br/profissao/editor-de-video",
-            "titulo": "O que faz um Editor de Vídeo? Salário, Mercado e Como Trabalhar com CapCut | Cursarnet",
-            "dominio": "cursarnet.com.br"
-          },
-          {
-            "id": "F28",
-            "url": "https://desvelar.org/wp-content/uploads/2026/03/ABREU-D.-CULTURA-DE-ENTRETENIMENTO-INFANTIL.pdf",
-            "titulo": "O conteúdo digital voltado ao público infantil tem se expandido de forma expressiva, impulsionado, principalmente, pelo fácil acesso às tecnologias audiovisuais e pela crescente presença das crianças em plataformas como YouTube, TikTok e serviços de streaming. Nesses espaços, concentram-se produções que vão desde desenhos animados e jogos interativos até canais em que crianças atuam como protagonistas, evidenciando um cenário em que a infância se insere cada vez mais na lógica de produção e consumo de conteúdos digitais.",
-            "dominio": "desvelar.org"
-          },
-          {
-            "id": "F29",
             "url": "https://www.uol.com.br/splash/colunas/na-sua-tela/2026/04/24/crise-producao-infantil-tiktok-youtube-dominam.htm?iap=1&uol_app=",
             "titulo": "Como TikTok e YouTube mudam o consumo infantil e afetam a produção",
             "dominio": "uol.com.br"
           },
           {
-            "id": "F30",
-            "url": "https://www.prensario.net/MIPJunior-2026-navegando-por-la-proxima-generacion-de-contenido-infantil-54525.note.aspx",
-            "titulo": "MIPJunior 2026: navegando por la próxima generación de contenido infantil - English",
-            "dominio": "prensario.net"
+            "id": "F23",
+            "url": "https://www.voxbooster.com/pt-BR/blog/short-form-video-editing-statistics-2026/",
+            "titulo": "Estatísticas de Edição de Vídeos Curtos (2026): 48 Dados sobre CapCut, IA e Legendas — VoxBooster",
+            "dominio": "voxbooster.com"
           },
           {
-            "id": "F31",
-            "url": "https://www.todotvnews.com/innovacion-diversidad-y-edutainment-las-nuevas-reglas-del-contenido-infantil/",
-            "titulo": "Innovación, diversidad y edutainment: las nuevas reglas del contenido infantil - TTV News",
-            "dominio": "todotvnews.com"
-          },
-          {
-            "id": "F32",
-            "url": "https://www.capcut.com/help/latest-capcut-editing-trends",
-            "titulo": "What Are the Latest CapCut Editing Trends in 2026?",
+            "id": "F24",
+            "url": "https://www.capcut.com/pt-br/help",
+            "titulo": "Central de Ajuda do CapCut | FAQs, Tutoriais e Solução de Problemas",
             "dominio": "capcut.com"
           },
           {
-            "id": "F33",
-            "url": "https://ramp.com/vendors/capcut/",
-            "titulo": "CapCut Ramp Rate: A Data-Backed Look",
-            "dominio": "ramp.com"
+            "id": "F25",
+            "url": "https://www.capcut.com/es-es/help/is-capcut-appropriate-for-kids",
+            "titulo": "¿Es CapCut apropiado para niños? Guía de seguridad para padres | CapCut",
+            "dominio": "capcut.com"
           },
           {
-            "id": "F34",
-            "url": "https://www.miracamp.com/learn/capcut/certificate",
-            "titulo": "CapCut Certification",
-            "dominio": "miracamp.com"
+            "id": "F26",
+            "url": "https://tools.capcut.com/pt-br/tools/tutorials",
+            "titulo": "Tutoriais criativos para aprendizado passo a passo | CapCut",
+            "dominio": "tools.capcut.com"
           },
           {
-            "id": "F35",
-            "url": "https://www.equinetacademy.com/course/mobile-video-editing-with-capcut-course/",
-            "titulo": "Mobile Video Editing with CapCut Course - Equinet Academy",
-            "dominio": "equinetacademy.com"
+            "id": "F27",
+            "url": "https://repositorios.dainf.ct.utfpr.edu.br/s/aid/item/194",
+            "titulo": "Cine Academy – Tutorial de CapCut · Acessibilidade e Inclusão Digital · Repositórios DAINF",
+            "dominio": "repositorios.dainf.ct.utfpr.edu.br"
           },
           {
-            "id": "F36",
-            "url": "https://register.cpttm.org.mo/en/courses/CM678-01-2026-C",
-            "titulo": "CPTTM Professional Training | Making Short Videos with CapCut",
-            "dominio": "register.cpttm.org.mo"
+            "id": "F28",
+            "url": "https://yoofy.com.br/cursos/curso-de-capcut/",
+            "titulo": "Curso de CapCut e Edição de Vídeo — Curso Grátis | YOOFY",
+            "dominio": "yoofy.com.br"
           },
           {
-            "id": "F37",
-            "url": "https://www.ziprecruiter.com/hiring/how-to-hire/capcut",
-            "titulo": "Capcut Hiring Guide: Find and Hire Top Video Editors Fast",
-            "dominio": "ziprecruiter.com"
+            "id": "F29",
+            "url": "https://www.udemy.com/course/edicao-de-video-com-capcut-no-computador-basico-ao-avancado/",
+            "titulo": "Edição de Vídeo com Capcut no Computador: Básico ao Avançado",
+            "dominio": "udemy.com"
           },
           {
-            "id": "F38",
-            "url": "https://www.camara.leg.br/noticias/1237337-NOVA-LEI-RECONHECE-A-PROFISSAO-DE-MULTIMIDIA",
-            "titulo": "Nova lei reconhece a profissão de multimídia - Portal da Câmara dos Deputados",
-            "dominio": "camara.leg.br"
+            "id": "F30",
+            "url": "https://www.cgd.com.br/curso/capcut",
+            "titulo": "https://www.cgd.com.br/curso/capcut?utm_source=openai",
+            "dominio": "cgd.com.br"
           }
         ]
       },
@@ -987,25 +823,20 @@
         "idsInvalidos": [],
         "usadas": [
           "F1",
-          "F2",
+          "F4",
+          "F3",
+          "F19",
+          "F17",
           "F6",
           "F5",
-          "F10",
-          "F3",
-          "F7",
-          "F26",
-          "F28",
-          "F24",
-          "F27",
-          "F25",
-          "F29",
-          "F9"
+          "F2"
         ],
-        "distintas": 14,
+        "distintas": 8,
         "numerosSemCitacao": 0,
         "minimoAtingido": true
       },
-      "geradoEm": "2026-10-24T20:33:42.561Z"
+      "assinatura": "716ee3bd77a6",
+      "geradoEm": "2026-10-24T23:57:25.785Z"
     }
   }
 }
