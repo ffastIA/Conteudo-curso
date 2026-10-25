@@ -14,7 +14,7 @@
 ## 3. Qualidade e UI
 
 - [x] 3.1 Enviar scores (critérios da rubrica, determinístico, nota da aula e score do gate de melhorias; fundamentação e completude entram com as changes 5 a 7)
-- [ ] 3.2 Dataset da linha de base no Langfuse (script `scripts/langfuse-dataset.js` pronto e linha de base gerada; falta enviar a um Langfuse em execução)
+- [x] 3.2 Dataset da linha de base no Langfuse (script `scripts/langfuse-dataset.js`; enviado em 2026-10-25 ao Langfuse 4.70: dataset `baseline-gerador-de-conteudo` com 1 item, `baseline-capcut`)
 - [x] 3.3 `public/app.js`: custo ao fim da etapa e link do trace
 
 ## 4. Testes (última etapa)

@@ -436,7 +436,7 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | G10 | Escalabilidade | Baixo | Sem rate limiting próprio — múltiplos usuários podem esgotar quota da API (a espera de 429 e `CONTEUDO_PARALELISMO` ≤ 2 só protegem uma instância) |
 | G11 | Qualidade | ✅ Resolvido | Avaliação sobre texto truncado: a revisão, o score e o relatório passam a ler a aula e os documentos inteiros, com map-reduce por seção quando não cabem (`avaliacao-conteudo-integral`) |
 | G12 | Confiabilidade | ✅ Resolvido | Pesquisa sem verificação de fonte: Responses API com `web_search`, citações `url_citation`, status `web`/`legado`/`sem_web` e fundamentação das aulas por dossiê `[F#]` (`pesquisa-web-real`, `conteudo-fundamentado-em-pesquisa`) |
-| G13 | Observabilidade | Reduzido | Observabilidade das chamadas ao LLM: traces e scores no Langfuse autohospedado, opcional (`observabilidade-langfuse`); falta enviar o dataset de avaliação (tarefa 3.2, precisa do Langfuse em execução) |
+| G13 | Observabilidade | Reduzido | Observabilidade das chamadas ao LLM: traces e scores no Langfuse autohospedado, opcional (`observabilidade-langfuse`); atributos de trace do v4 em todo span (`langfuse-trace-attributes`) e dataset da linha de base enviado (`baseline-gerador-de-conteudo`, 1 curso de referência) |
 
 > Ao propor uma nova funcionalidade, **referencie o Gap ID** caso ela resolva algum deles.
 

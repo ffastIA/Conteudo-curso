@@ -47,9 +47,11 @@ async function main() {
   }
 
   require('dotenv').config({ path: path.join(ROOT, '.env') });
-  const { LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY } = process.env;
+  // LANGFUSE_BASE_URL é o nome que o Langfuse sugere ao criar as chaves; o app aceita os dois.
+  const { LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY } = process.env;
+  const LANGFUSE_HOST = process.env.LANGFUSE_HOST || process.env.LANGFUSE_BASE_URL;
   if (!LANGFUSE_HOST || !LANGFUSE_PUBLIC_KEY || !LANGFUSE_SECRET_KEY) {
-    console.error('Defina LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY e LANGFUSE_SECRET_KEY no .env.');
+    console.error('Defina LANGFUSE_HOST (ou LANGFUSE_BASE_URL), LANGFUSE_PUBLIC_KEY e LANGFUSE_SECRET_KEY no .env.');
     process.exit(1);
   }
   const base = LANGFUSE_HOST.replace(/\/+$/, '');
