@@ -189,13 +189,13 @@ describe('toda chamada à OpenAI vira generation com tokens, custo e finish_reas
   test('chamada externa (HeyGen) vira span com status e duração', async () => {
     const ag = await sessao();
 
-    await ag.get('/api/heygen/avatares'); // v3 e v2 respondem 404 no mock → 500
+    await ag.get('/api/heygen/avatares'); // a v3 responde 404 no mock → 500
     await app.obs.flush();
 
     const spans = spansOtlp().filter(s => s.name.startsWith('heygen.get.'));
-    expect(spans.length).toBeGreaterThanOrEqual(2);
+    expect(spans.length).toBeGreaterThanOrEqual(1);
     expect(spans.map(s => s.name)).toEqual(expect.arrayContaining([
-      expect.stringContaining('v3/avatar_groups'), expect.stringContaining('v2/avatar_group.list')
+      expect.stringContaining('v3/avatars/looks')
     ]));
     expect(attr(spans[0], 'langfuse.observation.metadata.http_status')).toBe('404');
     expect(attr(spans[0], 'langfuse.observation.metadata.duracao_ms')).toBeDefined();

@@ -113,9 +113,8 @@ async function configurarHeygen(ag, overrides = {}) {
 
 // Mock de fetch global para os endpoints do HeyGen usados por
 // GET /api/heygen/avatares e GET /api/heygen/vozes (listagem, sem geração).
-// Avatares: GET /v2/avatar_group.list devolve os grupos próprios do usuário;
-// GET /v2/avatar_group/{id}/avatars devolve os looks de cada grupo (roteado
-// por id extraído da URL) — sem paginação, mesmo contrato usado por
+// Avatares: GET /v3/avatars/looks?ownership=private devolve os looks do usuário
+// (aqui montados a partir de `grupos`/`looksPorGrupo`), sem paginação — contrato de
 // listarAvataresHeygen(). Vozes: cada lista é dada como array de "páginas"
 // (arrays de itens), simulando has_more/next_token — mais de uma página =
 // o sistema deve seguir a paginação até a última. Roteadas por
@@ -143,13 +142,12 @@ function installHeygenListFetchMock({
     const urlStr = String(url);
     calls.push({ url: urlStr });
     if (failListagem) return { ok: false, status: 401, text: async () => 'chave inválida' };
-    if (urlStr.includes('/v2/avatar_group.list')) {
-      return { ok: true, status: 200, json: async () => ({ error: null, data: { total_count: grupos.length, avatar_group_list: grupos } }) };
-    }
-    const matchGrupo = urlStr.match(/\/v2\/avatar_group\/([^/?]+)\/avatars/);
-    if (matchGrupo) {
-      const avatarList = looksPorGrupo[matchGrupo[1]] || [];
-      return { ok: true, status: 200, json: async () => ({ error: null, data: { avatar_list: avatarList } }) };
+    if (urlStr.includes('/v3/avatars/looks')) {
+      // v3: um único endpoint devolve os looks do dono (aqui achatados a partir dos grupos do cenário).
+      const looks = grupos.flatMap(g => (looksPorGrupo[g.id] || []).map(l => ({
+        id: l.id, name: l.name, avatar_type: `${g.group_type.toLowerCase()}_avatar`, preview_image_url: l.image_url, status: 'completed'
+      })));
+      return { ok: true, status: 200, json: async () => ({ data: looks, has_more: false }) };
     }
     if (urlStr.includes('/v3/voices')) {
       const isPrivada = urlStr.includes('type=private');
@@ -226,12 +224,14 @@ describe('GET /api/heygen/avatares e /api/heygen/vozes', () => {
     ]);
   });
 
-  test('não chama GET /v3/avatars/looks (catálogo público) para listar avatares', async () => {
+  test('lista só os looks do usuário (ownership=private), nunca o catálogo público nem a v2', async () => {
     const ag = agent();
     const calls = installHeygenListFetchMock();
     await ag.get('/api/heygen/avatares');
-    expect(calls.some(c => c.url.includes('/v3/avatars/looks'))).toBe(false);
-    expect(calls.some(c => c.url.includes('/v2/avatar_group.list'))).toBe(true);
+    const looks = calls.filter(c => c.url.includes('/v3/avatars/looks'));
+    expect(looks.length).toBeGreaterThan(0);
+    expect(looks.every(c => c.url.includes('ownership=private'))).toBe(true);
+    expect(calls.some(c => c.url.includes('/v2/'))).toBe(false);
   });
 
   test('lista vozes do workspace, repassando filtros de query', async () => {

@@ -1703,108 +1703,26 @@ async function paginarHeygen(path, baseParams = {}, { maxPaginas = 100 } = {}) {
   return itens;
 }
 
-// Lista os avatares próprios do usuário (grupos custom — digital twins,
-// studio avatars, photo avatars — e os "looks" dentro de cada grupo), para
-// o menu de configuração da Etapa 10. NÃO usa GET /v3/avatars/looks: esse
-// endpoint devolve o catálogo PÚBLICO inteiro do HeyGen misturado com os
-// avatares do usuário (milhares de itens, sem nenhum parâmetro de filtro
-// por dono — `type`/`owner`/`source` são todos rejeitados com "Extra inputs
-// are not permitted"), então paginar até o fim levaria minutos.
-// Tenta primeiro /v3/avatar_groups; os endpoints v2 (avatar_group.list?
-// include_public=false + avatar_group/{id}/avatars) são legados (sunset
-// 2026-10-31) e só servem de fallback enquanto a v3 responde 404 ou formato
-// não reconhecido. Devolve { avatares, origem: 'v3' | 'v2' }.
+// Lista os avatares próprios do usuário (digital twins, studio avatars e photo
+// avatars) para o menu de configuração da Etapa 10. Usa só a API v3:
+// GET /v3/avatars/looks?ownership=private devolve direto os looks do dono, já
+// com avatar_type e preview, paginado como as vozes — sem listar grupo a grupo.
+// (Sem ownership=private o endpoint devolve o catálogo PÚBLICO inteiro, milhares
+// de itens.) Os endpoints v2 saem do ar em 2026-10-31 e não são mais usados.
+// Looks com status que não seja "completed" (processing, pending_consent,
+// failed) ainda não servem para gerar vídeo e ficam de fora; sem status, entram.
 async function listarAvataresHeygen() {
   requireApiKey(HEYGEN_API_KEY, 'HEYGEN_API_KEY');
-  let resultado = await listarAvataresHeygenV3();
-  if (!resultado) resultado = { avatares: await listarAvataresHeygenV2(), origem: 'v2' };
-  const { avatares, origem } = resultado;
-  if (!HEYGEN_AVATAR_IDS.length) return { avatares, origem };
-  return { avatares: avatares.filter(a => HEYGEN_AVATAR_IDS.includes(a.id)), origem };
-}
-
-// Normaliza uma lista de grupos/looks da v3 (`data` array, tolerando também
-// `data.<lista>`) — formato ainda não confirmado com a chave real (ver
-// scripts/smoke-pesquisa.js e a change verificacao-pesquisa-e-prazos), por
-// isso é defensivo: formato inesperado devolve null e aciona o fallback v2.
-function extrairListaHeygenV3(json, chaves) {
-  if (Array.isArray(json?.data)) return json.data;
-  for (const k of chaves) if (Array.isArray(json?.data?.[k])) return json.data[k];
-  return null;
-}
-
-async function listarAvataresHeygenV3() {
-  const respGrupos = await fetchObs(`${HEYGEN_API_BASE}/v3/avatar_groups?include_public=false`, {
-    headers: { 'x-api-key': HEYGEN_API_KEY },
-    signal: makeAbortSignal(30_000)
-  });
-  if (respGrupos.status === 404) return null;
-  if (!respGrupos.ok) {
-    const detalhe = await respGrupos.text().catch(() => '');
-    throw new Error(`HeyGen retornou ${respGrupos.status} ao listar grupos de avatares.${detalhe ? ' ' + detalhe : ''}`);
-  }
-  const grupos = extrairListaHeygenV3(await respGrupos.json(), ['avatar_groups', 'avatar_group_list']);
-  if (!grupos) return null;
-
-  const looksPorGrupo = [];
-  for (const grupo of grupos) {
-    const resp = await fetchObs(`${HEYGEN_API_BASE}/v3/avatar_groups/${grupo.id}/avatars`, {
-      headers: { 'x-api-key': HEYGEN_API_KEY },
-      signal: makeAbortSignal(30_000)
-    });
-    if (resp.status === 404) return null;
-    if (!resp.ok) {
-      const detalhe = await resp.text().catch(() => '');
-      throw new Error(`HeyGen retornou ${resp.status} ao listar avatares do grupo ${grupo.name || grupo.id}.${detalhe ? ' ' + detalhe : ''}`);
-    }
-    const looks = extrairListaHeygenV3(await resp.json(), ['avatars', 'avatar_list']);
-    if (!looks) return null;
-    const avatarType = `${(grupo.group_type || grupo.type || 'custom').toLowerCase()}_avatar`;
-    looksPorGrupo.push(looks.map(look => ({
+  const looks = await paginarHeygen('/v3/avatars/looks', { ownership: 'private', limit: '50' });
+  const avatares = looks
+    .filter(look => !look.status || look.status === 'completed')
+    .map(look => ({
       id: look.id,
-      name: look.name || grupo.name,
-      avatar_type: avatarType,
-      preview_image_url: look.image_url || look.preview_image_url || grupo.preview_image || ''
-    })));
-  }
-  return { avatares: looksPorGrupo.flat(), origem: 'v3' };
-}
-
-async function listarAvataresHeygenV2() {
-  const timeoutSignalGrupos = makeAbortSignal(30_000);
-  const respGrupos = await fetchObs(`${HEYGEN_API_BASE}/v2/avatar_group.list?include_public=false`, {
-    headers: { 'x-api-key': HEYGEN_API_KEY },
-    signal: timeoutSignalGrupos
-  });
-  if (!respGrupos.ok) {
-    const detalhe = await respGrupos.text().catch(() => '');
-    throw new Error(`HeyGen retornou ${respGrupos.status} ao listar grupos de avatares.${detalhe ? ' ' + detalhe : ''}`);
-  }
-  const dataGrupos = await respGrupos.json();
-  const grupos = dataGrupos.data?.avatar_group_list || [];
-
-  const looksPorGrupo = await Promise.all(grupos.map(async (grupo) => {
-    const timeoutSignal = makeAbortSignal(30_000);
-    const resp = await fetchObs(`${HEYGEN_API_BASE}/v2/avatar_group/${grupo.id}/avatars`, {
-      headers: { 'x-api-key': HEYGEN_API_KEY },
-      signal: timeoutSignal
-    });
-    if (!resp.ok) {
-      const detalhe = await resp.text().catch(() => '');
-      throw new Error(`HeyGen retornou ${resp.status} ao listar avatares do grupo ${grupo.name || grupo.id}.${detalhe ? ' ' + detalhe : ''}`);
-    }
-    const data = await resp.json();
-    const looks = data.data?.avatar_list || [];
-    const avatarType = `${(grupo.group_type || 'custom').toLowerCase()}_avatar`;
-    return looks.map(look => ({
-      id: look.id,
-      name: look.name || grupo.name,
-      avatar_type: avatarType,
-      preview_image_url: look.image_url || grupo.preview_image || ''
+      name: look.name || look.id,
+      avatar_type: look.avatar_type || 'custom_avatar',
+      preview_image_url: look.preview_image_url || ''
     }));
-  }));
-
-  return looksPorGrupo.flat();
+  return HEYGEN_AVATAR_IDS.length ? avatares.filter(a => HEYGEN_AVATAR_IDS.includes(a.id)) : avatares;
 }
 
 // Lista as vozes do workspace (públicas do HeyGen + privadas/clonadas pelo
@@ -2563,8 +2481,8 @@ app.post('/api/estilos-visuais/selecionar', (req, res) => {
 // não são geradas por IA.
 app.get('/api/heygen/avatares', async (req, res) => {
   try {
-    const { avatares, origem } = await listarAvataresHeygen();
-    res.json({ avatares, legado: origem === 'v2' });
+    const avatares = await listarAvataresHeygen();
+    res.json({ avatares });
   } catch (err) {
     logger.error(err);
     res.status(500).json({ error: err.message || 'Erro ao listar avatares do HeyGen.' });

@@ -1383,7 +1383,6 @@ async function carregarHeygenConfig() {
     } else if (!avataresLista.length) {
       alert('Nenhum avatar encontrado no seu workspace HeyGen. Informe o avatarId manualmente ou crie um avatar em app.heygen.com.');
     }
-    document.getElementById('heygenAvisoLegado').style.display = (rAvatares.ok && dataAvatares.legado) ? 'block' : 'none';
     if (!dataVozes.vozes?.length) {
       alert('Nenhuma voz encontrada no seu workspace HeyGen.');
       return;

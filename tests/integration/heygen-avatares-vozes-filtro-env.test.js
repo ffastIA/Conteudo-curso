@@ -32,8 +32,7 @@ function agent() {
 // Mesmo mock de fetch usado em video-avatar.test.js para os endpoints de
 // listagem do HeyGen, com um workspace maior para exercitar o filtro.
 // Avatares: dois grupos próprios do usuário (STUDIO com av_1/av_2, PHOTO com
-// av_3) — listarAvataresHeygen busca GET /v2/avatar_group.list e depois
-// GET /v2/avatar_group/{id}/avatars por grupo, nunca /v3/avatars/looks.
+// av_3) — listarAvataresHeygen busca GET /v3/avatars/looks?ownership=private (os grupos abaixo são só o cenário).
 function installHeygenListFetchMock({
   grupos = [
     { id: 'g_studio', name: 'Grupo Studio', group_type: 'STUDIO' },
@@ -56,13 +55,12 @@ function installHeygenListFetchMock({
 } = {}) {
   global.fetch = jest.fn(async (url) => {
     const urlStr = String(url);
-    if (urlStr.includes('/v2/avatar_group.list')) {
-      return { ok: true, status: 200, json: async () => ({ error: null, data: { total_count: grupos.length, avatar_group_list: grupos } }) };
-    }
-    const matchGrupo = urlStr.match(/\/v2\/avatar_group\/([^/?]+)\/avatars/);
-    if (matchGrupo) {
-      const avatarList = looksPorGrupo[matchGrupo[1]] || [];
-      return { ok: true, status: 200, json: async () => ({ error: null, data: { avatar_list: avatarList } }) };
+    if (urlStr.includes('/v3/avatars/looks')) {
+      // v3: um único endpoint devolve os looks do dono (aqui achatados a partir dos grupos do cenário).
+      const looks = grupos.flatMap(g => (looksPorGrupo[g.id] || []).map(l => ({
+        id: l.id, name: l.name, avatar_type: `${g.group_type.toLowerCase()}_avatar`, preview_image_url: l.image_url, status: 'completed'
+      })));
+      return { ok: true, status: 200, json: async () => ({ data: looks, has_more: false }) };
     }
     if (urlStr.includes('/v3/voices')) {
       // listarVozesHeygen busca type=public e type=private separadamente
