@@ -72,6 +72,7 @@ function renderPainelOrcamento(e) {
     etapas.map(([nome, v]) => `<tr class="orcamento-sub"><td>↳ ${orcEsc(nome)}</td><td></td><td>${orcUsd(v.gastoUsd)}</td><td>${orcUsd(v.restanteUsd)}</td></tr>`).join('') +
     `</tbody></table>` +
     (avisos.length ? `<ul class="orcamento-avisos">${avisos.map(a => `<li>${orcEsc(a)}</li>`).join('')}</ul>` : '') +
+    (e.perfil?.modeloPesquisa ? `<p class="field-hint">Modelo de pesquisa neste perfil: <code>${orcEsc(e.perfil.modeloPesquisa)}</code></p>` : '') +
     `<div class="orcamento-form">
        <label>Perfil de custo ${orcSelectPerfis(e, 'orcPerfil')}</label>
        <label>Teto do projeto (US$) <input id="orcTetoProjeto" type="number" min="0" step="0.01" value="${orcEsc(e.projeto?.tetoUsd ?? '')}" /></label>

@@ -114,7 +114,7 @@ describe('envio OTLP ao Langfuse', () => {
     const esperado = calcularCusto({ prompt_tokens: 1000, completion_tokens: 500 }, 'gpt-4o-mini');
     expect(resumo.custoUsd).toBeCloseTo(esperado, 10);
     expect(ctx.custoUsd).toBeCloseTo(esperado, 10);
-    expect(ctx.tokens).toEqual({ entrada: 1000, saida: 500, total: 1500 });
+    expect(ctx.tokens).toEqual({ entrada: 1000, saida: 500, total: 1500, entradaEmCache: 0 });
   });
 
   test('span raiz no fim do trace: nome da etapa, sessão do projeto e totais', async () => {

@@ -67,18 +67,23 @@ function lerCapacidades() {
 }
 
 // Confere cada papel com a tabela de capacidades. Só devolve avisos (nunca erro).
-function validarModelos(porPapel = modelos.modelosPorPapel(), tabela = lerCapacidades()) {
+function validarModelos(porPapel = modelos.modelosPorPapel(), tabela = lerCapacidades(), perfis = lerPerfisConfig().perfis) {
   const avisos = [];
-  for (const [papel, modelo] of Object.entries(porPapel)) {
+  // O modelo de pesquisa que um perfil define (modeloPesquisa) também é conferido, como papel "pesquisa".
+  const conferencias = Object.entries(porPapel).map(([papel, modelo]) => ({ papel, modelo, rotulo: papel }));
+  for (const [id, p] of Object.entries(perfis || {})) {
+    if (p?.modeloPesquisa) conferencias.push({ papel: 'pesquisa', modelo: p.modeloPesquisa, rotulo: `pesquisa, perfil ${p.rotulo || id}` });
+  }
+  for (const { papel, modelo, rotulo } of conferencias) {
     const conhecido = (tabela.modelos || {})[modelo];
     const exigidas = (tabela.exigencias || {})[papel] || [];
     if (!conhecido) {
-      avisos.push({ papel, modelo, tipo: 'nao_conferido', mensagem: `O modelo "${modelo}" (papel ${papel}) não está na tabela de capacidades — a capacidade não pôde ser conferida.` });
+      avisos.push({ papel, modelo, tipo: 'nao_conferido', mensagem: `O modelo "${modelo}" (papel ${rotulo}) não está na tabela de capacidades — a capacidade não pôde ser conferida.` });
       continue;
     }
     for (const cap of exigidas) {
       if (conhecido[cap] !== true) {
-        avisos.push({ papel, modelo, tipo: 'sem_capacidade', capacidade: cap, mensagem: `O modelo "${modelo}" (papel ${papel}) está marcado sem "${cap}", que o papel exige.` });
+        avisos.push({ papel, modelo, tipo: 'sem_capacidade', capacidade: cap, mensagem: `O modelo "${modelo}" (papel ${rotulo}) está marcado sem "${cap}", que o papel exige.` });
       }
     }
   }
@@ -538,7 +543,10 @@ function criarGovernanca({
       alertaPct: tetos.alertaPct,
       margemPct: tetos.margemPct,
       porModelo: uso.modelos,
-      perfil: { id: p.id, rotulo: p.rotulo, parametros: { ...p, id: undefined, rotulo: undefined } },
+      perfil: {
+        id: p.id, rotulo: p.rotulo, parametros: { ...p, id: undefined, rotulo: undefined },
+        modeloPesquisa: p.modeloPesquisa || modelos.modelosPorPapel().pesquisa
+      },
       perfis: cfg.ordem.map(id => ({ id, rotulo: cfg.perfis[id]?.rotulo || id })),
       degradacaoAutomatica: String(env.CUSTO_DEGRADACAO_AUTOMATICA || '').toLowerCase() !== 'false',
       pausa: uso.pausa,

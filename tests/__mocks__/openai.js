@@ -24,7 +24,12 @@ const mockImagesGenerate = jest.fn(async () => {
 
 // Uso (tokens) devolvido pelas respostas; ajustável com OpenAI.__setUsage para simular gasto de verdade.
 let _usage = { prompt_tokens: 10, completion_tokens: 20 };
-const usoAtual = () => ({ prompt_tokens: _usage.prompt_tokens, completion_tokens: _usage.completion_tokens, total_tokens: _usage.prompt_tokens + _usage.completion_tokens });
+// Tokens de entrada atendidos pelo cache de prompt (OpenAI.__setCachedTokens); 0 = a API não informa o campo.
+let _cached = 0;
+const usoAtual = () => ({
+  prompt_tokens: _usage.prompt_tokens, completion_tokens: _usage.completion_tokens, total_tokens: _usage.prompt_tokens + _usage.completion_tokens,
+  ...(_cached ? { prompt_tokens_details: { cached_tokens: _cached } } : {})
+});
 
 async function* makeStream(text, finishReason) {
   const words = text.split(' ');
@@ -115,7 +120,10 @@ function montarResposta(text) {
         }]
       }
     ],
-    usage: { input_tokens: _usage.prompt_tokens, output_tokens: _usage.completion_tokens, total_tokens: _usage.prompt_tokens + _usage.completion_tokens }
+    usage: {
+      input_tokens: _usage.prompt_tokens, output_tokens: _usage.completion_tokens, total_tokens: _usage.prompt_tokens + _usage.completion_tokens,
+      ...(_cached ? { input_tokens_details: { cached_tokens: _cached } } : {})
+    }
   };
 }
 
@@ -189,9 +197,11 @@ OpenAI.__setFinishReason = (reason) => { _finishQueue = [reason]; };
 OpenAI.__getResponsesMock = () => mockResponsesCreate;
 OpenAI.__setCitations = (citations) => { _citations = citations; };
 
+OpenAI.__setCachedTokens = (n) => { _cached = n; };
 OpenAI.__setUsage = (promptTokens, completionTokens) => { _usage = { prompt_tokens: promptTokens, completion_tokens: completionTokens }; };
 
 OpenAI.__reset = () => {
+  _cached = 0;
   _usage = { prompt_tokens: 10, completion_tokens: 20 };
   _errorQueue = [];
   _responder = null;

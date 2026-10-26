@@ -29,8 +29,19 @@ function carregarPrecos() {
   }
 }
 
+// Tokens de entrada atendidos pelo cache de prompt da OpenAI. Aceita o usage já
+// normalizado (cached_tokens), o de chat (prompt_tokens_details) e o da Responses
+// API (input_tokens_details). Ausente vale 0; nunca passa do total de entrada.
+function tokensEmCache(usage) {
+  const n = Number(usage?.cached_tokens ?? usage?.prompt_tokens_details?.cached_tokens ?? usage?.input_tokens_details?.cached_tokens);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const total = Number(usage?.prompt_tokens ?? usage?.input_tokens);
+  return Number.isFinite(total) ? Math.min(n, Math.max(0, total)) : n;
+}
+
 // Custo em USD de uma resposta a partir do usage normalizado
-// ({ prompt_tokens, completion_tokens }). Modelo sem preço → null.
+// ({ prompt_tokens, completion_tokens }). Tokens de entrada em cache saem pelo
+// preço entradaEmCache do modelo (sem ele, pelo preço de entrada). Modelo sem preço → null.
 function calcularCusto(usage, modelo, precos = carregarPrecos()) {
   if (!usage || !modelo) return null;
   const tabela = precos.porMilhaoDeTokens || {};
@@ -38,8 +49,10 @@ function calcularCusto(usage, modelo, precos = carregarPrecos()) {
     .filter(k => String(modelo).toLowerCase().startsWith(k.toLowerCase()))
     .sort((a, b) => b.length - a.length)[0];
   if (!chave) return null;
-  const { entrada = 0, saida = 0 } = tabela[chave];
-  return ((usage.prompt_tokens || 0) * entrada + (usage.completion_tokens || 0) * saida) / 1_000_000;
+  const { entrada = 0, saida = 0, entradaEmCache = entrada } = tabela[chave];
+  const total = usage.prompt_tokens || 0;
+  const emCache = tokensEmCache(usage);
+  return ((total - emCache) * entrada + emCache * entradaEmCache + (usage.completion_tokens || 0) * saida) / 1_000_000;
 }
 
 // ── Mascaramento de dados sensíveis ─────────────────────────────────────────
@@ -223,7 +236,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
       filhos: 0,
       custoUsd: 0,
       custoDesconhecido: false,
-      tokens: { entrada: 0, saida: 0, total: 0 },
+      tokens: { entrada: 0, saida: 0, total: 0, entradaEmCache: 0 },
       meta: {},
       traceMeta: {},
       ...props
@@ -319,6 +332,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
     ctx.tokens.entrada += usage?.prompt_tokens || 0;
     ctx.tokens.saida += usage?.completion_tokens || 0;
     ctx.tokens.total += usage?.total_tokens || 0;
+    ctx.tokens.entradaEmCache = (ctx.tokens.entradaEmCache || 0) + tokensEmCache(usage);
     if (custo === null) { if (usage) ctx.custoDesconhecido = true; } else ctx.custoUsd += custo;
 
     const resumo = { traceId: ctx.traceId, nome, modelo, usage, finishReason, custoUsd: custo, tarifaUsd: tarifaUsd > 0 ? tarifaUsd : 0, latenciaMs: fim - inicio, erro: erro ? String(erro) : null, ...extra };
@@ -331,7 +345,7 @@ function criarObservabilidade({ env = process.env, fetchImpl = (...a) => fetch(.
       'langfuse.observation.model.name': modelo,
       'langfuse.observation.model.parameters': parametros,
       'langfuse.observation.usage_details': usage
-        ? { input: usage.prompt_tokens || 0, output: usage.completion_tokens || 0, total: usage.total_tokens || 0 }
+        ? { input: usage.prompt_tokens || 0, output: usage.completion_tokens || 0, total: usage.total_tokens || 0, ...(tokensEmCache(usage) ? { input_cached_tokens: tokensEmCache(usage) } : {}) }
         : undefined,
       'langfuse.observation.cost_details': custo === null ? undefined : { total: custo },
       'langfuse.observation.level': erro ? 'ERROR' : (incompleta ? 'WARNING' : 'DEFAULT'),
@@ -486,4 +500,4 @@ if (obs.enabled) {
   process.once('beforeExit', () => { obs.shutdown(); });
 }
 
-module.exports = { criarObservabilidade, obs, mascarar, calcularCusto, carregarPrecos, amostrado, lerConfig };
+module.exports = { criarObservabilidade, obs, mascarar, calcularCusto, tokensEmCache, carregarPrecos, amostrado, lerConfig };

@@ -18,6 +18,7 @@ module.exports = {
     'observabilidade.js',
     'custo.js',
     'orcamento.js',
+    'pesquisa-cache.js',
     'logger.js',
     'docx-markdown.js',
     'config/modelos.js',

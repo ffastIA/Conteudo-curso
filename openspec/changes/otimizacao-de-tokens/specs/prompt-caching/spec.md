@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Prefixo estável nas skills repetitivas
-As skills chamadas várias vezes com o mesmo contexto SHALL montar o prompt com o conteúdo estável primeiro (instruções, dados do curso, plano de ensino, plano de aula, ementa, dossiê de fontes, nível e contexto pedagógico) e o conteúdo variável por último (seção a redigir, resumo do que já foi escrito, texto a avaliar), sem alterar o conteúdo do prompt, apenas a ordem dos blocos. Isso se aplica a `secaoConteudoSkill`, `expandirSecaoSkill`, `revisaoSecaoSkill`, `revisaoQualidadeSkill`, `scoreAulaSkill` e à skill de roteiro por aula. O texto de `system` SHALL permanecer idêntico entre chamadas da mesma etapa.
+As skills chamadas várias vezes com o mesmo contexto SHALL montar o prompt com o conteúdo estável primeiro (instruções, dados do curso, plano de ensino, plano de aula, ementa, dossiê de fontes, nível e contexto pedagógico) e o conteúdo variável por último (seção a redigir, resumo do que já foi escrito, texto a avaliar), sem alterar o conteúdo do prompt, apenas a ordem dos blocos. Isso se aplica a `secaoConteudoSkill`, `revisaoSecaoSkill` e `scoreAulaSkill`, as skills chamadas várias vezes com o mesmo contexto. O texto de `system` SHALL permanecer idêntico entre chamadas da mesma etapa.
 
 #### Scenario: Seções da mesma aula compartilham o prefixo
 - **WHEN** são montados os prompts das seções 1 e 2 da mesma aula

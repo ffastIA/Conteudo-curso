@@ -18,7 +18,6 @@ A pesquisa web é 86% do custo, e cada chamada de busca gasta cerca de 19 mil to
 - **Cache de prompt (`prompt-caching`):** nas skills chamadas várias vezes por aula, o conteúdo estável (instruções, plano, ementa, dossiê) vem primeiro e o variável (seção atual, resumo do que foi escrito) vem por último, para aproveitar o desconto automático de prefixos repetidos da OpenAI. O app passa a registrar os tokens em cache de cada chamada.
 - **Cobrança de tokens em cache (`cost-estimation`):** o cálculo do custo aplica o preço de entrada em cache (`gpt-4o` US$ 1,25, `gpt-4o-mini` US$ 0,075 por milhão, da página de preços de 2026-10-25) e soma o bloco fixo de tokens que a OpenAI cobra por chamada de busca nos modelos mini.
 - **Modelo de pesquisa por perfil (`cost-profiles`):** o perfil pode definir um modelo de pesquisa próprio. O mecanismo entra nesta change; trocar o modelo do perfil Econômico só vale se o experimento da tarefa 4 mostrar qualidade equivalente.
-- **Pré-checagem antes da avaliação (`evaluation-efficiency`):** aulas marcadas incompletas ou puladas não gastam chamadas de revisão, e as checagens determinísticas (bloco de código aberto, ids `[F#]` inválidos, palavras abaixo da meta) rodam antes de qualquer chamada.
 
 ## Non-goals
 
@@ -27,9 +26,10 @@ A pesquisa web é 86% do custo, e cada chamada de busca gasta cerca de 19 mil to
 - **Parada do ciclo por ganho de nota:** já existe (`EPSILON_CONVERGENCIA` e o gatilho `sem_ganho` do disjuntor).
 - **Batch API:** descartada. O resultado chega em até 24 horas e exige consulta periódica, o que contraria a regra do projeto de usar SSE para toda operação assíncrona, e a avaliação em lote seria 2% do custo.
 - **Reaproveitar pesquisa entre cursos "parecidos":** o cache só acerta quando o prompt é idêntico. Correspondência por semelhança exigiria embeddings, que não são justificados pelo ganho.
+- **Pré-checagem determinística antes da revisão:** retirada ao conferir o código (tarefa 5.1). `/api/revisao-qualidade` já fica bloqueada por um middleware enquanto houver aula incompleta ou pulada (a aula precisa ser regenerada antes), e o bloco de código aberto, as palavras abaixo da meta e os ids `[F#]` inválidos já são detectados na geração (`conteudo-secoes.js`, estado `curta`/`incompleta`, `citacoes.idsInvalidos`). Reimplementar seria código morto.
 - Nenhuma dependência npm nova.
 
 ## Impact
 
-- `server.js` (wrapper `chamarOpenAI`, `executarPesquisaWeb`, rotas `/api/search` e pesquisa por módulo, revisão), `skills.js` (ordem dos blocos), `custo.js` (`calcularCusto`), `orcamento.js` (não aprender calibração com acertos de cache), `config/precos-modelos.json`, `config/perfis-custo.json`, `observabilidade.js` (tokens em cache), `.gitignore`, `.env.example`, documentação e testes.
-- Capabilities novas: `prompt-caching`, `research-cache`, `evaluation-efficiency`. Alteradas: `cost-estimation`, `cost-profiles`.
+- `server.js` (wrapper `chamarOpenAI`, `executarPesquisaWeb`, rotas `/api/search` e pesquisa por módulo), `pesquisa-cache.js` (novo), `skills.js` (ordem dos blocos), `custo.js` (`calcularCusto`), `orcamento.js` (não aprender calibração com acertos de cache), `config/precos-modelos.json`, `config/perfis-custo.json`, `observabilidade.js` (tokens em cache), `.gitignore`, `.env.example`, documentação e testes.
+- Capabilities novas: `prompt-caching`, `research-cache`. Alteradas: `cost-estimation`, `cost-profiles`.

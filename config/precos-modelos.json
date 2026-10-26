@@ -1,10 +1,12 @@
 {
   "vigencia": "2026-10-25",
   "moeda": "USD",
-  "observacao": "Preço por 1 milhão de tokens. Chaves casam por prefixo do nome do modelo (a mais longa vence). Ajuste conforme a tabela vigente da OpenAI. buscaWebPorChamadaUsd é a cobrança por chamada da ferramenta web_search (USD por chamada): US$ 10,00 por 1.000 chamadas = 0,01, igual para todos os modelos e perfis (a página de preços da OpenAI não diferencia o tamanho do contexto de busca), consultada em 2026-10-25 em developers.openai.com/api/docs/pricing. Os tokens do conteúdo da busca são cobrados à parte, na tarifa do modelo, e já vêm no usage da resposta; só nos modelos mini a OpenAI cobra um bloco fixo de 8.000 tokens de entrada por chamada, que o app não soma. Se o valor voltar a 0, o custo da pesquisa fica subestimado e o painel avisa.",
+  "observacao": "Preço por 1 milhão de tokens. Chaves casam por prefixo do nome do modelo (a mais longa vence). Ajuste conforme a tabela vigente da OpenAI. buscaWebPorChamadaUsd é a cobrança por chamada da ferramenta web_search (USD por chamada): US$ 10,00 por 1.000 chamadas = 0,01, igual para todos os modelos e perfis (a página de preços da OpenAI não diferencia o tamanho do contexto de busca), consultada em 2026-10-25 em developers.openai.com/api/docs/pricing. Os tokens do conteúdo da busca são cobrados à parte, na tarifa do modelo, e já vêm no usage da resposta; só nos modelos mini a OpenAI cobra um bloco fixo de 8.000 tokens de entrada por chamada, que o app não soma. Se o valor voltar a 0, o custo da pesquisa fica subestimado e o painel avisa. entradaEmCache é o preço por milhão dos tokens de entrada atendidos pelo cache de prompt da OpenAI (sem ele, tudo é cobrado pelo preço de entrada). buscaWebBlocoTokensMini é o bloco fixo de tokens de entrada que a OpenAI cobra por chamada de busca nos modelos mini; só é somado se o usage da resposta não o incluir, e não afeta a pesquisa com gpt-4o. buscaWebBlocoTokensMiniSomar liga a soma (deixe false até confirmar com uma chamada real).",
   "buscaWebPorChamadaUsd": 0.01,
+  "buscaWebBlocoTokensMini": 8000,
+  "buscaWebBlocoTokensMiniSomar": false,
   "porMilhaoDeTokens": {
-    "gpt-4o": { "entrada": 2.5, "saida": 10 },
-    "gpt-4o-mini": { "entrada": 0.15, "saida": 0.6 }
+    "gpt-4o": { "entrada": 2.5, "entradaEmCache": 1.25, "saida": 10 },
+    "gpt-4o-mini": { "entrada": 0.15, "entradaEmCache": 0.075, "saida": 0.6 }
   }
 }

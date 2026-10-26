@@ -99,8 +99,8 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 | POST   | `/api/metodologia/confirmar`            | Confirma metodologia (e gera ementa pendente)           |
 | GET    | `/api/escolher-pasta`                   | Abre o seletor nativo de pasta (Windows, só em loopback)|
 | POST   | `/api/config`                           | Configuração do curso + geração da ementa               |
-| GET    | `/api/search`                           | SSE — pesquisa web geral (Responses API + `web_search`) |
-| GET    | `/api/pesquisa-modulos`                 | SSE — pesquisa web por módulo (`?refazer=1` refaz)      |
+| GET    | `/api/search`                           | SSE — pesquisa web geral (Responses API + `web_search`; `?semCache=1` ignora o cache) |
+| GET    | `/api/pesquisa-modulos`                 | SSE — pesquisa web por módulo (`?refazer=1` refaz; `?semCache=1` ignora o cache) |
 | GET    | `/api/pesquisa-modulos/status`          | Estado da pesquisa por módulo                           |
 | POST   | `/api/pesquisa-modulos/pular`           | Gera o conteúdo sem pesquisa por módulo                 |
 | GET    | `/api/plano-ensino`                     | SSE — gera plano de ensino                              |

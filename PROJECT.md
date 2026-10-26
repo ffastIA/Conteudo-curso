@@ -113,6 +113,7 @@ skills.js          — 29 skills de prompt ({model, system, user})
 bncc-data.js       — 400+ competências/habilidades BNCC (EF1, EF2, EM)
 conteudo-secoes.js — geração do conteúdo por seções (roteiro da aula, seções, estado completa/curta/incompleta)
 fundamentacao.js   — dossiê de fontes por aula, citações [F#] e referências montadas pelo sistema
+pesquisa-cache.js  — cache local das consultas de pesquisa web (.cache-pesquisa/, chave = hash do prompt; ver docs/otimizacao-de-tokens.md)
 avaliacao.js       — orçamento de tokens e map-reduce da avaliação sobre o conteúdo integral
 observabilidade.js — traces e scores das chamadas ao LLM (Langfuse via OTLP, opcional); atributos de trace do v4 (sessão, nome, tags, ambiente, release) em todo span (`langfuse-trace-attributes`)
 custo.js           — estimativa de custo, trava de orçamento e disjuntor
@@ -433,7 +434,7 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | G04 | Persistência | Reduzido | Sessão continua in-memory, mas é totalmente reconstruível do disco sem chamada à OpenAI (`session-persistence`, `session-auto-restore`, `project-load`) |
 | G05 | Confiabilidade | ✅ Resolvido | Espera adaptativa de 429 (`retry-after`, backoff com teto), repetição de falhas transitórias e geração retomável (`geracao-retomavel`); retry dedicado da pesquisa web (`web-search-resilience`) |
 | G06 | Observabilidade | ✅ Resolvido | Logger JSON próprio (`logger.js`, `LOG_LEVEL`) com `etapa`, `aula` e `reqId` (= `traceId`), sem segredos (`custo-e-logs`) |
-| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 70% de linhas (real ~90%), mock da OpenAI que rejeita o que a API real rejeita, com erros, Responses API e truncamento; confira o número atual com `npm test` (53 suítes e 805 testes em 2026-10-25) — a verificação com a chave real (`scripts/smoke-pesquisa.js`) continua manual |
+| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 70% de linhas (real ~90%), mock da OpenAI que rejeita o que a API real rejeita, com erros, Responses API e truncamento; confira o número atual com `npm test` (58 suítes e 854 testes em 2026-10-25) — a verificação com a chave real (`scripts/smoke-pesquisa.js`) continua manual |
 | G08 | UX | ✅ Resolvido | `GET /api/estimativa` e a UI mostram a faixa de tokens/custo antes de pesquisa por módulo, conteúdo e revisão; custo acumulado em `projeto.json`; `ORCAMENTO_USD` opcional (`custo-e-logs`) |
 | G09 | Portabilidade | Baixo | Seletor nativo de pasta é Windows-only por design (PowerShell + `System.Windows.Forms`) |
 | G10 | Escalabilidade | Baixo | Sem rate limiting próprio — múltiplos usuários podem esgotar quota da API (a espera de 429 e `CONTEUDO_PARALELISMO` ≤ 2 só protegem uma instância) |

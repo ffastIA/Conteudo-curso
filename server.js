@@ -36,12 +36,14 @@ const multer = require('multer');
 const mammoth = require('mammoth');
 const skills = require('./skills');
 const { obs: observabilidade } = require('./observabilidade');
+const { tokensEmCache } = require('./observabilidade');
 const { criarLogger } = require('./logger');
 const custo = require('./custo');
 const orcamento = require('./orcamento');
 const modelosConfig = require('./config/modelos');
 const docxMarkdown = require('./docx-markdown');
 const logger = criarLogger({ contexto: () => observabilidade.contexto() });
+const pesquisaCache = require('./pesquisa-cache').criarCachePesquisa({ logger });
 const conteudoSecoes = require('./conteudo-secoes');
 const fundamentacao = require('./fundamentacao');
 const avaliacao = require('./avaliacao');
@@ -258,11 +260,12 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
     const buscas = (resultado?.output || []).filter(item => item.type === 'web_search_call').length;
     registrar({
       output: texto || resultado?.output_text || '',
-      tarifaUsd: buscas * custo.tarifaBuscaWeb(),
+      tarifaUsd: buscas * custo.tarifaBuscaWeb() + custo.custoBlocoBuscaMini(params?.model, buscas),
       usage: resultado?.usage ? {
         prompt_tokens: resultado.usage.input_tokens || 0,
         completion_tokens: resultado.usage.output_tokens || 0,
-        total_tokens: resultado.usage.total_tokens || 0
+        total_tokens: resultado.usage.total_tokens || 0,
+        cached_tokens: resultado.usage.input_tokens_details?.cached_tokens || 0
       } : undefined,
       finishReason: resultado?.status === 'incomplete' ? 'length' : 'stop'
     });
@@ -503,11 +506,33 @@ async function tentarPesquisaWeb(skill, timeoutMs, clientCtx = null, maxOutputTo
 // novas tentativas em falhas transitórias. Erro 400 (modelo/parâmetro de busca
 // rejeitado) é configuração inválida: mensagem clara, sem retentativa e sem
 // fallback automático.
-async function executarPesquisaWeb(skill, { clientCtx = null, onRetry = null, maxOutputTokens = 3000 } = {}) {
+// Cache local (pesquisa-cache.js): com a mesma entrada, o resultado anterior volta sem chamar a
+// OpenAI (sem reserva de orçamento, sem custo, sem calibrar a estimativa) e o retorno traz
+// `deCache: { geradoEm, idadeDias }`. `semCache` ignora a leitura e regrava a entrada.
+async function executarPesquisaWeb(skill, { clientCtx = null, onRetry = null, maxOutputTokens = 3000, semCache = false } = {}) {
   let ultimoErro = null;
+  const chaveCache = pesquisaCache.chave(skill, maxOutputTokens);
+  if (!semCache) {
+    const inicioCache = Date.now();
+    const acerto = pesquisaCache.ler(chaveCache);
+    if (acerto) {
+      observabilidade.registrarSpan({
+        nome: 'pesquisa.cache', inicio: inicioCache,
+        extra: { chave: chaveCache.slice(0, 12), idade_dias: acerto.idadeDias, modelo: acerto.modelo }
+      });
+      return {
+        choices: [{ message: { content: acerto.texto, annotations: acerto.annotations }, finish_reason: 'stop' }],
+        usage: undefined,
+        deCache: { geradoEm: acerto.geradoEm, idadeDias: acerto.idadeDias }
+      };
+    }
+  }
   for (let tentativa = 0; tentativa <= PESQUISA_MAX_RETENTATIVAS; tentativa++) {
     try {
-      return await tentarPesquisaWeb(skill, tentativa === 0 ? SEARCH_TIMEOUT_MS : SEARCH_RETRY_TIMEOUT_MS, clientCtx, maxOutputTokens);
+      const resultado = await tentarPesquisaWeb(skill, tentativa === 0 ? SEARCH_TIMEOUT_MS : SEARCH_RETRY_TIMEOUT_MS, clientCtx, maxOutputTokens);
+      const msg = resultado?.choices?.[0]?.message;
+      pesquisaCache.gravar(chaveCache, { texto: msg?.content, annotations: msg?.annotations, modelo: skill.model });
+      return resultado;
     } catch (err) {
       if (err instanceof OpenAI.BadRequestError) {
         const invalida = new Error(
@@ -2105,7 +2130,10 @@ function registrarGeracaoLog(ctx, resumo) {
     etapa: ctx?.etapa,
     ...ctx?.meta,
     modelo: resumo.modelo,
-    tokens: resumo.usage ? { entrada: resumo.usage.prompt_tokens || 0, saida: resumo.usage.completion_tokens || 0, total: resumo.usage.total_tokens || 0 } : null,
+    tokens: resumo.usage ? {
+      entrada: resumo.usage.prompt_tokens || 0, saida: resumo.usage.completion_tokens || 0, total: resumo.usage.total_tokens || 0,
+      entradaEmCache: tokensEmCache(resumo.usage)
+    } : null,
     finishReason: resumo.finishReason || null,
     custoUsd: resumo.custoUsd,
     latenciaMs: resumo.latenciaMs,
@@ -3304,6 +3332,7 @@ app.get('/api/search', async (req, res) => {
       const secoes = [];
       let ultimoErro = null;
       let modelo = skills.modeloPesquisa();
+      const deCachePorConsulta = {}; // id da consulta → data original, para as consultas atendidas pelo cache
 
       for (let i = 0; i < consultas.length; i++) {
         if (client.disconnected) return;
@@ -3313,12 +3342,14 @@ app.get('/api/search', async (req, res) => {
         governanca.aplicarDegradacao(sess); // entre unidades de trabalho
         const skill = skills.pesquisaWebSkill({ ...skillArgs, consulta, ano });
         skill.searchContextSize = governanca.perfil(sess).contextoBusca || skill.searchContextSize;
+        skill.model = governanca.perfil(sess).modeloPesquisa || skill.model; // o perfil pode escolher um modelo de pesquisa próprio
         modelo = skill.model;
 
         let completion;
         try {
           completion = await executarPesquisaWeb(skill, {
             clientCtx: client,
+            semCache: req.query.semCache === '1',
             onRetry: () => send(res, { type: 'progress', message: 'Reconectando...' })
           });
         } catch (err) {
@@ -3329,6 +3360,10 @@ app.get('/api/search', async (req, res) => {
           continue;
         }
         addUsage(completion.usage, sess);
+        if (completion.deCache) {
+          deCachePorConsulta[consulta.id] = completion.deCache.geradoEm;
+          send(res, { type: 'progress', message: `Consulta ${i + 1}/${consultas.length}: resultado do cache (pesquisado em ${new Date(completion.deCache.geradoEm).toLocaleDateString('pt-BR')}) — sem custo.` });
+        }
 
         const message = completion.choices[0]?.message || {};
         const texto = (message.content || '').trim();
@@ -3372,7 +3407,10 @@ app.get('/api/search', async (req, res) => {
         '\n\n## Fontes consultadas\n' + fontes.map(f => `- [${f.id}] ${f.titulo} — ${f.url}`).join('\n');
       meta = {
         status: 'web', fonte: 'ia', modelo, geradoEm: new Date().toISOString(),
-        consultas: consultas.map(c => ({ id: c.id, texto: c.foco })), fontes, achados
+        consultas: consultas.map(c => ({
+          id: c.id, texto: c.foco,
+          ...(deCachePorConsulta[c.id] ? { deCache: true, pesquisadoEm: deCachePorConsulta[c.id] } : {})
+        })), fontes, achados
       };
     }
 
@@ -3826,7 +3864,7 @@ app.get('/api/estimativa', (req, res) => {
     : modelosConfig.modeloAvaliacao();
   const estimativa = custo.estimarEtapa(etapa, {
     unidades,
-    modelos: { pesquisa: skills.modeloPesquisa(), economia },
+    modelos: { pesquisa: perfilAtivo.modeloPesquisa || skills.modeloPesquisa(), economia },
     fator: governanca.fatorCalibracao(sess, etapaRota)
   });
   const saldo = governanca.saldoRestante(sess, etapaRota);
@@ -3910,11 +3948,14 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
         metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess)
       });
       skill.searchContextSize = governanca.perfil(sess).contextoBusca || skill.searchContextSize;
+      skill.model = governanca.perfil(sess).modeloPesquisa || skill.model; // o perfil pode escolher um modelo de pesquisa próprio
+      meta.modelo = skill.model;
 
       let completion;
       try {
         completion = await executarPesquisaWeb(skill, {
           clientCtx: client,
+          semCache: req.query.semCache === '1' || req.query.refazer === '1',
           onRetry: () => send(res, { type: 'progress', message: 'Reconectando...' })
         });
       } catch (err) {
@@ -3923,8 +3964,11 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
         send(res, { type: 'progress', message: `⚠️ Módulo "${modulo.titulo}" falhou: ${err.message}` });
         continue;
       }
-      pesquisadosAgora++;
+      if (!completion.deCache) pesquisadosAgora++; // a pausa entre módulos só vale depois de uma chamada real
       addUsage(completion.usage, sess);
+      if (completion.deCache) {
+        send(res, { type: 'progress', message: `Módulo ${k + 1}/${modulos.length}: resultado do cache (pesquisado em ${new Date(completion.deCache.geradoEm).toLocaleDateString('pt-BR')}) — sem custo.` });
+      }
 
       const message = completion.choices[0]?.message || {};
       const texto = (message.content || '').trim();
@@ -3945,7 +3989,10 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
         continue;
       }
       meta.modulos.push({ id: modulo.id, titulo: modulo.titulo, aulas: modulo.aulas, status: 'ok' });
-      meta.consultas.push({ id: `c${meta.consultas.length + 1}`, moduloId: modulo.id, texto: `Módulo "${modulo.titulo}": ${modulo.objetivos.join(' | ')}` });
+      meta.consultas.push({
+        id: `c${meta.consultas.length + 1}`, moduloId: modulo.id, texto: `Módulo "${modulo.titulo}": ${modulo.objetivos.join(' | ')}`,
+        ...(completion.deCache ? { deCache: true, pesquisadoEm: completion.deCache.geradoEm } : {})
+      });
       meta.achados.push({ moduloId: modulo.id, tema: modulo.titulo, resumo: texto, fonteIds: [...fonteIds] });
       escreverPesquisaModulos(sess, meta); // progresso persistido: se o servidor cair, estes módulos não são refeitos
     }

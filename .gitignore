@@ -16,6 +16,9 @@ saidas/
 # Gasto diário da governança de custo (estado local da máquina)
 .uso-diario.json
 
+# Cache local da pesquisa web (otimizacao-de-tokens)
+.cache-pesquisa/
+
 # Cobertura de testes
 coverage/
 

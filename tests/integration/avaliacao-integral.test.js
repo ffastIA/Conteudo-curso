@@ -192,7 +192,8 @@ describe('revisão de qualidade lê a aula inteira', () => {
     expect(mapas.length).toBeGreaterThan(4);
 
     // cobertura: as partes avaliadas (map) da aula 1, juntas, reproduzem a aula inteira
-    const trecho = (c) => promptDe(c).split('## Seção a avaliar\n')[1].split('\n\nDê uma nota de 0 a 10')[0];
+    // a seção avaliada vem por último no prompt (o prefixo estável fica antes dela, para o cache de prompt)
+    const trecho = (c) => promptDe(c).split(/## Seção a avaliar \(seção \d+ de \d+: "[^\n]*"\)\n/)[1].replace(/\n$/, '');
     const mapasAula1 = mapas.filter(c => promptDe(c).includes('da aula "Variáveis"'));
     const junto = mapasAula1.map(trecho).join('').replace(/\s+/g, ' ').trim();
     expect(junto).toBe(AULA1.replace(/\s+/g, ' ').trim());

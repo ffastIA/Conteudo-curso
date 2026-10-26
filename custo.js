@@ -80,6 +80,17 @@ const tarifaBuscaWeb = (precos = carregarPrecos()) => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
+// Bloco fixo de tokens de entrada que a OpenAI cobra por chamada de busca nos modelos mini
+// (config/precos-modelos.json: buscaWebBlocoTokensMini). Só soma quando
+// buscaWebBlocoTokensMiniSomar é true — ativado depois de confirmar, com uma chamada real,
+// que o usage da resposta não o inclui. Modelos que não são mini (gpt-4o) nunca somam.
+const custoBlocoBuscaMini = (modelo, buscas, precos = carregarPrecos()) => {
+  if (precos.buscaWebBlocoTokensMiniSomar !== true || !/mini/i.test(String(modelo || ''))) return 0;
+  const bloco = Number(precos.buscaWebBlocoTokensMini);
+  const custoBloco = calcularCusto({ prompt_tokens: Number.isFinite(bloco) && bloco > 0 ? bloco : 0, completion_tokens: 0 }, modelo, precos);
+  return (custoBloco || 0) * Math.max(0, buscas || 0);
+};
+
 // Erro com mensagem clara (custo e teto) quando a próxima chamada estoura o orçamento.
 function verificarOrcamento({ acumulado = 0, estimativa = 0, env = process.env }) {
   const teto = lerOrcamento(env);
@@ -115,4 +126,4 @@ function criarDisjuntor({ limite = 5, esperaMs = 60_000, agora = () => Date.now(
   };
 }
 
-module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, tarifaBuscaWeb, criarDisjuntor, PERFIS };
+module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, tarifaBuscaWeb, custoBlocoBuscaMini, criarDisjuntor, PERFIS };

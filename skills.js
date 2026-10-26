@@ -630,8 +630,13 @@ const secaoConteudoSkill = ({ secao, secoesPlanejadas, resumoEscritas, metaPalav
       'o instrutor, não um resumo superficial. Respeite rigorosamente o escopo da aula. ' +
       'Responda em português.' + NIVEL_PESO_ALTO,
     user:
+      // Prefixo estável (igual em todas as seções da aula, para o cache de prompt da OpenAI): contexto da aula,
+      // seções planejadas, dossiê, nível e contexto pedagógico. O variável (resumo, seção atual) vem por último.
       `Redija UMA seção do material de apoio técnico desta aula.\n\n${contextoAulaConteudo(ctx)}\n` +
-      `Seções planejadas para a aula (na ordem):\n${secoesPlanejadas.map((t, n) => `${n + 1}. ${t}`).join('\n')}\n\n` +
+      `Seções planejadas para a aula (na ordem):\n${secoesPlanejadas.map((t, n) => `${n + 1}. ${t}`).join('\n')}` +
+      (ctx.pesquisaBloco || '') +
+      nivelBlock(ctx.nivel) +
+      pedagCtxBlock(ctx.metodologia, ctx.bnccContext) + `\n\n` +
       `Resumo das seções já escritas (não repita o que já foi dito):\n${resumoEscritas || 'nenhuma — esta é a primeira seção'}\n\n` +
       `SEÇÃO A REDIGIR AGORA: "${secao.titulo}"${secao.objetivo ? ` — ${secao.objetivo}` : ''}\n` +
       `Meta: cerca de ${metaPalavras} palavras. Escreva a seção COMPLETA, sem interrompê-la, e não escreva outras seções.\n` +
@@ -643,10 +648,7 @@ const secaoConteudoSkill = ({ secao, secoesPlanejadas, resumoEscritas, metaPalav
         ? `Consolide em tópicos o que o instrutor deve garantir que os alunos compreendam ao final da aula.`
         : `Depois use as subseções "### Fundamentação técnica" (definições, princípios, terminologia correta), ` +
           `"### Exemplos práticos" (exemplos, analogias e casos reais do mercado) e ` +
-          `"### Erros comuns e pontos de atenção".`) +
-      (ctx.pesquisaBloco || '') +
-      nivelBlock(ctx.nivel) +
-      pedagCtxBlock(ctx.metodologia, ctx.bnccContext)
+          `"### Erros comuns e pontos de atenção".`)
   };
 };
 
@@ -681,7 +683,9 @@ const revisaoSecaoSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaT
     'Você é um revisor pedagógico sênior especializado em design instrucional. Avalie UMA seção de uma ' +
     'aula, de forma objetiva, comparando-a com os documentos de referência. Responda APENAS com JSON válido.',
   user:
-    `Avalie a seção ${indice + 1} de ${total} ("${secao.titulo}") da aula "${aulaTitulo}" do curso "${config?.nome || '?'}".\n\n` +
+    // Prefixo estável (igual em todas as seções da aula, para o cache de prompt): referências e critérios;
+    // a seção avaliada vem por último.
+    `Avalie UMA seção da aula "${aulaTitulo}" do curso "${config?.nome || '?'}".\n\n` +
     `## Dados da Aula\nObjetivos: ${aulaObjetivos || 'não especificados'}\n` +
     (config?.modalidade ? `Modalidade do curso: ${config.modalidade}\n` : '') +
     (config?.nivel ? `Nível declarado do curso: ${config.nivel}\n` : '') +
@@ -690,16 +694,16 @@ const revisaoSecaoSkill = ({ config, ementa, planoEnsino, planoAulaTrecho, aulaT
     `## Plano de Ensino do Curso (referência)\n${planoEnsino || 'não disponível'}\n\n` +
     `## Ementa do Curso (referência)\n${ementa || 'não gerada'}\n\n` +
     (bnccContext ? `${pedagCtxBlock(null, bnccContext).trimStart()}\n\n` : '') +
-    `## Seção a avaliar\n${secao.texto}\n` +
-    (pesquisaBloco ? `${pesquisaBloco}\n` : '') + `\n` +
-    `Dê uma nota de 0 a 10 para CADA critério considerando SOMENTE esta seção:\n` +
+    (pesquisaBloco ? `${pesquisaBloco}\n\n` : '') +
+    `Dê uma nota de 0 a 10 para CADA critério considerando SOMENTE a seção indicada ao final:\n` +
     `1. planoAula — aderência aos objetivos e à sequência do plano de aula\n` +
     `2. planoEnsinoEmenta — aderência ao escopo do módulo, plano de ensino e ementa\n` +
     `3. nivelPublicoModalidade — adequação a nível, público e modalidade\n` +
     `4. qualidadeDidatica — fundamentação, exemplos, erros comuns\n` +
     `5. clarezaEstrutura — organização, progressão, ausência de redundância\n` +
     (pesquisaBloco ? `Se houver citações [F#], confira se a fonte realmente sustenta a afirmação e liste as fracas em "citacoesFracas".\n` : '') +
-    `\nResponda SOMENTE com este JSON:\n${CRITERIOS_JSON}`
+    `\nResponda SOMENTE com este JSON:\n${CRITERIOS_JSON}\n\n` +
+    `## Seção a avaliar (seção ${indice + 1} de ${total}: "${secao.titulo}")\n${secao.texto}\n`
 });
 
 // Checagem global de coerência da aula completa quando o texto não cabe inteiro
@@ -942,7 +946,8 @@ const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandida
     'aula (original e candidata) nos mesmos 5 critérios, de forma objetiva e consistente ' +
     'entre as duas. Responda APENAS com JSON válido, sem texto adicional.',
   user:
-    `Avalie as duas versões abaixo da Aula "${aulaTitulo}" nos mesmos 5 critérios, cada um ` +
+    // Prefixo estável (referências, dossiê, critérios e formato); as duas versões vêm por último.
+    `Avalie as duas versões da Aula "${aulaTitulo}" (informadas ao final) nos mesmos 5 critérios, cada um ` +
     `em escala de 0 a 10. Seja consistente: se um trecho é igual nas duas versões, atribua ` +
     `a mesma nota para esse aspecto nas duas.\n\n` +
     `## Referências\n` +
@@ -952,9 +957,6 @@ const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandida
     `Plano de Ensino (resumo): ${planoEnsino || 'não disponível'}\n` +
     `Nível: ${nivel || 'não informado'} | Público: ${publico || 'não informado'} | ` +
     `Modalidade: ${modalidade || 'não informada'}\n\n` +
-    (secoesAlteradas?.length ? `Seções alteradas nesta versão (foco da comparação; o restante é idêntico): ${secoesAlteradas.join(', ')}\n\n` : '') +
-    `## Versão ORIGINAL\n${textoOriginal}\n\n` +
-    `## Versão CANDIDATA (revisada)\n${textoCandidato}\n\n` +
     (pesquisaBloco ? `${pesquisaBloco.trim()}\n\n` : '') +
     `Critérios (0 a 10 cada):\n` +
     `1. planoAula — aderência aos objetivos e à sequência do plano de aula\n` +
@@ -966,7 +968,10 @@ const scoreAulaSkill = ({ aulaTitulo, aulaObjetivos, textoOriginal, textoCandida
     `{"original": {"planoAula": N, "planoEnsinoEmenta": N, "nivelPublicoModalidade": N, ` +
     `"qualidadeDidatica": N, "clarezaEstrutura": N}, "candidato": {"planoAula": N, ` +
     `"planoEnsinoEmenta": N, "nivelPublicoModalidade": N, "qualidadeDidatica": N, ` +
-    `"clarezaEstrutura": N}}`
+    `"clarezaEstrutura": N}}\n\n` +
+    (secoesAlteradas?.length ? `Seções alteradas nesta versão (foco da comparação; o restante é idêntico): ${secoesAlteradas.join(', ')}\n\n` : '') +
+    `## Versão ORIGINAL\n${textoOriginal}\n\n` +
+    `## Versão CANDIDATA (revisada)\n${textoCandidato}\n`
 });
 
 // Realinha a seção do plano de aula de UMA aula com o conteúdo melhorado no
