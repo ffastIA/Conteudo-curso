@@ -34,9 +34,12 @@ No painel você escolhe *aumentar o teto*, *trocar o perfil* ou *cancelar*; depo
 ela continua de onde parou (aulas prontas não são regeneradas). Executar de novo sem decidir pausa na hora,
 sem gastar nada.
 
-**Tarifa da busca web.** O custo da pesquisa só inclui a cobrança por chamada de `web_search` se você
-preencher `buscaWebPorChamadaUsd` em `config/precos-modelos.json` (padrão **0**, que não é um preço real).
-Enquanto for 0, o painel avisa que o custo da pesquisa pode estar subestimado.
+**Tarifa da busca web.** O custo da pesquisa soma a cobrança por chamada de `web_search`, lida de
+`buscaWebPorChamadaUsd` em `config/precos-modelos.json` (**0,01** = US$ 10 por 1.000 chamadas, valor da página de
+preços da OpenAI em 2026-10-25; é o mesmo para todos os modelos e perfis). Os tokens do conteúdo da busca
+entram pelo `usage`. Só nos modelos mini a OpenAI cobra um bloco fixo de 8.000 tokens de entrada por chamada,
+que o app não soma. Se o valor voltar a 0, o painel avisa que o custo da pesquisa pode estar subestimado.
+Confira o preço de tempos em tempos: ele muda.
 
 ## Perfis de custo
 

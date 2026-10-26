@@ -1,8 +1,8 @@
 {
-  "vigencia": "2026-10-24",
+  "vigencia": "2026-10-25",
   "moeda": "USD",
-  "observacao": "Preço por 1 milhão de tokens. Chaves casam por prefixo do nome do modelo (a mais longa vence). Ajuste conforme a tabela vigente da OpenAI. buscaWebPorChamadaUsd é a cobrança por chamada da ferramenta web_search (USD por chamada): o padrão 0 NÃO é um preço real — enquanto for 0 o custo da pesquisa fica subestimado; preencha com o valor da tabela de preços da OpenAI.",
-  "buscaWebPorChamadaUsd": 0,
+  "observacao": "Preço por 1 milhão de tokens. Chaves casam por prefixo do nome do modelo (a mais longa vence). Ajuste conforme a tabela vigente da OpenAI. buscaWebPorChamadaUsd é a cobrança por chamada da ferramenta web_search (USD por chamada): US$ 10,00 por 1.000 chamadas = 0,01, igual para todos os modelos e perfis (a página de preços da OpenAI não diferencia o tamanho do contexto de busca), consultada em 2026-10-25 em developers.openai.com/api/docs/pricing. Os tokens do conteúdo da busca são cobrados à parte, na tarifa do modelo, e já vêm no usage da resposta; só nos modelos mini a OpenAI cobra um bloco fixo de 8.000 tokens de entrada por chamada, que o app não soma. Se o valor voltar a 0, o custo da pesquisa fica subestimado e o painel avisa.",
+  "buscaWebPorChamadaUsd": 0.01,
   "porMilhaoDeTokens": {
     "gpt-4o": { "entrada": 2.5, "saida": 10 },
     "gpt-4o-mini": { "entrada": 0.15, "saida": 0.6 }

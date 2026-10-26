@@ -42,9 +42,9 @@ describe('tarifa da busca web', () => {
     for (const v of [undefined, 0, -1, 'x', null]) expect(custo.tarifaBuscaWeb({ buscaWebPorChamadaUsd: v })).toBe(0);
   });
 
-  test('o arquivo de preços traz o campo com padrão 0 (não é um preço real)', () => {
+  test('o arquivo de preços traz a tarifa da busca web (US$ 10 por 1.000 chamadas)', () => {
     const arquivo = require('../../config/precos-modelos.json');
-    expect(arquivo.buscaWebPorChamadaUsd).toBe(0);
+    expect(arquivo.buscaWebPorChamadaUsd).toBe(0.01);
     expect(arquivo.observacao).toMatch(/subestimado/);
   });
 

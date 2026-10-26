@@ -103,7 +103,7 @@ describe('rotas /api/orcamento', () => {
     expect(res.body.projeto).toMatchObject({ tetoUsd: 5, gastoUsd: 0, restanteUsd: 5 });
     expect(res.body.perfil.id).toBe('padrao');
     expect(res.body.perfis.map(p => p.id)).toEqual(['economico', 'padrao', 'premium']);
-    expect(res.body.tarifaBuscaWebConfigurada).toBe(false);
+    expect(res.body.tarifaBuscaWebConfigurada).toBe(true);
     expect(res.body.modelos).toMatchObject({ pesquisa: expect.any(String), juiz: expect.any(String) });
     expect(JSON.stringify(res.body)).not.toMatch(/sk-|api[_-]?key|gerador-conteudo-tests/i);
   });
