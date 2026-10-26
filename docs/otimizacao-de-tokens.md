@@ -47,16 +47,34 @@ pelo preço de entrada. A **estimativa prévia não presume cache**: o desconto 
 
 O perfil de custo aceita o campo opcional `modeloPesquisa` em `config/perfis-custo.json`. Sem ele, a
 pesquisa usa `OPENAI_RESEARCH_MODEL` (padrão `gpt-4o`). O painel 💲 mostra o modelo de pesquisa do perfil
-ativo, e a validação de capacidades avisa se o modelo não tiver busca web. **Nenhum perfil incluído define
-esse campo ainda:** trocar o Econômico para `gpt-4o-mini` pode cortar a pesquisa em até cerca de 70%, mas só
-deve ser adotado depois do experimento da tarefa 4.3 (fontes e nota equivalentes na linha de base).
+ativo, e a validação de capacidades avisa se o modelo não tiver busca web. **O perfil Econômico usa
+`gpt-4o-mini`** (decisão de 2026-10-26, após o experimento da tarefa 4.3: pesquisa 81% mais barata, com
+fontes e nota equivalentes à linha de base). Padrão e Premium seguem com `gpt-4o`.
 
 ## Bloco fixo da busca nos modelos mini
 
 Segundo a página de preços, nos modelos mini a OpenAI cobra um bloco fixo de 8.000 tokens de entrada por
 chamada de busca. `buscaWebBlocoTokensMini` guarda o valor e `buscaWebBlocoTokensMiniSomar` (padrão `false`)
-liga a soma ao custo. Deixe desligado até confirmar, com uma chamada real, que o `usage` da resposta não
-inclui esse bloco. Com `gpt-4o` (padrão) nada é somado.
+liga a soma ao custo. **Verificado em 2026-10-26** com 8 buscas reais em `gpt-4o-mini`: o `usage` já inclui o
+bloco (todas as chamadas vieram com 8.174 tokens de entrada, os 8.000 do bloco mais o prompt), então a soma
+fica desligada. Uma busca em mini custa cerca de US$ 0,0115, quase só a tarifa de US$ 0,01 por chamada. Com
+`gpt-4o` (padrão) nada é somado.
+
+## Verificação real (2026-10-26, curso `capcut`, 3 aulas)
+
+| | `gpt-4o` na pesquisa | `gpt-4o-mini` na pesquisa |
+|---|---|---|
+| Pesquisa geral + por módulo | US$ 0,496 | US$ 0,094 (inclui 1 retentativa) |
+| Custo do curso | US$ 0,543 | US$ 0,128 |
+| Fontes / domínios distintos | 31 / 20 | 18 / 14 |
+| Nota média das aulas | 0,81 (linha de base 0,85) | 0,84 |
+
+- **Cache de pesquisa:** a 2ª pesquisa geral na mesma sessão veio inteira do cache, sem chamada nem gasto.
+- **Cache de prompt:** nas aulas, 67% dos tokens de entrada (160.768 de 240.730) vieram do cache; o conteúdo
+  custou US$ 0,030, contra US$ 0,051 na linha de base. A revisão não ganha cache (uma chamada por aula).
+- **Ruído da nota:** duas execuções com o mesmo modelo deram 0,85 e 0,81; a tolerância de 0,03 do experimento
+  é menor que essa oscilação, então a comparação de nota é indicativa.
+- **Confiabilidade do mini:** 1 de 8 buscas voltou sem fontes (módulo 3); a retentativa do app resolveu.
 
 ## Variáveis
 

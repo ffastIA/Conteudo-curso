@@ -27,8 +27,10 @@ describe('modelo de pesquisa definido pelo perfil (validação de capacidades)',
     expect(avisos[0]).toMatchObject({ tipo: 'nao_conferido', modelo: 'modelo-novo' });
   });
 
-  test('os perfis incluídos continuam sem modeloPesquisa (adoção só depois do experimento)', () => {
+  test('só o perfil Econômico define modeloPesquisa (gpt-4o-mini, experimento 4.3)', () => {
     const cfg = require('../../config/perfis-custo.json');
-    for (const p of Object.values(cfg.perfis)) expect(p.modeloPesquisa).toBeUndefined();
+    expect(cfg.perfis.economico.modeloPesquisa).toBe('gpt-4o-mini');
+    expect(cfg.perfis.padrao.modeloPesquisa).toBeUndefined();
+    expect(cfg.perfis.premium.modeloPesquisa).toBeUndefined();
   });
 });

@@ -1,5 +1,5 @@
 {
-  "_comentario": "Perfis de custo (change governanca-de-custo). Os valores são ILUSTRATIVOS e editáveis; o arquivo é lido a cada uso, sem reiniciar o servidor. achadosDossie: máximo de achados da pesquisa que entram no dossiê de cada aula (o padrão 6 é o comportamento anterior). modeloRedacao: economia | conteudo | juiz (papéis de config/modelos.js). juizForte: nunca | duvidoso | sempre. disjuntorSemGanho: interrompe | avisa.",
+  "_comentario": "Perfis de custo (change governanca-de-custo). Os valores são ILUSTRATIVOS e editáveis; o arquivo é lido a cada uso, sem reiniciar o servidor. achadosDossie: máximo de achados da pesquisa que entram no dossiê de cada aula (o padrão 6 é o comportamento anterior). modeloPesquisa (opcional): modelo da pesquisa web do perfil, no lugar de OPENAI_RESEARCH_MODEL. modeloRedacao: economia | conteudo | juiz (papéis de config/modelos.js). juizForte: nunca | duvidoso | sempre. disjuntorSemGanho: interrompe | avisa.",
   "padrao": "padrao",
   "ordem": ["economico", "padrao", "premium"],
   "perfis": {
@@ -7,6 +7,7 @@
       "rotulo": "Econômico",
       "consultasPesquisa": 2,
       "contextoBusca": "low",
+      "modeloPesquisa": "gpt-4o-mini",
       "modeloRedacao": "economia",
       "ciclosMelhoriaMax": 1,
       "achadosDossie": 3,
