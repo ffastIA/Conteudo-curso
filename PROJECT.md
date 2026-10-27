@@ -223,7 +223,7 @@ slidesTemplate        { id, nome }|null   (template Gamma escolhido para o curso
 geracoesExternas      object        (ids de gerações pendentes no Gamma/HeyGen, para retomar após queda)
 custoProjetoUsd       number        (custo acumulado do projeto; também em projeto.json)
 uso                   object        (governança de custo, espelho de scr/uso.json: gasto por dia/etapa/modelo, calibração da
-                                     estimativa, tetos ajustados, perfil, pausa, disjuntor e puladas; ver docs/governanca-de-custo.md)
+                                     estimativa, tetos ajustados, perfil, modelosEscolhidos (modelo por papel escolhido na tela), pausa, disjuntor e puladas; ver docs/governanca-de-custo.md)
 custoHeygenUsd        number        (soma dos consumos HeyGen apurados = diferença de saldo da carteira; separado do custo em tokens; derivado de videosAvatarGerados[].heygen)
 ultimoAcesso          number        (epoch ms — sessões inativas por mais de 12 h são descartadas)
 ```
@@ -434,7 +434,7 @@ ${pedagCtxBlock(metodologia, bnccContext)}`
 | G04 | Persistência | Reduzido | Sessão continua in-memory, mas é totalmente reconstruível do disco sem chamada à OpenAI (`session-persistence`, `session-auto-restore`, `project-load`) |
 | G05 | Confiabilidade | ✅ Resolvido | Espera adaptativa de 429 (`retry-after`, backoff com teto), repetição de falhas transitórias e geração retomável (`geracao-retomavel`); retry dedicado da pesquisa web (`web-search-resilience`) |
 | G06 | Observabilidade | ✅ Resolvido | Logger JSON próprio (`logger.js`, `LOG_LEVEL`) com `etapa`, `aula` e `reqId` (= `traceId`), sem segredos (`custo-e-logs`) |
-| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 70% de linhas (real ~90%), mock da OpenAI que rejeita o que a API real rejeita, com erros, Responses API e truncamento; confira o número atual com `npm test` (58 suítes e 854 testes em 2026-10-25) — a verificação com a chave real (`scripts/smoke-pesquisa.js`) continua manual |
+| G07 | Testes | Melhorado | Baseline (`test-verification-baseline`): gate de cobertura 70% de linhas (real ~90%), mock da OpenAI que rejeita o que a API real rejeita, com erros, Responses API e truncamento; confira o número atual com `npm test` (60 suítes e 884 testes em 2026-10-25) — a verificação com a chave real (`scripts/smoke-pesquisa.js`) continua manual |
 | G08 | UX | ✅ Resolvido | `GET /api/estimativa` e a UI mostram a faixa de tokens/custo antes de pesquisa por módulo, conteúdo e revisão; custo acumulado em `projeto.json`; `ORCAMENTO_USD` opcional (`custo-e-logs`) |
 | G09 | Portabilidade | Baixo | Seletor nativo de pasta é Windows-only por design (PowerShell + `System.Windows.Forms`) |
 | G10 | Escalabilidade | Baixo | Sem rate limiting próprio — múltiplos usuários podem esgotar quota da API (a espera de 429 e `CONTEUDO_PARALELISMO` ≤ 2 só protegem uma instância) |

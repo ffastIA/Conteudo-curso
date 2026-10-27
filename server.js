@@ -3342,7 +3342,7 @@ app.get('/api/search', async (req, res) => {
         governanca.aplicarDegradacao(sess); // entre unidades de trabalho
         const skill = skills.pesquisaWebSkill({ ...skillArgs, consulta, ano });
         skill.searchContextSize = governanca.perfil(sess).contextoBusca || skill.searchContextSize;
-        skill.model = governanca.perfil(sess).modeloPesquisa || skill.model; // o perfil pode escolher um modelo de pesquisa próprio
+        skill.model = governanca.modeloDoPapel(sess, 'pesquisa', skill.model); // escolha do usuário > modelo de pesquisa do perfil > padrão
         modelo = skill.model;
 
         let completion;
@@ -3860,11 +3860,11 @@ app.get('/api/estimativa', (req, res) => {
   const etapaRota = { revisao: 'revisao-qualidade' }[etapa] || etapa;
   const perfilAtivo = governanca.perfil(sess);
   const economia = etapa === 'conteudo'
-    ? modelosConfig.resolverModelo('redacao', { modeloRedacao: perfilAtivo.modeloRedacao, original: skills.modeloConteudo() })
-    : modelosConfig.modeloAvaliacao();
+    ? governanca.modeloDoPapel(sess, 'redacao', skills.modeloConteudo())
+    : governanca.modeloDoPapel(sess, 'avaliacao');
   const estimativa = custo.estimarEtapa(etapa, {
     unidades,
-    modelos: { pesquisa: perfilAtivo.modeloPesquisa || skills.modeloPesquisa(), economia },
+    modelos: { pesquisa: governanca.modeloDoPapel(sess, 'pesquisa', skills.modeloPesquisa()), economia },
     fator: governanca.fatorCalibracao(sess, etapaRota)
   });
   const saldo = governanca.saldoRestante(sess, etapaRota);
@@ -3888,7 +3888,7 @@ app.post('/api/orcamento', (req, res) => {
   const sess = getSession(req, res);
   const r = governanca.ajustar(sess, req.body || {});
   if (r.erro) return res.status(400).json({ error: r.erro });
-  res.json({ ok: true, ...governanca.estado(sess) });
+  res.json({ ok: true, ...(r.avisos?.length ? { avisos: r.avisos } : {}), ...governanca.estado(sess) });
 });
 
 // ── GET /api/pesquisa-modulos (SSE) ─────────────────────────────────────────
@@ -3948,7 +3948,7 @@ app.get('/api/pesquisa-modulos', async (req, res) => {
         metodologia: getMetodologia(sess), bnccContext: buildPedagogicalContext(sess)
       });
       skill.searchContextSize = governanca.perfil(sess).contextoBusca || skill.searchContextSize;
-      skill.model = governanca.perfil(sess).modeloPesquisa || skill.model; // o perfil pode escolher um modelo de pesquisa próprio
+      skill.model = governanca.modeloDoPapel(sess, 'pesquisa', skill.model); // escolha do usuário > modelo de pesquisa do perfil > padrão
       meta.modelo = skill.model;
 
       let completion;
@@ -4328,10 +4328,10 @@ function guardarParcialAula(sess, numeroAula, texto) {
 // Estimativa (esperada, calibrada) do custo de UMA aula de conteúdo, para o gatilho de custo do disjuntor.
 function estimativaDaAula(sess) {
   try {
-    const modelo = modelosConfig.resolverModelo('redacao', { modeloRedacao: governanca.perfil(sess).modeloRedacao, original: skills.modeloConteudo() });
+    const modelo = governanca.modeloDoPapel(sess, 'redacao', skills.modeloConteudo());
     const est = custo.estimarEtapa('conteudo', {
       unidades: 1,
-      modelos: { pesquisa: skills.modeloPesquisa(), economia: modelo },
+      modelos: { pesquisa: governanca.modeloDoPapel(sess, 'pesquisa', skills.modeloPesquisa()), economia: modelo },
       fator: governanca.fatorCalibracao(sess, 'conteudo')
     });
     return est?.custoUsd?.esperado || 0;

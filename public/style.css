@@ -369,6 +369,8 @@ input[type="file"]:hover { border-color: #7B68D4; background: #f3f0ff; }
 .orcamento-form input, .orcamento-form select, .orcamento-decisao-acoes input, .orcamento-decisao-acoes select {
   padding: 5px 8px; border: 1px solid #c9c4e8; border-radius: 6px; font: inherit; min-width: 110px;
 }
+.orcamento-modelos { display: flex; flex-wrap: wrap; gap: 10px 14px; flex-basis: 100%; border: 1px solid #c9c4e8; border-radius: 8px; padding: 8px 12px; margin: 0; }
+.orcamento-modelos legend { font-size: .78rem; font-weight: 700; padding: 0 6px; }
 .orcamento-decisao { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
 .orcamento-decisao h3 { margin: 0 0 6px; font-size: 1rem; color: #92400e; }
 .orcamento-decisao p { margin: 0 0 10px; font-size: .88rem; }

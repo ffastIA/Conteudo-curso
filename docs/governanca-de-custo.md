@@ -71,6 +71,17 @@ Confira o preço de tempos em tempos: ele muda.
 | avaliação de primeira passada | `OPENAI_EVAL_MODEL` | economia |
 | juiz final | `OPENAI_JUDGE_MODEL` | o modelo de redação |
 
+**Escolha na tela (por projeto).** O painel 💲 tem uma área "Modelos da OpenAI (por papel)" com um seletor
+para cada papel. A opção "Padrão do perfil" não escolhe nada (vale a resolução acima, com o perfil e as
+variáveis); qualquer outro valor **vence o perfil e as variáveis** a partir da próxima chamada, sem reiniciar
+o servidor. A escolha fica em `scr/uso.json` (`modelosEscolhidos`) e volta ao reabrir o projeto. A lista de
+cada papel só tem modelos com **preço** em `config/precos-modelos.json` e capacidades em
+`config/modelos-capacidades.json` que cumpram a exigência do papel (a pesquisa exige busca web); hoje são
+`gpt-4o` e `gpt-4o-mini`. Para oferecer outro modelo, cadastre-o nos dois arquivos. O servidor recusa
+(HTTP 400) qualquer papel ou modelo fora da lista. A descida automática de perfil não desfaz a escolha, e o
+painel mostra "fixado por você". Trocar o modelo com o projeto já em andamento mostra um aviso: o conteúdo
+anterior não é refeito e a calibração da estimativa pode misturar modelos.
+
 Na inicialização, `config/modelos-capacidades.json` confere cada papel (por exemplo, a pesquisa exige busca
 web). Modelo fora da tabela, ou marcado sem a capacidade, gera um **aviso** no log e no painel, nunca um erro;
 edite a tabela conforme a documentação da OpenAI.
@@ -105,9 +116,10 @@ Pular deixa a aula incompleta (o fluxo seguinte continua bloqueado até ela ser 
 ## Rotas
 
 - `GET /api/orcamento`: tetos, gasto por escopo, etapa e modelo, saldo restante, perfil, alertas, pausa,
-  disjuntor, calibração e avisos de modelos.
-- `POST /api/orcamento`: `{ tetos: { projeto, dia, etapa }, perfil, decisao: 'aumentar-limite' | 'trocar-perfil' | 'pular', valor }`;
-  valores inválidos voltam HTTP 400.
+  disjuntor, calibração, avisos de modelos e, por papel, o modelo efetivo (`modelos`), a origem
+  (`modelosOrigem`: `usuario` ou `perfil`), a escolha (`modelosEscolhidos`) e a lista permitida (`modelosDisponiveis`).
+- `POST /api/orcamento`: `{ tetos: { projeto, dia, etapa }, perfil, modelos: { <papel>: '<modelo>' | null }, decisao: 'aumentar-limite' | 'trocar-perfil' | 'pular', valor }`;
+  valores inválidos voltam HTTP 400. A resposta traz `avisos` quando há mistura de modelos.
 - `GET /api/estimativa?etapa=...` agora inclui o perfil, o saldo restante e `excedeSaldo`; a tela pede a
   confirmação antes de uma etapa pesada quando a faixa máxima passa do saldo.
 
@@ -119,7 +131,7 @@ modelo (`papel`). O custo do painel e o do Langfuse partem do mesmo `usage` e da
 ## Arquivos de estado
 
 - `scr/uso.json` (por projeto, gravação atômica): gasto por dia/etapa/modelo, calibração, tetos ajustados,
-  perfil, pausa, disparos do disjuntor e unidades puladas. Um disparo pendente **sobrevive a reinícios**.
+  perfil, escolha de modelos por papel (`modelosEscolhidos`), pausa, disparos do disjuntor e unidades puladas. Um disparo pendente **sobrevive a reinícios**.
 - `.uso-diario.json` (global, na raiz do app; ignorado pelo git): gasto do dia. Só é mantido com
   `ORCAMENTO_DIA_MAX_USD` configurado; se não puder ser lido ou gravado, o teto diário fica desligado com
   um aviso e a geração não é bloqueada.

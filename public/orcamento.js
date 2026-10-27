@@ -28,6 +28,29 @@ async function orcFetch(rota, opcoes) {
   return corpo;
 }
 
+// Papéis de modelo (change selecao-de-modelo-na-tela): rótulo na tela, na ordem do pipeline.
+const ROTULOS_PAPEL = {
+  pesquisa: 'Pesquisa web',
+  resumos: 'Resumos, roteiros e planos (demais etapas)',
+  redacao: 'Redação do conteúdo',
+  avaliacao: 'Avaliação (revisão e score)',
+  juiz: 'Juiz final'
+};
+
+function orcSelectModelos(e) {
+  const linhas = Object.entries(ROTULOS_PAPEL).map(([papel, rotulo]) => {
+    const permitidos = e.modelosDisponiveis?.[papel] || [];
+    const escolhido = e.modelosEscolhidos?.[papel] || '';
+    const efetivo = e.modelos?.[papel] || '';
+    const fixado = e.modelosOrigem?.[papel] === 'usuario';
+    const opcoes = [`<option value=""${escolhido ? '' : ' selected'}>Padrão do perfil</option>`]
+      .concat(permitidos.map(m => `<option value="${orcEsc(m)}"${m === escolhido ? ' selected' : ''}>${orcEsc(m)}</option>`));
+    return `<label>${orcEsc(rotulo)} <select id="orcModelo_${papel}" data-papel="${papel}">${opcoes.join('')}</select>` +
+      `<span class="field-hint">em uso: <code>${orcEsc(efetivo)}</code>${fixado ? ' (fixado por você)' : ''}</span></label>`;
+  });
+  return `<fieldset class="orcamento-modelos"><legend>Modelos da OpenAI (por papel)</legend>${linhas.join('')}</fieldset>`;
+}
+
 function orcSelectPerfis(e, id) {
   return `<select id="${id}">${e.perfis.map(p => `<option value="${orcEsc(p.id)}"${p.id === e.perfil.id ? ' selected' : ''}>${orcEsc(p.rotulo)}</option>`).join('')}</select>`;
 }
@@ -75,6 +98,7 @@ function renderPainelOrcamento(e) {
     (e.perfil?.modeloPesquisa ? `<p class="field-hint">Modelo de pesquisa neste perfil: <code>${orcEsc(e.perfil.modeloPesquisa)}</code></p>` : '') +
     `<div class="orcamento-form">
        <label>Perfil de custo ${orcSelectPerfis(e, 'orcPerfil')}</label>
+       ${orcSelectModelos(e)}
        <label>Teto do projeto (US$) <input id="orcTetoProjeto" type="number" min="0" step="0.01" value="${orcEsc(e.projeto?.tetoUsd ?? '')}" /></label>
        <label>Teto do dia (US$) <input id="orcTetoDia" type="number" min="0" step="0.01" value="${orcEsc(e.dia?.tetoUsd ?? '')}" /></label>
        <label>Teto por etapa (US$) <input id="orcTetoEtapa" type="number" min="0" step="0.01" value="${orcEsc(e.etapa?.tetoUsd ?? '')}" /></label>
@@ -96,9 +120,17 @@ async function salvarOrcamento() {
     const corpo = { tetos: { projeto: num('orcTetoProjeto'), dia: num('orcTetoDia'), etapa: num('orcTetoEtapa') } };
     const perfil = document.getElementById('orcPerfil').value;
     if (perfil !== e.perfil.id) corpo.perfil = perfil;
-    await orcFetch('/api/orcamento', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+    const modelos = {};
+    for (const papel of Object.keys(ROTULOS_PAPEL)) {
+      const el = document.getElementById(`orcModelo_${papel}`);
+      if (!el) continue;
+      const novo = el.value || null;
+      if (novo !== (e.modelosEscolhidos?.[papel] || null)) modelos[papel] = novo;
+    }
+    if (Object.keys(modelos).length) corpo.modelos = modelos;
+    const resposta = await orcFetch('/api/orcamento', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
     await atualizarOrcamento();
-    document.getElementById('orcamentoSalvoMsg').textContent = 'Salvo.';
+    document.getElementById('orcamentoSalvoMsg').textContent = ['Salvo.', ...(resposta.avisos || [])].join(' ');
   } catch (err) {
     if (msg) msg.textContent = err.message;
   }

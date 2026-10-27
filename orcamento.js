@@ -46,7 +46,8 @@ function usoVazio() {
     versao: 1,
     dias: {}, etapas: {}, modelos: {}, calibracao: {},
     tetos: {}, limites: {}, perfil: null, degradarPendente: false,
-    alertas: {}, pausa: null, disjuntor: null, disparos: [], puladas: {}
+    alertas: {}, pausa: null, disjuntor: null, disparos: [], puladas: {},
+    modelosEscolhidos: {} // escolha do usuário por papel (change selecao-de-modelo-na-tela); `modelos` acima é o gasto por modelo
   };
 }
 
@@ -88,6 +89,16 @@ function validarModelos(porPapel = modelos.modelosPorPapel(), tabela = lerCapaci
     }
   }
   return avisos;
+}
+
+// Modelos que o usuário pode escolher para um papel (change selecao-de-modelo-na-tela): com preço
+// (senão o custo ficaria cego) e capacidades conhecidos, cumprindo as exigências do papel.
+function modelosPermitidos(papel, precos = require('./observabilidade').carregarPrecos(), tabela = lerCapacidades()) {
+  const exigidas = (tabela.exigencias || {})[papel] || [];
+  return Object.keys(precos.porMilhaoDeTokens || {}).filter(m => {
+    const c = (tabela.modelos || {})[m];
+    return !!c && exigidas.every(cap => c[cap] === true);
+  });
 }
 
 function criarGovernanca({
@@ -355,6 +366,24 @@ function criarGovernanca({
     return { id, ...cfg.perfis[id] };
   }
 
+  // Escolha do usuário para o papel, se existir e ainda for permitida (senão é ignorada, com aviso).
+  function escolhaDoPapel(sess, papel) {
+    const escolhido = usoDe(sess).modelosEscolhidos?.[papel];
+    if (!escolhido) return null;
+    if (modelosPermitidos(papel).includes(escolhido)) return escolhido;
+    avisarUma(`escolha-${papel}-${escolhido}`, `[orcamento] a escolha "${escolhido}" para o papel ${papel} não é mais permitida (sem preço ou capacidade) — usando o padrão do perfil`);
+    return null;
+  }
+
+  // Modelo efetivo do papel: escolha do usuário > resolução do perfil e das variáveis (como antes).
+  function modeloDoPapel(sess, papel, original) {
+    const escolhido = escolhaDoPapel(sess, papel);
+    if (escolhido) return escolhido;
+    const padrao = original ?? modelos.modelosPorPapel()[papel];
+    if (papel === 'pesquisa') return perfil(sess).modeloPesquisa || padrao;
+    return modelos.resolverModelo(papel, { modeloRedacao: perfil(sess).modeloRedacao, original: padrao });
+  }
+
   // Desce um nível quando um alerta marcou a degradação; só entre unidades de trabalho.
   function aplicarDegradacao(sess) {
     const uso = usoDe(sess);
@@ -554,7 +583,10 @@ function criarGovernanca({
       limites: limitesDisjuntor(sess),
       calibracao: uso.calibracao,
       tarifaBuscaWebConfigurada: Number(precos.buscaWebPorChamadaUsd) > 0,
-      modelos: modelos.modelosPorPapel(),
+      modelos: Object.fromEntries(modelos.PAPEIS.map(papel => [papel, modeloDoPapel(sess, papel)])),
+      modelosOrigem: Object.fromEntries(modelos.PAPEIS.map(papel => [papel, escolhaDoPapel(sess, papel) ? 'usuario' : 'perfil'])),
+      modelosEscolhidos: Object.fromEntries(modelos.PAPEIS.filter(papel => escolhaDoPapel(sess, papel)).map(papel => [papel, uso.modelosEscolhidos[papel]])),
+      modelosDisponiveis: Object.fromEntries(modelos.PAPEIS.map(papel => [papel, modelosPermitidos(papel, precos)])),
       avisosModelos: validarModelos()
     };
   }
@@ -572,7 +604,17 @@ function criarGovernanca({
   function ajustar(sess, corpo = {}) {
     const uso = usoDe(sess);
     const cfg = lerPerfisConfig();
-    const mudou = { tetos: false, perfil: false };
+    const mudou = { tetos: false, perfil: false, modelos: false };
+    const avisos = [];
+
+    // Validação da escolha de modelos antes de qualquer alteração (nada muda se algo for inválido).
+    if (corpo.modelos !== undefined) {
+      if (typeof corpo.modelos !== 'object' || corpo.modelos === null || Array.isArray(corpo.modelos)) return { erro: 'modelos deve ser um objeto papel → modelo.' };
+      for (const [papel, m] of Object.entries(corpo.modelos)) {
+        if (!modelos.PAPEIS.includes(papel)) return { erro: `Papel de modelo desconhecido: ${papel}.` };
+        if (m !== null && !modelosPermitidos(papel).includes(m)) return { erro: `O modelo "${m}" não é permitido para o papel ${papel}.` };
+      }
+    }
 
     if (corpo.tetos !== undefined) {
       if (typeof corpo.tetos !== 'object' || corpo.tetos === null) return { erro: 'tetos deve ser um objeto com projeto, dia e/ou etapa.' };
@@ -590,6 +632,17 @@ function criarGovernanca({
       uso.perfil = corpo.perfil;
       uso.degradarPendente = false;
       mudou.perfil = true;
+    }
+    if (corpo.modelos !== undefined) {
+      if (!uso.modelosEscolhidos || typeof uso.modelosEscolhidos !== 'object') uso.modelosEscolhidos = {};
+      for (const [papel, m] of Object.entries(corpo.modelos)) {
+        if ((uso.modelosEscolhidos[papel] || null) === m) continue;
+        if (m === null) delete uso.modelosEscolhidos[papel]; else uso.modelosEscolhidos[papel] = m;
+        mudou.modelos = true;
+      }
+      if (mudou.modelos && (Number(sess.custoProjetoUsd) || 0) > 0) {
+        avisos.push('Este projeto já gerou conteúdo com outro modelo: o texto anterior não será refeito e a calibração da estimativa pode misturar modelos.');
+      }
     }
     if (corpo.decisao !== undefined) {
       if (!DECISOES.includes(corpo.decisao)) return { erro: `Decisão desconhecida: ${corpo.decisao}.` };
@@ -615,9 +668,9 @@ function criarGovernanca({
       uso.disjuntor = null;
       logger.info(`[disjuntor] decisão do usuário: ${corpo.decisao}`);
     }
-    if (mudou.tetos || mudou.perfil) uso.pausa = null;
+    if (mudou.tetos || mudou.perfil || mudou.modelos) uso.pausa = null;
     gravarUso(sess);
-    return { ok: true };
+    return avisos.length ? { ok: true, avisos } : { ok: true };
   }
 
   return {
@@ -631,8 +684,11 @@ function criarGovernanca({
     modeloPara(sess, nome, original) {
       const papel = modelos.papelDaChamada(nome);
       if (!papel) return original;
+      const escolhido = escolhaDoPapel(sess, papel);
+      if (escolhido) return escolhido;
       return modelos.resolverModelo(papel, { modeloRedacao: perfil(sess).modeloRedacao, original });
     },
+    modeloDoPapel, modelosPermitidos,
     papelDe: (nome) => modelos.papelDaChamada(nome),
     // disjuntor
     gatilhoContinuacoes, gatilhoSemGanho, gatilhoLimiteCiclos, bloqueioPendente, limitesDisjuntor, disparar,
@@ -643,4 +699,4 @@ function criarGovernanca({
   };
 }
 
-module.exports = { criarGovernanca, validarModelos, usoVazio, lerPerfisConfig, EPSILON_GANHO_PADRAO };
+module.exports = { criarGovernanca, validarModelos, modelosPermitidos, usoVazio, lerPerfisConfig, EPSILON_GANHO_PADRAO };
