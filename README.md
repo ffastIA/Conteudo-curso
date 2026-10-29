@@ -108,6 +108,7 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 | GET    | `/api/conteudo`                         | SSE — conteúdo por aula (`?aulas=N`, `?refazer=1`)      |
 | GET    | `/api/estimativa`                       | Tokens e custo estimados antes de uma etapa pesada      |
 | GET    | `/api/tokens`                           | Contadores de tokens consumidos                         |
+| GET    | `/api/consumo`                          | Tokens por modelo e valor em US$ pela tabela de preços, por etapa e dia |
 | GET    | `/api/revisao-qualidade`                | SSE — revisão de qualidade por aula                     |
 | POST   | `/api/aplicar-melhorias`                | Upload do `.docx` anotado com melhorias                 |
 | GET    | `/api/aplicar-melhorias/confirmar`      | SSE — aplica o ciclo de melhorias                       |

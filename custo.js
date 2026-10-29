@@ -91,6 +91,118 @@ const custoBlocoBuscaMini = (modelo, buscas, precos = carregarPrecos()) => {
   return (custoBloco || 0) * Math.max(0, buscas || 0);
 };
 
+// Valor em US$ de um conjunto de contadores brutos de UM modelo (change consumo-de-tokens-com-valor):
+// tokens × tarifa da tabela de preços (mesma fórmula da cobrança interna) e, à parte, a busca web
+// (chamadas × tarifa por chamada, mais o bloco fixo dos modelos mini quando ligado).
+// Modelo sem preço → null.
+function valorDoConsumo(c = {}, modelo, precos = carregarPrecos()) {
+  const tokensUsd = calcularCusto({
+    prompt_tokens: c.tokensEntrada || 0,
+    completion_tokens: c.tokensSaida || 0,
+    cached_tokens: c.tokensEntradaEmCache || 0
+  }, modelo, precos);
+  if (tokensUsd === null) return null;
+  const buscas = c.buscasWeb || 0;
+  const buscaUsd = buscas * tarifaBuscaWeb(precos) + custoBlocoBuscaMini(modelo, buscas, precos);
+  return { tokensUsd, buscaUsd, totalUsd: tokensUsd + buscaUsd };
+}
+
+const CAMPOS_CONSUMO = ['chamadas', 'tokensEntrada', 'tokensEntradaEmCache', 'tokensSaida', 'buscasWeb'];
+const arred6 = (n) => Number(Number(n).toFixed(6));
+
+// Tarifa (US$ por 1 milhão de tokens) que casa com o modelo, pela mesma regra de prefixo mais longo.
+function tarifaDoModelo(modelo, precos) {
+  const tabela = precos.porMilhaoDeTokens || {};
+  const chave = Object.keys(tabela)
+    .filter(k => String(modelo).toLowerCase().startsWith(k.toLowerCase()))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!chave) return null;
+  const { entrada = 0, saida = 0, entradaEmCache = entrada } = tabela[chave];
+  return { entrada, entradaEmCache, saida };
+}
+
+// Agrega { modelo: contadores } em totais e valor; modelo sem preço entra nos tokens, não no valor.
+function agregarModelos(mapa, precos) {
+  const somas = Object.fromEntries(CAMPOS_CONSUMO.map(k => [k, 0]));
+  let valorUsd = 0;
+  const semPreco = [];
+  for (const [modelo, c] of Object.entries(mapa || {})) {
+    for (const k of CAMPOS_CONSUMO) somas[k] += c?.[k] || 0;
+    const v = valorDoConsumo(c, modelo, precos);
+    if (v === null) semPreco.push(modelo); else valorUsd += v.totalUsd;
+  }
+  return {
+    chamadas: somas.chamadas,
+    tokens: { entrada: somas.tokensEntrada, entradaEmCache: somas.tokensEntradaEmCache, saida: somas.tokensSaida },
+    buscasWeb: somas.buscasWeb,
+    valorUsd: arred6(valorUsd),
+    semPreco
+  };
+}
+
+// Relatório de consumo do projeto (GET /api/consumo): por modelo, por etapa e por dia, com o valor
+// calculado pela tabela de preços atual e a conciliação com o gasto registrado pelo orçamento.
+function relatorioDeConsumo({ consumo, registrado } = {}, precos = carregarPrecos()) {
+  const porEtapaBruto = consumo?.porEtapa || {};
+  const porDiaBruto = consumo?.porDia || {};
+  const porModeloBruto = {};
+  for (const mapa of Object.values(porEtapaBruto)) {
+    for (const [modelo, c] of Object.entries(mapa || {})) {
+      const t = porModeloBruto[modelo] ||= Object.fromEntries(CAMPOS_CONSUMO.map(k => [k, 0]));
+      for (const k of CAMPOS_CONSUMO) t[k] += c?.[k] || 0;
+    }
+  }
+
+  const buscaWeb = { chamadas: 0, tarifaPorChamadaUsd: tarifaBuscaWeb(precos), valorUsd: 0 };
+  let tokensUsd = 0;
+  const semPreco = [];
+  const modelos = Object.entries(porModeloBruto).map(([modelo, c]) => {
+    const v = valorDoConsumo(c, modelo, precos);
+    if (v === null) semPreco.push(modelo);
+    else { tokensUsd += v.tokensUsd; buscaWeb.chamadas += c.buscasWeb; buscaWeb.valorUsd += v.buscaUsd; }
+    return {
+      modelo,
+      chamadas: c.chamadas,
+      tokens: { entrada: c.tokensEntrada, entradaEmCache: c.tokensEntradaEmCache, saida: c.tokensSaida },
+      buscasWeb: c.buscasWeb,
+      tarifa: tarifaDoModelo(modelo, precos),
+      valorUsd: v === null ? null : arred6(v.tokensUsd)
+    };
+  });
+  buscaWeb.valorUsd = arred6(buscaWeb.valorUsd);
+  const totalUsd = arred6(tokensUsd + buscaWeb.valorUsd);
+
+  const quebra = (bruto) => Object.fromEntries(Object.entries(bruto).map(([chave, mapa]) => {
+    const { semPreco: _ignorado, ...resto } = agregarModelos(mapa, precos);
+    return [chave, resto];
+  }));
+
+  // Conciliação com o gasto que o orçamento registrou na hora de cada chamada.
+  const regModelos = Object.values(registrado?.modelos || {});
+  const registradoUsd = arred6(regModelos.reduce((s, m) => s + (m?.usd || 0), 0));
+  const chamadasRegistradas = regModelos.reduce((s, m) => s + (m?.chamadas || 0), 0);
+  const chamadasDetalhadas = modelos.reduce((s, m) => s + m.chamadas, 0);
+  const parcial = chamadasRegistradas > chamadasDetalhadas;
+  const diferencaUsd = arred6(totalUsd - registradoUsd);
+  const divergente = !parcial && Math.abs(diferencaUsd) > Math.max(0.0001, registradoUsd * 0.01);
+
+  return {
+    moeda: precos.moeda || 'USD',
+    vigenciaPrecos: precos.vigencia || null,
+    modelos,
+    buscaWeb,
+    porEtapa: quebra(porEtapaBruto),
+    porDia: quebra(porDiaBruto),
+    totalUsd,
+    registradoUsd,
+    diferencaUsd,
+    divergente,
+    parcial,
+    naoDetalhadoUsd: parcial ? arred6(Math.max(0, registradoUsd - totalUsd)) : 0,
+    semPreco
+  };
+}
+
 // Erro com mensagem clara (custo e teto) quando a próxima chamada estoura o orçamento.
 function verificarOrcamento({ acumulado = 0, estimativa = 0, env = process.env }) {
   const teto = lerOrcamento(env);
@@ -126,4 +238,4 @@ function criarDisjuntor({ limite = 5, esperaMs = 60_000, agora = () => Date.now(
   };
 }
 
-module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, tarifaBuscaWeb, custoBlocoBuscaMini, criarDisjuntor, PERFIS };
+module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, tarifaBuscaWeb, custoBlocoBuscaMini, valorDoConsumo, relatorioDeConsumo, criarDisjuntor, PERFIS };

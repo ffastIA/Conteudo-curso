@@ -364,6 +364,9 @@ input[type="file"]:hover { border-color: #7B68D4; background: #f3f0ff; }
 .orcamento-tabela th, .orcamento-tabela td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
 .orcamento-tabela .orcamento-sub td { color: #555; font-size: .8rem; }
 .orcamento-avisos { margin: 0 0 12px 18px; padding: 0; font-size: .8rem; color: #92400e; }
+.orcamento-subtitulo { font-size: .95rem; margin: 14px 0 6px; }
+.orcamento-consumo td:not(:first-child), .orcamento-consumo th:not(:first-child) { text-align: right; white-space: nowrap; }
+.orcamento-consumo .orcamento-total td { font-weight: 600; border-top: 2px solid #ddd; }
 .orcamento-form { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 8px; }
 .orcamento-form label, .orcamento-decisao-acoes label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; font-weight: 600; }
 .orcamento-form input, .orcamento-form select, .orcamento-decisao-acoes input, .orcamento-decisao-acoes select {

@@ -209,7 +209,7 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
     if (resumo) registrarGeracaoLog(ctx, resumo);
     if (sess) {
       governanca.depois(sess, ctx.etapa, reserva, {
-        modelo: params?.model, custoUsd: resumo?.custoUsd, usage: r.usage, tarifaUsd: resumo?.tarifaUsd, erro: !!r.erro
+        modelo: params?.model, custoUsd: resumo?.custoUsd, usage: r.usage, tarifaUsd: resumo?.tarifaUsd, buscasWeb: r.buscasWeb, erro: !!r.erro
       });
       try {
         observabilidade.definirMetadadoTrace('perfil', governanca.perfil(sess).id);
@@ -261,6 +261,7 @@ async function chamarOpenAI(tipo, params, options, meta = {}) {
     registrar({
       output: texto || resultado?.output_text || '',
       tarifaUsd: buscas * custo.tarifaBuscaWeb() + custo.custoBlocoBuscaMini(params?.model, buscas),
+      buscasWeb: buscas,
       usage: resultado?.usage ? {
         prompt_tokens: resultado.usage.input_tokens || 0,
         completion_tokens: resultado.usage.output_tokens || 0,
@@ -4768,6 +4769,13 @@ app.get('/api/tokens', (req, res) => {
   const sess = getSession(req, res);
   const projeto = (sess.config?.nome || sess.config?.pastaProjeto) ? readTokenUsage(sess) : null;
   res.json({ ...tokenUsage, ...(projeto ? { projeto } : {}) });
+});
+
+// ── GET /api/consumo — tokens por modelo e valor em US$ pela tabela de preços ─
+// Valor recalculado na hora com config/precos-modelos.json, conciliado com o gasto registrado.
+app.get('/api/consumo', (req, res) => {
+  const sess = getSession(req, res);
+  res.json(custo.relatorioDeConsumo(governanca.consumoDe(sess)));
 });
 
 // Migra projetos legados (arquivos planos em saídas/{slug}/) para saídas/{slug}/scr/

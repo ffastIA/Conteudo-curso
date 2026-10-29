@@ -47,8 +47,19 @@ function usoVazio() {
     dias: {}, etapas: {}, modelos: {}, calibracao: {},
     tetos: {}, limites: {}, perfil: null, degradarPendente: false,
     alertas: {}, pausa: null, disjuntor: null, disparos: [], puladas: {},
-    modelosEscolhidos: {} // escolha do usuário por papel (change selecao-de-modelo-na-tela); `modelos` acima é o gasto por modelo
+    modelosEscolhidos: {}, // escolha do usuário por papel (change selecao-de-modelo-na-tela); `modelos` acima é o gasto por modelo
+    consumo: { porEtapa: {}, porDia: {} } // tokens brutos por etapa/dia × modelo (change consumo-de-tokens-com-valor); o US$ é calculado na leitura
   };
+}
+
+const ehObjeto = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+// Garante a forma de `uso.consumo` (arquivo antigo, sem o campo, ou com tipo inválido, vira consumo vazio).
+function garantirConsumo(uso) {
+  if (!ehObjeto(uso.consumo)) uso.consumo = {};
+  if (!ehObjeto(uso.consumo.porEtapa)) uso.consumo.porEtapa = {};
+  if (!ehObjeto(uso.consumo.porDia)) uso.consumo.porDia = {};
+  return uso.consumo;
 }
 
 function lerPerfisConfig() {
@@ -140,6 +151,7 @@ function criarGovernanca({
       const lido = JSON.parse(fs.readFileSync(arquivo, 'utf-8'));
       if (!lido || typeof lido !== 'object' || Array.isArray(lido)) throw new Error('formato inválido');
       sess.uso = { ...usoVazio(), ...lido };
+      garantirConsumo(sess.uso);
     } catch (err) {
       logger.warn(`[orcamento] uso.json ilegível (${err.message}) — iniciando com o gasto zerado nesse arquivo`);
       sess.uso = usoVazio();
@@ -473,9 +485,30 @@ function criarGovernanca({
   }
 
   // Acerta uma chamada: libera a reserva e contabiliza o custo real (se houve).
-  function depois(sess, etapa, reserva, { modelo, custoUsd, usage, tarifaUsd = 0, erro = false } = {}) {
+  // Soma os tokens da chamada (por etapa e por dia, em cada modelo) em uso.consumo. Vale também para
+  // modelo sem preço (custoUsd nulo): os tokens aparecem no relatório, só o valor fica indisponível.
+  function registrarConsumo(sess, etapa, modelo, usage, buscasWeb) {
+    const consumo = garantirConsumo(usoDe(sess));
+    const dia = hojeLocal(agora());
+    const entrada = Number(usage.prompt_tokens) || 0;
+    const emCache = require('./observabilidade').tokensEmCache(usage);
+    const saida = Number(usage.completion_tokens) || 0;
+    for (const grupo of [consumo.porEtapa[etapa] ||= {}, consumo.porDia[dia] ||= {}]) {
+      const c = grupo[modelo] ||= { chamadas: 0, tokensEntrada: 0, tokensEntradaEmCache: 0, tokensSaida: 0, buscasWeb: 0 };
+      c.chamadas += 1;
+      c.tokensEntrada += entrada;
+      c.tokensEntradaEmCache += emCache;
+      c.tokensSaida += saida;
+      c.buscasWeb += buscasWeb;
+    }
+  }
+
+  function depois(sess, etapa, reserva, { modelo, custoUsd, usage, tarifaUsd = 0, buscasWeb = 0, erro = false } = {}) {
     if (reserva?.token) liberar(reserva.token);
     const ok = typeof custoUsd === 'number' && custoUsd >= 0 && !Number.isNaN(custoUsd);
+    const temConsumo = !!modelo && !!usage && typeof usage === 'object';
+    if (temConsumo) registrarConsumo(sess, etapa, modelo, usage, Number(buscasWeb) || 0);
+    if (!ok && temConsumo) gravarUso(sess);
     if (ok) {
       const tetos = tetosDe(sess);
       if (tetos.dia !== null) somarDiario(custoUsd);
@@ -591,6 +624,12 @@ function criarGovernanca({
     };
   }
 
+  // Insumos do relatório de consumo (GET /api/consumo): contadores brutos e gasto registrado por modelo.
+  function consumoDe(sess) {
+    const uso = usoDe(sess);
+    return { consumo: garantirConsumo(uso), registrado: { modelos: uso.modelos } };
+  }
+
   // Saldo restante mínimo entre os escopos com teto (null sem nenhum teto).
   function saldoRestante(sess, etapa) {
     const lista = escoposDe(sess, etapa).filter(e => e.tetoUsd !== null)
@@ -675,7 +714,7 @@ function criarGovernanca({
 
   return {
     // estado e persistência
-    usoDe, carregarUso, gravarUso, estado, saldoRestante, ajustar,
+    usoDe, carregarUso, gravarUso, estado, saldoRestante, ajustar, consumoDe,
     ativo: (sess) => temTeto(tetosDe(sess)),
     // fluxo de cada chamada
     antes, depois, registrarErro, emUnidade, verificarUnidade,

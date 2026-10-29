@@ -120,8 +120,29 @@ Pular deixa a aula incompleta (o fluxo seguinte continua bloqueado até ela ser 
   (`modelosOrigem`: `usuario` ou `perfil`), a escolha (`modelosEscolhidos`) e a lista permitida (`modelosDisponiveis`).
 - `POST /api/orcamento`: `{ tetos: { projeto, dia, etapa }, perfil, modelos: { <papel>: '<modelo>' | null }, decisao: 'aumentar-limite' | 'trocar-perfil' | 'pular', valor }`;
   valores inválidos voltam HTTP 400. A resposta traz `avisos` quando há mistura de modelos.
+- `GET /api/consumo`: consumo do projeto por modelo (chamadas, tokens de entrada, de entrada em cache e de
+  saída), a tarifa de `config/precos-modelos.json`, o valor em US$ e as quebras por etapa e por dia; ver
+  [Consumo do projeto](#consumo-do-projeto).
 - `GET /api/estimativa?etapa=...` agora inclui o perfil, o saldo restante e `excedeSaldo`; a tela pede a
   confirmação antes de uma etapa pesada quando a faixa máxima passa do saldo.
+
+## Consumo do projeto
+
+A seção "Consumo do projeto" do painel 💲 (e `GET /api/consumo`) mostra de onde vem o gasto: uma linha por
+modelo com chamadas, tokens de entrada, de entrada em cache e de saída, a tarifa (US$ por 1 milhão de tokens)
+e o valor. O valor é `((entrada − cache) × tarifa de entrada + cache × tarifa de cache + saída × tarifa de saída) / 1.000.000`,
+mais `chamadas de busca web × buscaWebPorChamadaUsd` em linha própria (o bloco fixo dos modelos mini só entra
+com `buscaWebBlocoTokensMiniSomar` ligado). O contador do cabeçalho mostra o total em US$ ao lado dos tokens.
+
+- **A conta é refeita a cada consulta** com a tabela atual: `scr/uso.json` guarda só contadores (`consumo`, por
+  etapa e por dia, em cada modelo), nunca o US$. Trocar um preço no JSON muda o valor mostrado.
+- **Conciliação:** o valor pela tabela aparece ao lado do gasto registrado (o que os tetos usam). Diferença acima
+  de 1% marca `divergente`, e a tela avisa que a tabela pode ter mudado depois da geração. A conciliação não
+  altera o gasto registrado nem os tetos.
+- **Projetos antigos:** o consumo anterior a esta versão não tem detalhe de tokens. A resposta traz `parcial` e
+  `naoDetalhadoUsd` (gasto registrado sem detalhe); não há reconstrução do histórico.
+- **Modelo sem preço:** aparece com os tokens, valor "indisponível", em `semPreco`, fora do total.
+- É uma conferência interna: a cobrança real é a da página de uso da OpenAI.
 
 ## Langfuse
 
@@ -131,7 +152,7 @@ modelo (`papel`). O custo do painel e o do Langfuse partem do mesmo `usage` e da
 ## Arquivos de estado
 
 - `scr/uso.json` (por projeto, gravação atômica): gasto por dia/etapa/modelo, calibração, tetos ajustados,
-  perfil, escolha de modelos por papel (`modelosEscolhidos`), pausa, disparos do disjuntor e unidades puladas. Um disparo pendente **sobrevive a reinícios**.
+  perfil, escolha de modelos por papel (`modelosEscolhidos`), consumo bruto de tokens por etapa/dia e modelo (`consumo`), pausa, disparos do disjuntor e unidades puladas. Um disparo pendente **sobrevive a reinícios**.
 - `.uso-diario.json` (global, na raiz do app; ignorado pelo git): gasto do dia. Só é mantido com
   `ORCAMENTO_DIA_MAX_USD` configurado; se não puder ser lido ou gravado, o teto diário fica desligado com
   um aviso e a geração não é bloqueada.
