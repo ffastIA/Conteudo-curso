@@ -4775,7 +4775,7 @@ app.get('/api/tokens', (req, res) => {
 // Valor recalculado na hora com config/precos-modelos.json, conciliado com o gasto registrado.
 app.get('/api/consumo', (req, res) => {
   const sess = getSession(req, res);
-  res.json(custo.relatorioDeConsumo(governanca.consumoDe(sess)));
+  res.json(custo.relatorioDeConsumo(governanca.consumoDe(sess), undefined, custo.carregarCambio()));
 });
 
 // Migra projetos legados (arquivos planos em saídas/{slug}/) para saídas/{slug}/scr/

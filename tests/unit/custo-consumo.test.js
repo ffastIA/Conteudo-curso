@@ -6,7 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { valorDoConsumo, relatorioDeConsumo } = require('../../custo');
+const { valorDoConsumo, relatorioDeConsumo, carregarCambio, comReais } = require('../../custo');
 const { criarGovernanca } = require('../../orcamento');
 
 const PRECOS = {
@@ -222,5 +222,56 @@ describe('gravação do consumo em uso.json', () => {
     const reaberta = sessao();
     G2.carregarUso(reaberta);
     expect(G2.consumoDe(reaberta).consumo.porEtapa.conteudo['gpt-4o'].tokensEntrada).toBe(100);
+  });
+});
+
+describe('valor em reais (change valor-em-reais)', () => {
+  const consumo = { porEtapa: { conteudo: { 'gpt-4o': C({ tokensEntrada: 1_000_000, buscasWeb: 1 }) } }, porDia: { '2026-11-05': { 'gpt-4o': C({ tokensEntrada: 1_000_000, buscasWeb: 1 }) } } };
+  const reg = { modelos: { 'gpt-4o': { usd: 2.51, chamadas: 1 } } };
+
+  test('sem cotação o relatório não traz reais', () => {
+    const r = relatorioDeConsumo({ consumo, registrado: reg }, PRECOS);
+    expect(r.cambio).toBeUndefined();
+    expect(r.totalBrl).toBeUndefined();
+    expect(r.modelos[0].valorBrl).toBeUndefined();
+  });
+
+  test('com cotação cada valor em US$ ganha o valor em reais; o US$ não muda', () => {
+    const sem = relatorioDeConsumo({ consumo, registrado: reg }, PRECOS);
+    const r = relatorioDeConsumo({ consumo, registrado: reg }, PRECOS, { usdBrl: 5, data: '2026-11-05' });
+    expect(r.totalUsd).toBe(sem.totalUsd);
+    expect(r.totalUsd).toBeCloseTo(2.51, 6);
+    expect(r.totalBrl).toBe(12.55);
+    expect(r.registradoBrl).toBe(12.55);
+    expect(r.modelos[0].valorBrl).toBe(12.5);
+    expect(r.buscaWeb.valorBrl).toBe(0.05);
+    expect(r.porEtapa.conteudo.valorBrl).toBe(12.55);
+    expect(r.porDia['2026-11-05'].valorBrl).toBe(12.55);
+    expect(r.cambio).toEqual({ usdBrl: 5, data: '2026-11-05' });
+  });
+
+  test('modelo sem preço continua com valor nulo em reais', () => {
+    const r = comReais({ modelos: [{ modelo: 'x', valorUsd: null }], buscaWeb: { valorUsd: 0 }, porEtapa: {}, porDia: {}, totalUsd: 0, registradoUsd: 0 }, { usdBrl: 5, data: null });
+    expect(r.modelos[0].valorBrl).toBeNull();
+  });
+
+  describe('carregarCambio', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cambio-'));
+    const arq = (conteudo) => { const f = path.join(dir, `c${Math.random()}.json`); fs.writeFileSync(f, conteudo); return f; };
+    afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+    test('cotação válida', () => {
+      expect(carregarCambio(arq('{"usdBrl": 5.4, "data": "2026-11-05"}'))).toEqual({ usdBrl: 5.4, data: '2026-11-05' });
+    });
+    test.each([['null', '{"usdBrl": null}'], ['zero', '{"usdBrl": 0}'], ['negativa', '{"usdBrl": -1}'], ['texto', '{"usdBrl": "abc"}'], ['JSON inválido', '{usdBrl']])('%s vale como sem cotação', (_n, c) => {
+      expect(carregarCambio(arq(c))).toBeNull();
+    });
+    test('arquivo ausente vale como sem cotação', () => {
+      expect(carregarCambio(path.join(dir, 'nao-existe.json'))).toBeNull();
+    });
+    test('o config/cambio.json do projeto é JSON válido e traz usdBrl', () => {
+      const c = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'config', 'cambio.json'), 'utf-8'));
+      expect(c).toHaveProperty('usdBrl');
+    });
   });
 });

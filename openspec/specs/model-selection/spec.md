@@ -26,12 +26,12 @@ O sistema SHALL permitir que o usuário escolha, na tela, o modelo da OpenAI de 
 O sistema SHALL oferecer, para cada papel, somente modelos que tenham preço em `config/precos-modelos.json` e capacidades em `config/modelos-capacidades.json` e que cumpram as exigências do papel naquela tabela (o papel `pesquisa` exige `busca_web`). A lista SHALL ser calculada a cada consulta, de modo que editar os dois arquivos a amplie sem alterar o código. O servidor SHALL recusar com HTTP 400 e uma mensagem qualquer papel desconhecido ou modelo fora da lista, sem alterar nada, e SHALL NOT aceitar nome de modelo livre.
 
 #### Scenario: Lista da pesquisa
-- **WHEN** a interface consulta `GET /api/orcamento` e as tabelas trazem `gpt-4o` e `gpt-4o-mini` com `busca_web`
-- **THEN** `modelosDisponiveis.pesquisa` contém exatamente esses dois modelos
+- **WHEN** a interface consulta `GET /api/orcamento` e as tabelas trazem `gpt-4o`, `gpt-4o-mini`, `gpt-4.1` e `gpt-4.1-mini` com `busca_web`
+- **THEN** `modelosDisponiveis.pesquisa` contém exatamente esses quatro modelos
 
 #### Scenario: Modelo sem preço
-- **WHEN** `gpt-4.1` está em `modelos-capacidades.json` mas não em `precos-modelos.json`
-- **THEN** `gpt-4.1` não aparece em nenhum papel
+- **WHEN** um modelo está em `modelos-capacidades.json` mas não em `precos-modelos.json`
+- **THEN** ele não aparece em nenhum papel
 
 #### Scenario: Modelo fora da lista
 - **WHEN** a interface envia `POST /api/orcamento` com `{ "modelos": { "redacao": "gpt-9-fantasia" } }`

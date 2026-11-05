@@ -1,0 +1,5 @@
+{
+  "usdBrl": 5.2,
+  "data": "2026-11-05",
+  "observacao": "Cotação para mostrar o consumo também em reais. usdBrl é quantos reais valem US$ 1,00 (ex.: 5.40); data é o dia da cotação (AAAA-MM-DD). Cotação estimada pelo usuário em 2026-11-05 (não é cotação oficial); atualize quando quiser. Com usdBrl vazio (null) ou inválido, só o valor em US$ aparece. A conversão é só informativa: a cobrança da OpenAI é em dólar e os tetos continuam em US$."
+}

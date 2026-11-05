@@ -74,18 +74,22 @@ async function atualizarOrcamento() {
 const orcNum = (n) => Number(n || 0).toLocaleString('pt-BR');
 const orcTarifa = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 }));
 
+// Valor em US$ e, havendo cotação em config/cambio.json, em reais (R$ vem pronto do servidor).
+const orcBrl = (n) => (n === null || n === undefined ? '' : Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+const orcValor = (usd, brl) => (brl === null || brl === undefined ? orcUsd(usd) : `${orcUsd(usd)} · ${orcBrl(brl)}`);
+
 // Valor em US$ ao lado dos tokens no cabeçalho; sem consumo valorado mostra só os tokens.
 function renderValorContador(c) {
   const el = document.getElementById('tokenValor');
   if (!el) return;
-  el.textContent = c && c.totalUsd > 0 ? ` · ${orcUsd(c.totalUsd)}` : '';
+  el.textContent = c && c.totalUsd > 0 ? ` · ${orcValor(c.totalUsd, c.totalBrl)}` : '';
 }
 
 function orcQuebra(rotuloColuna, mapa) {
   const linhas = Object.entries(mapa || {}).sort(([a], [b]) => a.localeCompare(b));
   if (!linhas.length) return '';
   return `<table class="orcamento-tabela orcamento-consumo"><thead><tr><th>${orcEsc(rotuloColuna)}</th><th>Chamadas</th><th>Entrada (em cache)</th><th>Saída</th><th>Valor</th></tr></thead><tbody>` +
-    linhas.map(([chave, v]) => `<tr><td>${orcEsc(chave)}</td><td>${orcNum(v.chamadas)}</td><td>${orcNum(v.tokens?.entrada)} (${orcNum(v.tokens?.entradaEmCache)})</td><td>${orcNum(v.tokens?.saida)}</td><td>${orcUsd(v.valorUsd)}</td></tr>`).join('') +
+    linhas.map(([chave, v]) => `<tr><td>${orcEsc(chave)}</td><td>${orcNum(v.chamadas)}</td><td>${orcNum(v.tokens?.entrada)} (${orcNum(v.tokens?.entradaEmCache)})</td><td>${orcNum(v.tokens?.saida)}</td><td>${orcValor(v.valorUsd, v.valorBrl)}</td></tr>`).join('') +
     `</tbody></table>`;
 }
 
@@ -98,17 +102,17 @@ function renderConsumo(c) {
   if (c.divergente) avisos.push(`O valor pela tabela atual (${orcUsd(c.totalUsd)}) difere do gasto registrado (${orcUsd(c.registradoUsd)}); a tabela de preços pode ter mudado depois da geração. Os tetos usam o gasto registrado.`);
   if ((c.semPreco || []).length) avisos.push(`Sem preço cadastrado (fora do total): ${c.semPreco.join(', ')}.`);
   const modelos = c.modelos.map(m => `<tr><td><code>${orcEsc(m.modelo)}</code></td><td>${orcNum(m.chamadas)}</td><td>${orcNum(m.tokens.entrada)}</td><td>${orcNum(m.tokens.entradaEmCache)}</td><td>${orcNum(m.tokens.saida)}</td>` +
-    `<td>${m.tarifa ? `${orcTarifa(m.tarifa.entrada)} / ${orcTarifa(m.tarifa.entradaEmCache)} / ${orcTarifa(m.tarifa.saida)}` : '—'}</td><td>${orcUsd(m.valorUsd)}</td></tr>`).join('');
+    `<td>${m.tarifa ? `${orcTarifa(m.tarifa.entrada)} / ${orcTarifa(m.tarifa.entradaEmCache)} / ${orcTarifa(m.tarifa.saida)}` : '—'}</td><td>${orcValor(m.valorUsd, m.valorBrl)}</td></tr>`).join('');
   const busca = c.buscaWeb?.chamadas > 0
-    ? `<tr class="orcamento-sub"><td>Busca web</td><td>${orcNum(c.buscaWeb.chamadas)}</td><td colspan="3"></td><td>${orcUsd(c.buscaWeb.tarifaPorChamadaUsd)} por chamada</td><td>${orcUsd(c.buscaWeb.valorUsd)}</td></tr>`
+    ? `<tr class="orcamento-sub"><td>Busca web</td><td>${orcNum(c.buscaWeb.chamadas)}</td><td colspan="3"></td><td>${orcUsd(c.buscaWeb.tarifaPorChamadaUsd)} por chamada</td><td>${orcValor(c.buscaWeb.valorUsd, c.buscaWeb.valorBrl)}</td></tr>`
     : '';
   return titulo +
     `<table class="orcamento-tabela orcamento-consumo"><thead><tr><th>Modelo</th><th>Chamadas</th><th>Entrada</th><th>Em cache</th><th>Saída</th><th>US$ por 1M (entrada / cache / saída)</th><th>Valor</th></tr></thead><tbody>` +
     modelos + busca +
-    `<tr class="orcamento-total"><td>Total</td><td colspan="5"></td><td>${orcUsd(c.totalUsd)}</td></tr></tbody></table>` +
+    `<tr class="orcamento-total"><td>Total</td><td colspan="5"></td><td>${orcValor(c.totalUsd, c.totalBrl)}</td></tr></tbody></table>` +
     orcQuebra('Etapa', c.porEtapa) + orcQuebra('Dia', c.porDia) +
     (avisos.length ? `<ul class="orcamento-avisos">${avisos.map(a => `<li>${orcEsc(a)}</li>`).join('')}</ul>` : '') +
-    `<p class="field-hint">Valor = tokens × tarifa de config/precos-modelos.json (vigência ${orcEsc(c.vigenciaPrecos || '—')}), em ${orcEsc(c.moeda)}. Conferência interna; a cobrança real é a da página de uso da OpenAI.</p>`;
+    `<p class="field-hint">Valor = tokens × tarifa de config/precos-modelos.json (vigência ${orcEsc(c.vigenciaPrecos || '—')}), em ${orcEsc(c.moeda)}. Conferência interna; a cobrança real é a da página de uso da OpenAI.${c.cambio ? ` Reais pela cotação de US$ 1 = ${orcBrl(c.cambio.usdBrl)}${c.cambio.data ? ` (${orcEsc(c.cambio.data)})` : ''}, de config/cambio.json.` : ''}</p>`;
 }
 
 function renderEmblemaOrcamento(e) {

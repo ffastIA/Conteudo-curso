@@ -73,7 +73,7 @@ Acesse: [http://localhost:3000](http://localhost:3000)
 ├── conteudo-secoes.js, fundamentacao.js, avaliacao.js — conteúdo por seções, fontes e avaliação integral
 ├── observabilidade.js, custo.js, logger.js — traces (Langfuse), custo/orçamento e logs JSON
 ├── docx-markdown.js     — Markdown → .docx (listas, tabelas, código, links)
-├── config/              — modelos.js e precos-modelos.json
+├── config/              — modelos.js, precos-modelos.json e cambio.json
 ├── docs/                — decisões, guia do Langfuse e linha de base
 ├── package.json
 ├── .env.example

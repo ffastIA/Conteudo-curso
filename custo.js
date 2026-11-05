@@ -5,6 +5,8 @@
 // observabilidade (config/precos-modelos.json), então o painel e o app mostram
 // os mesmos números. É estimativa: sempre uma faixa, rotulada como tal.
 
+const fs = require('fs');
+const path = require('path');
 const { calcularCusto, carregarPrecos } = require('./observabilidade');
 
 // Perfis por unidade (módulo ou aula), calibrados com a linha de base real
@@ -110,6 +112,37 @@ function valorDoConsumo(c = {}, modelo, precos = carregarPrecos()) {
 const CAMPOS_CONSUMO = ['chamadas', 'tokensEntrada', 'tokensEntradaEmCache', 'tokensSaida', 'buscasWeb'];
 const arred6 = (n) => Number(Number(n).toFixed(6));
 
+// Cotação do dólar para mostrar o consumo também em reais (change valor-em-reais). Fica em
+// config/cambio.json, informada pelo usuário; sem cotação válida (número > 0) o valor em reais some.
+function carregarCambio(arquivo = path.join(__dirname, 'config', 'cambio.json')) {
+  try {
+    const c = JSON.parse(fs.readFileSync(arquivo, 'utf-8'));
+    const usdBrl = Number(c.usdBrl);
+    if (!Number.isFinite(usdBrl) || usdBrl <= 0) return null;
+    return { usdBrl, data: c.data || null };
+  } catch {
+    return null;
+  }
+}
+
+// Acrescenta `valorBrl` (= US$ × cotação, em 2 casas) a cada valor em US$ do relatório. Não altera o US$.
+function comReais(relatorio, cambio) {
+  if (!cambio) return relatorio;
+  const brl = (usd) => (usd === null || usd === undefined ? null : Number((usd * cambio.usdBrl).toFixed(2)));
+  const marca = (o) => ({ ...o, valorBrl: brl(o.valorUsd) });
+  const marcaMapa = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, marca(v)]));
+  return {
+    ...relatorio,
+    cambio,
+    modelos: relatorio.modelos.map(marca),
+    buscaWeb: marca(relatorio.buscaWeb),
+    porEtapa: marcaMapa(relatorio.porEtapa),
+    porDia: marcaMapa(relatorio.porDia),
+    totalBrl: brl(relatorio.totalUsd),
+    registradoBrl: brl(relatorio.registradoUsd)
+  };
+}
+
 // Tarifa (US$ por 1 milhão de tokens) que casa com o modelo, pela mesma regra de prefixo mais longo.
 function tarifaDoModelo(modelo, precos) {
   const tabela = precos.porMilhaoDeTokens || {};
@@ -142,7 +175,7 @@ function agregarModelos(mapa, precos) {
 
 // Relatório de consumo do projeto (GET /api/consumo): por modelo, por etapa e por dia, com o valor
 // calculado pela tabela de preços atual e a conciliação com o gasto registrado pelo orçamento.
-function relatorioDeConsumo({ consumo, registrado } = {}, precos = carregarPrecos()) {
+function relatorioDeConsumo({ consumo, registrado } = {}, precos = carregarPrecos(), cambio = null) {
   const porEtapaBruto = consumo?.porEtapa || {};
   const porDiaBruto = consumo?.porDia || {};
   const porModeloBruto = {};
@@ -186,7 +219,7 @@ function relatorioDeConsumo({ consumo, registrado } = {}, precos = carregarPreco
   const diferencaUsd = arred6(totalUsd - registradoUsd);
   const divergente = !parcial && Math.abs(diferencaUsd) > Math.max(0.0001, registradoUsd * 0.01);
 
-  return {
+  return comReais({
     moeda: precos.moeda || 'USD',
     vigenciaPrecos: precos.vigencia || null,
     modelos,
@@ -200,7 +233,7 @@ function relatorioDeConsumo({ consumo, registrado } = {}, precos = carregarPreco
     parcial,
     naoDetalhadoUsd: parcial ? arred6(Math.max(0, registradoUsd - totalUsd)) : 0,
     semPreco
-  };
+  }, cambio);
 }
 
 // Erro com mensagem clara (custo e teto) quando a próxima chamada estoura o orçamento.
@@ -238,4 +271,4 @@ function criarDisjuntor({ limite = 5, esperaMs = 60_000, agora = () => Date.now(
   };
 }
 
-module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, tarifaBuscaWeb, custoBlocoBuscaMini, valorDoConsumo, relatorioDeConsumo, criarDisjuntor, PERFIS };
+module.exports = { estimarEtapa, estimarCustoChamada, estimarTokens, verificarOrcamento, lerOrcamento, tarifaBuscaWeb, custoBlocoBuscaMini, valorDoConsumo, relatorioDeConsumo, carregarCambio, comReais, criarDisjuntor, PERFIS };

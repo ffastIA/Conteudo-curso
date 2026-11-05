@@ -143,6 +143,11 @@ com `buscaWebBlocoTokensMiniSomar` ligado). O contador do cabeçalho mostra o to
   `naoDetalhadoUsd` (gasto registrado sem detalhe); não há reconstrução do histórico.
 - **Modelo sem preço:** aparece com os tokens, valor "indisponível", em `semPreco`, fora do total.
 - É uma conferência interna: a cobrança real é a da página de uso da OpenAI.
+- **Valor em reais:** preencha `usdBrl` (reais por US$ 1,00, ex.: `5.40`) e `data` em `config/cambio.json`.
+  Com cotação válida, `GET /api/consumo` acrescenta `cambio`, `totalBrl`, `registradoBrl` e `valorBrl` (modelos,
+  busca web, etapas e dias), e a tela mostra "US$ X · R$ Y", inclusive no contador do cabeçalho. O arquivo é lido a
+  cada consulta (vale sem reiniciar). Com `usdBrl` vazio (`null`) ou inválido, só aparece o US$. A cotação é única,
+  informativa e não é gravada em `uso.json`; a cobrança e os tetos continuam em dólar.
 
 ## Langfuse
 
