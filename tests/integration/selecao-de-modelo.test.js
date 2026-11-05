@@ -91,7 +91,7 @@ describe('API: GET e POST /api/orcamento com a escolha de modelos', () => {
     const ag = await sessao();
     const e = (await ag.get('/api/orcamento')).body;
     expect(e.modelosEscolhidos).toEqual({});
-    expect(e.modelosDisponiveis.pesquisa).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(e.modelosDisponiveis.pesquisa).toEqual(['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini']);
     expect(e.modelos.pesquisa).toBe('gpt-4o');
     expect(e.modelosOrigem.pesquisa).toBe('perfil');
   });

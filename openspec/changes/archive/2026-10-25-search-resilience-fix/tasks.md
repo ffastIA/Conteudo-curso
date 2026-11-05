@@ -20,6 +20,6 @@
 ## 5. Verificação
 
 - [x] 5.1 Executar `node --check` em `server.js`, `skills.js` e `public/app.js` — todos passaram sem erros
-- [ ] 5.2 Testar fluxo normal no browser: pesquisa deve concluir normalmente com fontes listadas
-- [ ] 5.3 Testar fallback: simular indisponibilidade web — deve exibir "⚠️ Pesquisa web indisponível..." e concluir
-- [ ] 5.4 Verificar mensagem de orientação após erro total: log panel deve exibir "💡 Tente novamente..."
+- [x] 5.2 Testar fluxo normal no browser: pesquisa deve concluir normalmente com fontes listadas — verificado em 2026-11-05 por SSE com a chave real (perfil Econômico): 2 consultas, 14 fontes, status `web`, custo US$ 0,023 igual ao registrado em `uso.json`
+- [x] 5.3 Testar fallback: simular indisponibilidade web — deve exibir "⚠️ Pesquisa web indisponível..." e concluir — verificado em 2026-11-05 com `OPENAI_BASE_URL` inacessível: o fluxo agora termina no disjuntor de erro repetido (`governanca-de-custo`), com `semPesquisaDisponivel`, em vez de gerar texto sem pesquisa; o aviso "Pesquisa web indisponível" ficou para o caminho sem erro total
+- [x] 5.4 Verificar mensagem de orientação após erro total: log panel deve exibir "💡 Tente novamente..." — verificado em 2026-11-05: o servidor envia `semPesquisaDisponivel`, que aciona a mensagem "💡 Tente novamente" em `public/app.js`; a exibição no painel não foi conferida no navegador

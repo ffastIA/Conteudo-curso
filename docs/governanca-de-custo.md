@@ -77,7 +77,7 @@ variáveis); qualquer outro valor **vence o perfil e as variáveis** a partir da
 o servidor. A escolha fica em `scr/uso.json` (`modelosEscolhidos`) e volta ao reabrir o projeto. A lista de
 cada papel só tem modelos com **preço** em `config/precos-modelos.json` e capacidades em
 `config/modelos-capacidades.json` que cumpram a exigência do papel (a pesquisa exige busca web); hoje são
-`gpt-4o` e `gpt-4o-mini`. Para oferecer outro modelo, cadastre-o nos dois arquivos. O servidor recusa
+`gpt-4o`, `gpt-4o-mini`, `gpt-4.1` e `gpt-4.1-mini` (preços de 2026-11-05, de fonte secundária: confira na página da OpenAI). Para oferecer outro modelo, cadastre-o nos dois arquivos. O servidor recusa
 (HTTP 400) qualquer papel ou modelo fora da lista. A descida automática de perfil não desfaz a escolha, e o
 painel mostra "fixado por você". Trocar o modelo com o projeto já em andamento mostra um aviso: o conteúdo
 anterior não é refeito e a calibração da estimativa pode misturar modelos.

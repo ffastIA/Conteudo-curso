@@ -53,15 +53,15 @@ describe('lista de modelos permitidos', () => {
     expect(modelosPermitidos('redacao', precos, tabela)).toEqual(['gpt-4o', 'gpt-4o-mini', 'sem-busca']);
   });
 
-  test('com as tabelas reais a lista da pesquisa é gpt-4o e gpt-4o-mini', () => {
-    expect(modelosPermitidos('pesquisa')).toEqual(['gpt-4o', 'gpt-4o-mini']);
+  test('com as tabelas reais a lista da pesquisa traz os quatro modelos com preço', () => {
+    expect(modelosPermitidos('pesquisa')).toEqual(['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini']);
   });
 
   test('GET devolve a lista por papel', () => {
     const G = novo();
     const e = G.estado(sessao());
     expect(Object.keys(e.modelosDisponiveis).sort()).toEqual(['avaliacao', 'juiz', 'pesquisa', 'redacao', 'resumos']);
-    expect(e.modelosDisponiveis.pesquisa).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(e.modelosDisponiveis.pesquisa).toEqual(['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini']);
   });
 });
 
