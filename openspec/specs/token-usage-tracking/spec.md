@@ -2,9 +2,7 @@
 
 Acumular e consultar o consumo de tokens das chamadas OpenAI de cada projeto,
 persistido em disco e sobrevivendo a restarts do servidor.
-
 ## Requirements
-
 ### Requirement: Histórico de uso de tokens persistido por projeto
 O sistema SHALL acumular o consumo de tokens de todas as chamadas OpenAI do projeto em `scr/token_usage.json`, com o formato `{ total: { prompt, completion, total }, porDia: { "YYYY-MM-DD": { prompt, completion, total } }, atualizadoEm }`. A acumulação SHALL ocorrer no ponto único `addUsage(usage, sess)` e SHALL ser tolerante a arquivo ausente ou corrompido (recomeça zerado, sem interromper a geração). A persistência SHALL ocorrer somente quando houver projeto identificável na sessão.
 
@@ -23,8 +21,17 @@ O sistema SHALL acumular o consumo de tokens de todas as chamadas OpenAI do proj
 ---
 
 ### Requirement: Consulta do histórico de tokens do projeto
-`GET /api/tokens` SHALL retornar, além do contador global da sessão, o campo `projeto` com o conteúdo de `token_usage.json` quando houver projeto identificável; o contador da interface SHALL exibir o acumulado do projeto ao lado do total da sessão.
+`GET /api/tokens` SHALL retornar, além do contador global da sessão, o campo `projeto` com o conteúdo de `token_usage.json` quando houver projeto identificável; o contador da interface SHALL exibir o acumulado do projeto ao lado do total da sessão e, quando o projeto tiver consumo valorado, o valor em US$ do projeto obtido de `GET /api/consumo` (`totalUsd`). Sem projeto, ou com `totalUsd` indisponível, o contador SHALL exibir só os tokens, como antes.
 
 #### Scenario: Contador da UI com acumulado do projeto
 - **WHEN** um projeto está carregado e `token_usage.json` registra 150.000 tokens totais
 - **THEN** a resposta de `GET /api/tokens` inclui `projeto.total.total = 150000` e o contador exibe o valor formatado ao lado do total da sessão
+
+#### Scenario: Contador com o valor em US$
+- **WHEN** o projeto carregado tem consumo valorado de US$ 0,64 em `GET /api/consumo`
+- **THEN** o contador exibe os tokens e, ao lado, "US$ 0,64"
+
+#### Scenario: Sem projeto
+- **WHEN** nenhum projeto está carregado
+- **THEN** o contador exibe só os tokens da sessão e nenhum valor em US$
+
